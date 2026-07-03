@@ -1,0 +1,10 @@
+symbol,status,earnings_dates,first_date,last_date,csv_path,error
+AMD,PASS,50,2014-04-17,2026-08-04,earnings_data\AMD.csv,
+NVDA,PASS,50,2014-05-08,2026-08-26,earnings_data\NVDA.csv,
+GOOGL,PASS,50,2014-04-16,2026-07-23,earnings_data\GOOGL.csv,
+NFLX,PASS,50,2014-04-21,2026-07-16,earnings_data\NFLX.csv,
+AVGO,PASS,50,2014-05-29,2026-09-03,earnings_data\AVGO.csv,
+COIN,PASS,22,2021-05-13,2026-07-30,earnings_data\COIN.csv,
+PLTR,PASS,24,2020-11-12,2026-08-03,earnings_data\PLTR.csv,
+TSLA,PASS,50,2014-05-09,2026-07-22,earnings_data\TSLA.csv,
+MSTR,PASS,50,2014-04-28,2026-07-30,earnings_data\MSTR.csv,

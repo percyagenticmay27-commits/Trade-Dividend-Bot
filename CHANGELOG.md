@@ -1,0 +1,106 @@
+# Changelog
+
+All notable project changes will be recorded here.
+
+## 2026-06-19
+
+- Created initial project folder.
+- Added `PROJECT_STATUS.md`.
+- Added `CHANGELOG.md`.
+- Added `pairs_config.py`.
+- Added `validate_universe.py`.
+- Confirmed `py` as the Python command for project validation runs.
+- Updated universe validation to generate `universe_validation_report.csv`.
+
+## 2026-06-21
+
+- Replaced the scaffold pair universe with the first uploaded ETF strategy universe.
+- Added `yfinance`-based universe validation for price history and dividend record checks.
+- Moved validation dates and symbol groups into `pairs_config.py` as the project universe source.
+- Updated the validator to always write `universe_validation_report.csv`, even when runtime dependencies are missing.
+- Added `requirements.txt` for the validator runtime dependencies.
+- Added `snapshot_iteration.py` to save timestamped copies of milestone files and reports to OneDrive Documents each iteration.
+- Added Milestone 2 historical downloader to save daily OHLCV/dividend CSVs and a downloader summary report.
+- Added Milestone 3 EMA20, EMA50, and Wilder RSI14 calculations.
+- Added approved strict BUY/SELL/HOLD rules with HOLD during indicator warm-up.
+- Added separate ETF-own-indicator and underlying-source signal models.
+- Added explicit pair mappings, with `MST -> MSTR` and independent `XXRP`.
+- Added a full-period signal test for AMD, NVDA, TSLA, MSTR, MST, and XXRP.
+- Added pair-level signal distribution analysis with BUY/SELL/HOLD counts, first signal dates, percentages, and 95% concentration checks.
+- Confirmed MST-from-MSTR and XXRP-own-signal are analyzed as independent rows and can enter or exit SGOV independently.
+- Added Milestone 4 portfolio accounting engine with $50 pair capital and 70/30 initial allocation.
+- Added proportional restoration from liquidation weights and fixed 70/30 re-entry modes.
+- Added SELL-to-SGOV, configurable daily SGOV yield accrual, and BUY-from-SGOV transitions.
+- Added independent $35 MST and $15 XXRP sleeves within their shared $50 allocation.
+- Defined trade count as completed allocation transitions, excluding initial funding.
+- Deferred dividends, earnings exits, and performance metrics as required.
+- Added the first baseline backtest runner using local daily CSV data, approved signals, and the portfolio engine.
+- Defined baseline execution as prior-close signal execution at the next close to avoid lookahead.
+- Defined SGOV accrual from adjusted-close daily returns while capital is parked.
+- Added both signal models and both re-entry modes for standard pairs.
+- Kept MST and XXRP as independently signaled sleeves within their shared $50 pair.
+- Continued to exclude A/B dividends and earnings exits.
+- Added Milestone 6 dividend engine for income ETF A positions.
+- Defined dividend entitlement from A shares held before the daily signal execution.
+- Added immediate 50/50 reinvestment and pending SGOV dividend cash handling.
+- Preserved independent MST and XXRP sleeve states during dividend allocation.
+- Continued to exclude earnings exits and dividend-timing optimization.
+- Started Milestone 7 with cached Yahoo Finance earnings dates for approved underlyings.
+- Added `lxml`, required by the Yahoo Finance earnings-date endpoint.
+- Added earnings trading-day schedules, forced-exit locks, and BUY-gated post-earnings re-entry state.
+- Added validation for exact pre-earnings exits, SGOV accounting, pending dividends, and MST/XXRP independence.
+- Added the dividend-enabled earnings backtest and comparison against the dividend-only baseline.
+- Defined post-earnings re-entry as a current-day BUY check beginning on the first trading day after earnings.
+- Added Milestone 8 pair-level and four-configuration portfolio performance reporting.
+- Defined each portfolio as nine standard pairs plus MST/XXRP once, totaling $500 starting capital.
+- Added top/worst rankings, drawdown improvements, earnings improvements, and milestone comparisons.
+- Added Milestone 9A `a_only_reentry` mode for the focused COIW/CONL experiment.
+- Preserved 50/50 COIW dividend reinvestment while routing SGOV principal entirely to COIW.
+- Added Milestone 9B independent COIW and CONL SGOV sleeves using each ETF's own indicators.
+- Defined both independent sleeves to follow COIN earnings exits and re-enter on their own BUY signals.
+- Defined the comparison baseline as Underlying/proportional and the A-only row as Underlying/a-only.
+- Recorded that COIW and CONL produced identical signals over the test period, so independent controls did not diverge in state.
+- Added Milestone 9C independent A/B sleeve testing across all nine standard pairs.
+- Kept MST/XXRP on its existing independent MSTR/XXRP signal architecture.
+- Added full-portfolio, pair-improvement, drawdown, state-divergence, dividend-waiting, and earnings validations.
+- Recorded that all-pairs independent sleeves underperformed the current portfolio, while GOOW/GGLL and COIW/CONL improved individually.
+- Added Milestone 10 hybrid architecture using independent GOOW/GGLL, COIW/CONL, and MST/XXRP with seven pair-managed components.
+- Added synchronized daily portfolio equity curves for true portfolio max-drawdown validation.
+- Recorded that the hybrid architecture improved ending capital while leaving synchronized portfolio max drawdown unchanged.
+- Added Milestone 11 equal, strength-weighted, and constrained risk-adjusted hybrid portfolio testing.
+- Defined negative risk scores to receive the $20 floor, with remaining capital allocated to positive scores under a $90 cap.
+- Recorded risk-adjusted weighting as an in-sample optimization requiring out-of-sample or walk-forward validation before live use.
+- Added Milestone 12 isolated walk-forward data caches and runtime-selectable historical-data periods.
+- Held Milestone 11 strength and risk-adjusted allocations fixed across walk-forward periods to prevent test-period weight leakage.
+- Recorded that Period A is unavailable because four required ETFs did not yet have price history, and Period B begins at the common GLDW inception date of 2025-10-30.
+- Retained Equal Weight Hybrid as the live-deployment recommendation pending complete out-of-sample coverage.
+- Added Milestone 14 PAPER ONLY Strength Weighted Hybrid configuration and durable daily simulation engine.
+- Defined paper recommendations to update a simulated ledger while prohibiting broker connections and real order submission.
+- Added append-only trade logging, same-market-date idempotency, proportional restoration state, independent SGOV sleeves, pending dividend allocation, and persisted earnings locks.
+- Initialized the paper portfolio at the latest common Yahoo close with the approved $500 strength-weighted allocation.
+- Added Milestone 15 signal-aware paper initialization: BUY/HOLD starts invested and SELL starts in SGOV.
+- Added independent `a_in_sgov` and `b_in_sgov` state so A/B sleeves can initialize separately.
+- Migrated the existing all-invested paper state to $190 ETF exposure and $310 SGOV exposure while preserving the append-only audit log.
+- Added initialization comparison reporting and synthetic BUY/HOLD/SELL/mixed-sleeve validation.
+- Added Milestone 16 daily PAPER ONLY orchestration with market refresh, state advancement, append-only snapshot history, and change summaries.
+- Defined same-market-date runs as idempotent for both paper trade logs and portfolio snapshots.
+- Added explicit dividend receipt log events using shares held before the daily signal transition.
+- Defined snapshot `Cash_Flow` and `Dividends_Received` as dividend cash received during that daily cycle.
+- Added Milestone 17 strategy health reporting across portfolio, signals, transitions, dividends, risk, and all ten pairs.
+- Set the Strength Weighted Hybrid backtest max drawdown of -11.372222% as the paper risk-alert threshold.
+- Added capital, independent SGOV, earnings-lock, signal-staleness, and drawdown alerts.
+- Defined future live eligibility as at least 60 unique paper-market snapshots with no alerts and risk within expectations.
+- Integrated strategy health generation into every daily paper cycle.
+- Added Milestone 18 idempotent live-readiness history with 30/60/90 clean-market-day gates.
+- Defined overall readiness against the 90-day production-candidate gate and next eligibility against the 30-day operational gate.
+- Added cumulative signal-change, dividend, earnings, SGOV-transition, drawdown, return, and consecutive-clean-day tracking.
+- Integrated live-readiness updates into every daily paper cycle.
+- Added Milestone 19 weekly PAPER ONLY portfolio review with Friday generation after the daily cycle.
+- Added idempotent per-market-day signal history so weekly BUY, SELL, and HOLD changes are measurable.
+- Added weekly reconciliation against strategy health, live readiness, portfolio snapshots, paper transitions, dividends, and earnings events.
+- Defined tied pair rankings to use current value and pair name only as deterministic display ordering.
+- Added Gmail SMTP delivery for exactly four daily Markdown decision reports.
+- Kept Gmail credentials outside the repository in the `GMAIL_APP_PASSWORD` user environment variable.
+- Added per-report-date duplicate-send protection and a local delivery audit log.
+- Moved the daily PAPER ONLY automation to 3:30 PM Central and scheduled email after the cycle completes.
+- Added persistent Windows User environment fallback for unattended Gmail SMTP authentication.

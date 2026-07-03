@@ -1,0 +1,4 @@
+Pair,Architecture,Final_Value,Return_Pct,Max_Drawdown,Trades,SGOV_Entries,Days_In_SGOV,Dividends_Received
+COIW / CONL,pair_underlying_proportional,22.215754,-55.568492,-60.187867,7,4,77,2.856763
+COIW / CONL,pair_underlying_a_only,22.863297,-54.273407,-59.027427,7,4,77,3.139122
+COIW / CONL,independent_sleeves,26.50957,-46.980861,-55.98243,2,2,88,1.970392

@@ -1,0 +1,7 @@
+Milestone 6 Dividend Engine Tests
+
+active 50/50 reinvestment: PASS
+SGOV pending dividend reinvestment: PASS
+independent MST/XXRP dividend handling: PASS
+
+All dividend accounting assertions: PASS

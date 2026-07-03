@@ -1,0 +1,310 @@
+{
+  "paper_only": true,
+  "notice": "PAPER ONLY - NO REAL TRADES EXECUTED",
+  "version": 2,
+  "as_of_date": "2026-06-26",
+  "last_processed_date": "2026-06-26",
+  "starting_capital": 500.0,
+  "pairs": {
+    "AMDW / AMDL": {
+      "architecture": "pair_managed",
+      "capital_bucket": 75.0,
+      "a_ticker": "AMDW",
+      "b_ticker": "AMDL",
+      "a_shares": 0.480901354589692,
+      "b_shares": 0.31328320935124543,
+      "sgov_balance": 0.0,
+      "a_sgov_balance": 0.0,
+      "b_sgov_balance": 0.0,
+      "a_in_sgov": false,
+      "b_in_sgov": false,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "BUY",
+        "B": "BUY"
+      },
+      "last_action": "NO_PAPER_TRADE",
+      "last_prices": {
+        "A": 103.01000213623047,
+        "B": 66.7300033569336
+      }
+    },
+    "AVGW / AVGX": {
+      "architecture": "pair_managed",
+      "capital_bucket": 60.0,
+      "a_ticker": "AVGW",
+      "b_ticker": "AVGX",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 49.980692524445104,
+      "a_sgov_balance": 0.0,
+      "b_sgov_balance": 0.0,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7180140881492908,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "PAPER_SELL_TO_SGOV",
+      "last_prices": {
+        "A": 38.5099983215332,
+        "B": 43.54999923706055
+      }
+    },
+    "GOOW / GGLL": {
+      "architecture": "independent_sleeves",
+      "capital_bucket": 60.0,
+      "a_ticker": "GOOW",
+      "b_ticker": "GGLL",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 60.035791941647986,
+      "a_sgov_balance": 42.025054359153586,
+      "b_sgov_balance": 18.010737582494393,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "NO_PAPER_TRADE",
+      "last_prices": {
+        "A": 63.470001220703125,
+        "B": 101.08999633789062
+      }
+    },
+    "NVDW / NVDX": {
+      "architecture": "pair_managed",
+      "capital_bucket": 55.0,
+      "a_ticker": "NVDW",
+      "b_ticker": "NVDX",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 47.80906559261196,
+      "a_sgov_balance": 0.0,
+      "b_sgov_balance": 0.0,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7148588966129787,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "PAPER_SELL_TO_SGOV",
+      "last_prices": {
+        "A": 34.22999954223633,
+        "B": 15.640000343322754
+      }
+    },
+    "GLDW / NUGT": {
+      "architecture": "pair_managed",
+      "capital_bucket": 50.0,
+      "a_ticker": "GLDW",
+      "b_ticker": "NUGT",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 50.02982661803998,
+      "a_sgov_balance": 0.0,
+      "b_sgov_balance": 0.0,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "NO_PAPER_TRADE",
+      "last_prices": {
+        "A": 41.8380012512207,
+        "B": 122.26000213623047
+      }
+    },
+    "NFLW / NFLU": {
+      "architecture": "pair_managed",
+      "capital_bucket": 50.0,
+      "a_ticker": "NFLW",
+      "b_ticker": "NFLU",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 50.02982661803998,
+      "a_sgov_balance": 0.0,
+      "b_sgov_balance": 0.0,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "NO_PAPER_TRADE",
+      "last_prices": {
+        "A": 16.989999771118164,
+        "B": 17.639999389648438
+      }
+    },
+    "TSLW / TSLL": {
+      "architecture": "pair_managed",
+      "capital_bucket": 45.0,
+      "a_ticker": "TSLW",
+      "b_ticker": "TSLL",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 45.026843956235986,
+      "a_sgov_balance": 0.0,
+      "b_sgov_balance": 0.0,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "NO_PAPER_TRADE",
+      "last_prices": {
+        "A": 21.270000457763672,
+        "B": 11.619999885559082
+      }
+    },
+    "PLTW / PLTU": {
+      "architecture": "pair_managed",
+      "capital_bucket": 40.0,
+      "a_ticker": "PLTW",
+      "b_ticker": "PLTU",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 40.02386129443199,
+      "a_sgov_balance": 0.0,
+      "b_sgov_balance": 0.0,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "NO_PAPER_TRADE",
+      "last_prices": {
+        "A": 16.100000381469727,
+        "B": 23.639999389648438
+      }
+    },
+    "COIW / CONL": {
+      "architecture": "independent_sleeves",
+      "capital_bucket": 35.0,
+      "a_ticker": "COIW",
+      "b_ticker": "CONL",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 35.02087863262799,
+      "a_sgov_balance": 24.514615042839594,
+      "b_sgov_balance": 10.506263589788396,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "NO_PAPER_TRADE",
+      "last_prices": {
+        "A": 8.399999618530273,
+        "B": 4.460000038146973
+      }
+    },
+    "MST / XXRP": {
+      "architecture": "independent_sleeves",
+      "capital_bucket": 30.0,
+      "a_ticker": "MST",
+      "b_ticker": "XXRP",
+      "a_shares": 0.0,
+      "b_shares": 0.0,
+      "sgov_balance": 30.017895970823993,
+      "a_sgov_balance": 21.012527179576793,
+      "b_sgov_balance": 9.005368791247196,
+      "a_in_sgov": true,
+      "b_in_sgov": true,
+      "pending_dividend_a": 0.0,
+      "pending_dividend_b": 0.0,
+      "total_dividends_received": 0.0,
+      "restoration_a_weight": 0.7,
+      "a_earnings_lock": false,
+      "b_earnings_lock": false,
+      "a_locked_earnings_date": null,
+      "b_locked_earnings_date": null,
+      "last_signal": {
+        "A": "SELL",
+        "B": "SELL"
+      },
+      "last_action": "NO_PAPER_TRADE",
+      "last_prices": {
+        "A": 6.590000152587891,
+        "B": 2.059999942779541
+      }
+    }
+  }
+}

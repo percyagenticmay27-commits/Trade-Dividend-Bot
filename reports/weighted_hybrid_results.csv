@@ -1,0 +1,4 @@
+Portfolio_Type,Starting_Capital,Ending_Capital,Profit_Loss,Return_Pct,Max_Drawdown,Average_Drawdown,Dividends_Received,Earnings_Exits,SGOV_Entries,Days_In_SGOV
+Equal_Weight_Hybrid,500.0,551.009896,51.009896,10.201979,-16.190966,-25.137808,35.987675,18,34,730
+Strength_Weighted_Hybrid,500.0,609.313321,109.313321,21.862664,-11.372222,-22.356709,40.790587,18,34,730
+Risk_Adjusted_Hybrid,500.0,657.206568,157.206568,31.441314,-8.757964,-19.372361,42.971168,18,34,730

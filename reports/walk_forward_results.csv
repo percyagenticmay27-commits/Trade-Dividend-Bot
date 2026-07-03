@@ -1,0 +1,10 @@
+Period,Portfolio_Type,Starting_Capital,Ending_Capital,Profit_Loss,Return_Pct,Max_Drawdown,Return_Drawdown_Ratio
+Period A,Equal_Weight_Hybrid,500.0,,,,,
+Period A,Strength_Weighted_Hybrid,500.0,,,,,
+Period A,Risk_Adjusted_Hybrid,500.0,,,,,
+Period B,Equal_Weight_Hybrid,500.0,499.49356,-0.50644,-0.101288,-5.457068,-0.018561
+Period B,Strength_Weighted_Hybrid,500.0,496.445986,-3.554014,-0.710803,-5.894323,-0.120591
+Period B,Risk_Adjusted_Hybrid,500.0,503.896844,3.896844,0.779369,-4.905328,0.158882
+Period C,Equal_Weight_Hybrid,500.0,551.009918,51.009918,10.201984,-16.190963,0.630104
+Period C,Strength_Weighted_Hybrid,500.0,609.313347,109.313347,21.862669,-11.372218,1.922463
+Period C,Risk_Adjusted_Hybrid,500.0,657.206597,157.206597,31.441319,-8.75796,3.590028

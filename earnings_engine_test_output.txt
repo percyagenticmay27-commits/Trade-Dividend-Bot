@@ -1,0 +1,6 @@
+Milestone 7 Earnings Engine Tests
+
+standard exit/re-entry and pending dividends: PASS
+MST exits on MSTR while XXRP remains independent: PASS
+
+All earnings accounting assertions: PASS

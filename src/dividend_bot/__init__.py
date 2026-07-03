@@ -1,0 +1,1 @@
+"""Tradebot Dividend Bot package."""
