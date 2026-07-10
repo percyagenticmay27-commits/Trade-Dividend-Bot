@@ -1,8 +1,8 @@
 """Deterministic adapters between Dividend Bot stage report schemas.
 
-The adapters convert already-built upstream reports into keyword arguments that
-an existing downstream builder can accept. They never access brokers, networks,
-or mutate portfolio state.
+The adapters convert already-built upstream reports and the shared read-only market
+snapshot into keyword arguments that an existing downstream builder can accept.
+They never access providers or mutate portfolio state.
 """
 from __future__ import annotations
 
@@ -87,6 +87,8 @@ def _candidate_kwargs(stage_name: str, stage_payloads: Mapping[str, Mapping[str,
     construction = _mapping(p.get("portfolio_construction"))
     lifecycle = _mapping(p.get("portfolio_lifecycle"))
     daily = _mapping(p.get("daily_command_center"))
+    market_data = _mapping(p.get("market_data"))
+    market_records = _rows(market_data, "records")
 
     mapping: Dict[str, Dict[str, Any]] = {
         "portfolio_decision": {
@@ -149,7 +151,14 @@ def _candidate_kwargs(stage_name: str, stage_payloads: Mapping[str, Mapping[str,
             "starting_portfolio_value": daily.get("portfolio_value", 0.0),
         },
     }
-    return mapping.get(stage_name, {})
+    candidates = dict(mapping.get(stage_name, {}))
+    candidates.update({
+        "market_data_snapshot": market_data,
+        "market_data": market_data,
+        "market_records": market_records,
+        "quotes": market_records,
+    })
+    return candidates
 
 
 def prepare_stage_kwargs(
