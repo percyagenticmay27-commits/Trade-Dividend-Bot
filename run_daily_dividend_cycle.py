@@ -1,8 +1,8 @@
 """Single-command daily execution cycle for the paper-only Dividend Bot.
 
-The runner executes each approved engine in order, adapts upstream reports into
-accepted downstream builder arguments, writes every stage JSON artifact, runs
-the Master Portfolio Orchestrator, and writes consolidated cycle reports.
+The runner refreshes one shared read-only market snapshot, executes each approved
+engine in order, adapts upstream reports into accepted downstream arguments, writes
+all stage artifacts, and produces consolidated cycle reports.
 """
 from __future__ import annotations
 
@@ -11,8 +11,9 @@ import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any, Dict, Iterable, Mapping, Optional
 
+from market_data_integration_engine import write_market_data_snapshot
 from master_portfolio_orchestrator import (
     DEFAULT_INPUT_FILES,
     STAGE_ORDER,
@@ -22,7 +23,7 @@ from master_portfolio_orchestrator import (
 from stage_input_adapters import prepare_stage_kwargs
 
 MODULE_NAME = "run_daily_dividend_cycle"
-MODULE_VERSION = "1.2.0"
+MODULE_VERSION = "1.3.0"
 SCHEMA_VERSION = "1.0"
 GENERATED_BY = "Agentic-Robin-Dividend.bot"
 PAPER_TRADE_MODE = True
@@ -66,11 +67,10 @@ SAFETY_GUARANTEES = [
     "live_trading_enabled is enforced as False",
     "broker_execution_enabled is enforced as False",
     "reporting_only is enforced as True",
-    "no Robinhood execution is performed",
+    "read-only market information may be refreshed through the approved provider layer",
     "no brokerage execution is performed",
     "no order placement is performed",
-    "no subprocess or os.system usage",
-    "no external network access is performed",
+    "no operating-system process launch is performed",
 ]
 
 REPORT_REQUIRED_FIELDS = [
@@ -121,7 +121,6 @@ def execute_stage(
     input_files: Optional[Mapping[str, str]] = None,
     stage_payloads: Optional[Mapping[str, Mapping[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    """Execute one approved stage using adapted upstream inputs."""
     if stage_name not in STAGE_EXECUTION_PLAN:
         raise ValueError(f"unsupported stage: {stage_name}")
     module_name, builder_name = STAGE_EXECUTION_PLAN[stage_name]
@@ -129,12 +128,10 @@ def execute_stage(
     builder = getattr(module, builder_name, None)
     if not callable(builder):
         raise AttributeError(f"{module_name}.{builder_name} is not callable")
-
     kwargs = prepare_stage_kwargs(stage_name, stage_payloads or {}, builder, root_path)
     payload = builder(**kwargs)
     if not isinstance(payload, Mapping):
         raise ValueError(f"{stage_name} builder must return a mapping")
-
     files = dict(DEFAULT_INPUT_FILES)
     if input_files:
         files.update(input_files)
@@ -145,11 +142,31 @@ def execute_stage(
 def execute_all_stages(
     root_path: str = ".",
     input_files: Optional[Mapping[str, str]] = None,
+    refresh_market_data: bool = False,
+    market_symbols: Optional[Iterable[str]] = None,
+    market_data_service: Any = None,
+    force_market_refresh: bool = False,
 ) -> tuple[Dict[str, Dict[str, Any]], list[str], list[str]]:
-    """Execute all stages in approved order and preserve upstream payloads."""
+    """Execute all stages in order, optionally beginning with one shared snapshot."""
     payloads: Dict[str, Dict[str, Any]] = {}
     warnings: list[str] = []
     errors: list[str] = []
+
+    if refresh_market_data:
+        try:
+            market_payload = write_market_data_snapshot(
+                root_path=root_path,
+                symbols=market_symbols,
+                service=market_data_service,
+                force_refresh=force_market_refresh,
+            )
+            payloads["market_data"] = market_payload
+            warnings.extend(str(item) for item in market_payload.get("warnings", []))
+            if market_payload.get("status") == "ERROR":
+                warnings.append("The shared market snapshot could not refresh; downstream fallback behavior remains active.")
+        except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+            warnings.append(f"Market data refresh was unavailable: {exc}")
+
     for stage_name in STAGE_ORDER:
         try:
             payloads[stage_name] = execute_stage(
@@ -256,18 +273,28 @@ def run_daily_dividend_cycle(
     input_files: Optional[Mapping[str, str]] = None,
     output_files: Optional[Mapping[str, str]] = None,
     execute_stages: bool = True,
+    refresh_market_data: bool = True,
+    market_symbols: Optional[Iterable[str]] = None,
+    market_data_service: Any = None,
+    force_market_refresh: bool = False,
 ) -> Dict[str, Any]:
     files = dict(DEFAULT_OUTPUT_FILES)
     if output_files:
         files.update(output_files)
     root = Path(root_path)
     root.mkdir(parents=True, exist_ok=True)
-
     execution_warnings: list[str] = []
     execution_errors: list[str] = []
     supplied = dict(stage_payloads or {})
     if execute_stages:
-        generated, execution_warnings, execution_errors = execute_all_stages(str(root), input_files)
+        generated, execution_warnings, execution_errors = execute_all_stages(
+            str(root),
+            input_files,
+            refresh_market_data=refresh_market_data,
+            market_symbols=market_symbols,
+            market_data_service=market_data_service,
+            force_market_refresh=force_market_refresh,
+        )
         generated.update(supplied)
         supplied = generated
 
@@ -277,7 +304,6 @@ def run_daily_dividend_cycle(
         input_files=input_files,
     )
     _write_json(root / files["orchestration_json"], orchestration)
-
     payload = build_daily_dividend_cycle_report(
         stage_payloads=supplied or None,
         root_path=str(root),
