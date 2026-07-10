@@ -1,11 +1,13 @@
-"""Single-command daily cycle runner for the paper-only Dividend Bot.
+"""Single-command daily execution cycle for the paper-only Dividend Bot.
 
-This module coordinates the existing Master Portfolio Orchestrator, writes a
-consolidated daily-cycle summary, and never invokes brokers, Robinhood, shell
-commands, subprocesses, or live order placement.
+The runner executes each approved engine in order, writes every stage JSON
+artifact, runs the Master Portfolio Orchestrator, and writes consolidated cycle
+reports. Stage failures are recorded without invoking brokers, external
+processes, or live order placement.
 """
 from __future__ import annotations
 
+import importlib
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -13,12 +15,14 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 from master_portfolio_orchestrator import (
+    DEFAULT_INPUT_FILES,
+    STAGE_ORDER,
     build_master_portfolio_orchestration_report,
     validate_master_portfolio_orchestration_report,
 )
 
 MODULE_NAME = "run_daily_dividend_cycle"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 SCHEMA_VERSION = "1.0"
 GENERATED_BY = "Agentic-Robin-Dividend.bot"
 PAPER_TRADE_MODE = True
@@ -35,6 +39,29 @@ DEFAULT_OUTPUT_FILES = {
     "orchestration_json": "master_portfolio_orchestration_report.json",
     "cycle_json": "daily_dividend_cycle_report.json",
     "cycle_markdown": "daily_dividend_cycle_report.md",
+}
+
+# Each engine exposes a deterministic, paper-only build function with safe
+# defaults. The runner writes the returned payload to the exact filename the
+# Master Portfolio Orchestrator expects.
+STAGE_EXECUTION_PLAN = {
+    "market_regime": ("market_regime_engine", "build_market_regime_report"),
+    "market_intelligence": ("market_intelligence_engine", "build_market_intelligence_report"),
+    "momentum_score": ("momentum_score_engine", "build_momentum_score_report"),
+    "entry_score": ("entry_score_engine", "build_entry_score_report"),
+    "conviction": ("conviction_engine", "build_conviction_report"),
+    "dividend_ranking": ("dividend_ranking_engine", "build_dividend_ranking_report"),
+    "opportunity_pairing": ("opportunity_pairing_engine", "build_opportunity_pairing_report"),
+    "portfolio_decision": ("portfolio_decision_engine", "build_portfolio_decision_report"),
+    "capital_allocation": ("capital_allocation_engine", "build_capital_allocation_report"),
+    "portfolio_construction": ("portfolio_construction_engine", "build_portfolio_construction_report"),
+    "portfolio_rebalance": ("portfolio_rebalance_engine", "build_portfolio_rebalance_report"),
+    "income_reinvestment": ("income_reinvestment_engine", "build_income_reinvestment_report"),
+    "portfolio_lifecycle": ("portfolio_lifecycle_engine", "build_portfolio_lifecycle_report"),
+    "daily_command_center": ("daily_portfolio_command_center", "build_daily_portfolio_command_center"),
+    "weekly_portfolio_review": ("weekly_portfolio_review_engine", "build_weekly_portfolio_review"),
+    "strategy_performance_analytics": ("strategy_performance_analytics_engine", "build_strategy_performance_analytics_report"),
+    "monthly_portfolio_review": ("monthly_portfolio_review_engine", "build_monthly_portfolio_review"),
 }
 
 SAFETY_GUARANTEES = [
@@ -86,44 +113,71 @@ def _now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
+def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def execute_stage(stage_name: str, root_path: str = ".", input_files: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
+    """Execute one approved stage and write its JSON artifact."""
+    if stage_name not in STAGE_EXECUTION_PLAN:
+        raise ValueError(f"unsupported stage: {stage_name}")
+    module_name, builder_name = STAGE_EXECUTION_PLAN[stage_name]
+    module = importlib.import_module(module_name)
+    builder = getattr(module, builder_name, None)
+    if not callable(builder):
+        raise AttributeError(f"{module_name}.{builder_name} is not callable")
+    payload = builder()
+    if not isinstance(payload, Mapping):
+        raise ValueError(f"{stage_name} builder must return a mapping")
+    files = dict(DEFAULT_INPUT_FILES)
+    if input_files:
+        files.update(input_files)
+    _write_json(Path(root_path) / files[stage_name], payload)
+    return dict(payload)
+
+
+def execute_all_stages(root_path: str = ".", input_files: Optional[Mapping[str, str]] = None) -> tuple[Dict[str, Dict[str, Any]], list[str], list[str]]:
+    """Execute all stages in approved order without aborting on one failure."""
+    payloads: Dict[str, Dict[str, Any]] = {}
+    warnings: list[str] = []
+    errors: list[str] = []
+    for stage_name in STAGE_ORDER:
+        try:
+            payloads[stage_name] = execute_stage(stage_name, root_path, input_files)
+        except (ImportError, AttributeError, OSError, TypeError, ValueError) as exc:
+            errors.append(f"Stage {stage_name} failed: {exc}")
+    if errors:
+        warnings.append("One or more stages failed; successful stages were preserved for review.")
+    return payloads, warnings, errors
+
+
 def build_daily_dividend_cycle_report(
     stage_payloads: Optional[Mapping[str, Mapping[str, Any]]] = None,
     root_path: str = ".",
     input_files: Optional[Mapping[str, str]] = None,
     output_files: Optional[Mapping[str, str]] = None,
+    execution_warnings: Optional[list[str]] = None,
+    execution_errors: Optional[list[str]] = None,
 ) -> Dict[str, Any]:
     files = dict(DEFAULT_OUTPUT_FILES)
     if output_files:
         files.update(output_files)
-
     orchestration = build_master_portfolio_orchestration_report(
         stage_payloads=stage_payloads,
         root_path=root_path,
         input_files=input_files,
     )
     validate_master_portfolio_orchestration_report(orchestration)
-
-    run_status = orchestration["run_status"]
+    errors = list(execution_errors or []) + list(orchestration["errors"])
+    warnings = list(execution_warnings or []) + list(orchestration["warnings"])
+    run_status = STATUS_ERROR if errors else orchestration["run_status"]
     payload = asdict(DailyDividendCycleReport(
-        module_name=MODULE_NAME,
-        module_version=MODULE_VERSION,
-        schema_version=SCHEMA_VERSION,
-        generated_by=GENERATED_BY,
-        generated_at_utc=_now(),
-        paper_trade_mode=True,
-        live_trading_enabled=False,
-        broker_execution_enabled=False,
-        reporting_only=True,
-        run_status=run_status,
-        orchestration_status=orchestration["run_status"],
-        available_stage_count=orchestration["available_stage_count"],
-        missing_stage_count=orchestration["missing_stage_count"],
-        invalid_stage_count=orchestration["invalid_stage_count"],
-        stage_count=len(orchestration["stage_results"]),
-        output_files=files,
-        warnings=list(orchestration["warnings"]),
-        errors=list(orchestration["errors"]),
-        safety_guarantees=list(SAFETY_GUARANTEES),
+        MODULE_NAME, MODULE_VERSION, SCHEMA_VERSION, GENERATED_BY, _now(),
+        True, False, False, True, run_status, orchestration["run_status"],
+        orchestration["available_stage_count"], orchestration["missing_stage_count"],
+        orchestration["invalid_stage_count"], len(orchestration["stage_results"]),
+        files, warnings, errors, list(SAFETY_GUARANTEES),
     ))
     validate_daily_dividend_cycle_report(payload)
     return payload
@@ -143,10 +197,8 @@ def validate_daily_dividend_cycle_report(payload: Any) -> bool:
     }.items():
         if payload[field] is not expected:
             raise ValueError(f"{field} must be {expected}")
-    if payload["run_status"] not in SUPPORTED_RUN_STATUSES:
-        raise ValueError("unsupported run_status")
-    if payload["orchestration_status"] not in SUPPORTED_RUN_STATUSES:
-        raise ValueError("unsupported orchestration_status")
+    if payload["run_status"] not in SUPPORTED_RUN_STATUSES or payload["orchestration_status"] not in SUPPORTED_RUN_STATUSES:
+        raise ValueError("unsupported run status")
     for field in ["available_stage_count", "missing_stage_count", "invalid_stage_count", "stage_count"]:
         if not isinstance(payload[field], int) or isinstance(payload[field], bool) or payload[field] < 0:
             raise ValueError(f"{field} must be a non-negative integer")
@@ -160,24 +212,20 @@ def validate_daily_dividend_cycle_report(payload: Any) -> bool:
     for field in ["warnings", "errors", "safety_guarantees"]:
         if not isinstance(payload[field], list):
             raise ValueError(f"{field} must be a list")
-        for item in payload[field]:
-            if not isinstance(item, str) or not item.strip():
-                raise ValueError(f"{field} entries must be non-empty strings")
+        if any(not isinstance(item, str) or not item.strip() for item in payload[field]):
+            raise ValueError(f"{field} entries must be non-empty strings")
     return True
 
 
 def format_daily_dividend_cycle_markdown(payload: Mapping[str, Any]) -> str:
     validate_daily_dividend_cycle_report(payload)
     lines = [
-        "# Daily Dividend Cycle Report",
-        "",
+        "# Daily Dividend Cycle Report", "",
         f"- Run Status: {payload['run_status']}",
         f"- Available Stages: {payload['available_stage_count']}",
         f"- Missing Stages: {payload['missing_stage_count']}",
         f"- Invalid Stages: {payload['invalid_stage_count']}",
-        f"- Total Stages: {payload['stage_count']}",
-        "",
-        "## Output Files",
+        f"- Total Stages: {payload['stage_count']}", "", "## Output Files",
     ]
     lines.extend(f"- {key}: {value}" for key, value in payload["output_files"].items())
     lines += ["", "## Warnings"]
@@ -194,38 +242,41 @@ def run_daily_dividend_cycle(
     stage_payloads: Optional[Mapping[str, Mapping[str, Any]]] = None,
     input_files: Optional[Mapping[str, str]] = None,
     output_files: Optional[Mapping[str, str]] = None,
+    execute_stages: bool = True,
 ) -> Dict[str, Any]:
     files = dict(DEFAULT_OUTPUT_FILES)
     if output_files:
         files.update(output_files)
-
     root = Path(root_path)
     root.mkdir(parents=True, exist_ok=True)
 
+    execution_warnings: list[str] = []
+    execution_errors: list[str] = []
+    supplied = dict(stage_payloads or {})
+    if execute_stages:
+        generated, execution_warnings, execution_errors = execute_all_stages(str(root), input_files)
+        generated.update(supplied)
+        supplied = generated
+
     orchestration = build_master_portfolio_orchestration_report(
-        stage_payloads=stage_payloads,
+        stage_payloads=supplied or None,
         root_path=str(root),
         input_files=input_files,
     )
-    Path(root / files["orchestration_json"]).write_text(
-        json.dumps(orchestration, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    _write_json(root / files["orchestration_json"], orchestration)
 
     payload = build_daily_dividend_cycle_report(
-        stage_payloads=stage_payloads,
+        stage_payloads=supplied or None,
         root_path=str(root),
         input_files=input_files,
         output_files=files,
+        execution_warnings=execution_warnings,
+        execution_errors=execution_errors,
     )
-    Path(root / files["cycle_json"]).write_text(
-        json.dumps(payload, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    Path(root / files["cycle_markdown"]).write_text(
-        format_daily_dividend_cycle_markdown(payload),
-        encoding="utf-8",
-    )
+    _write_json(root / files["cycle_json"], payload)
+    markdown_path = root / files["cycle_markdown"]
+    markdown_path.parent.mkdir(parents=True, exist_ok=True)
+    markdown_path.write_text(format_daily_dividend_cycle_markdown(payload), encoding="utf-8")
     return payload
 
 
