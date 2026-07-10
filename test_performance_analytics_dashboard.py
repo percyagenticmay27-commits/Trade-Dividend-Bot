@@ -58,6 +58,44 @@ def test_missing_inputs_produce_partial_valid_report():
     assert dashboard.validate_performance_analytics_dashboard(payload)
 
 
+def test_market_snapshot_populates_income_regime_and_change():
+    snapshot = {
+        "records": [
+            {
+                "symbol": "AAA",
+                "price": 105,
+                "previous_close": 100,
+                "dividend_yield": 0.04,
+                "fifty_two_week_low": 70,
+                "fifty_two_week_high": 110,
+                "is_stale": False,
+            },
+            {
+                "symbol": "BBB",
+                "price": 50,
+                "previous_close": 49,
+                "dividend_yield": 0.02,
+                "fifty_two_week_low": 30,
+                "fifty_two_week_high": 55,
+                "is_stale": False,
+            },
+        ]
+    }
+    payload = dashboard.build_performance_analytics_dashboard(
+        daily_command_center={"portfolio_value": 500, "market_regime": "UNKNOWN"},
+        weekly_review={"status": "OK"},
+        monthly_review={"starting_portfolio_value": 500},
+        strategy_analytics={"status": "OK"},
+        portfolio_lifecycle={"portfolio_value": 500},
+        market_data_snapshot=snapshot,
+    )
+    assert payload["dashboard_status"] == "COMPLETE"
+    assert payload["expected_annual_income"] == 15.0
+    assert payload["expected_monthly_income"] == 1.25
+    assert payload["market_regime"] in {"BULL", "STRONG_BULL"}
+    assert payload["capital_appreciation"] > 0
+
+
 def test_invalid_safety_flags_rejected():
     payload = dashboard.build_performance_analytics_dashboard(
         daily_command_center={"portfolio_value": 500}
@@ -89,6 +127,7 @@ def test_json_markdown_html_outputs(tmp_path: Path):
         "monthly_portfolio_review.json": {"starting_portfolio_value": 500},
         "strategy_performance_analytics.json": {},
         "portfolio_lifecycle_report.json": {},
+        "market_data_snapshot.json": {"records": []},
     }
     for name, payload in inputs.items():
         (tmp_path / name).write_text(json.dumps(payload), encoding="utf-8")
