@@ -1,9 +1,8 @@
 """Single-command daily execution cycle for the paper-only Dividend Bot.
 
-The runner executes each approved engine in order, writes every stage JSON
-artifact, runs the Master Portfolio Orchestrator, and writes consolidated cycle
-reports. Stage failures are recorded without invoking brokers, external
-processes, or live order placement.
+The runner executes each approved engine in order, adapts upstream reports into
+accepted downstream builder arguments, writes every stage JSON artifact, runs
+the Master Portfolio Orchestrator, and writes consolidated cycle reports.
 """
 from __future__ import annotations
 
@@ -20,9 +19,10 @@ from master_portfolio_orchestrator import (
     build_master_portfolio_orchestration_report,
     validate_master_portfolio_orchestration_report,
 )
+from stage_input_adapters import prepare_stage_kwargs
 
 MODULE_NAME = "run_daily_dividend_cycle"
-MODULE_VERSION = "1.1.0"
+MODULE_VERSION = "1.2.0"
 SCHEMA_VERSION = "1.0"
 GENERATED_BY = "Agentic-Robin-Dividend.bot"
 PAPER_TRADE_MODE = True
@@ -41,9 +41,6 @@ DEFAULT_OUTPUT_FILES = {
     "cycle_markdown": "daily_dividend_cycle_report.md",
 }
 
-# Each engine exposes a deterministic, paper-only build function with safe
-# defaults. The runner writes the returned payload to the exact filename the
-# Master Portfolio Orchestrator expects.
 STAGE_EXECUTION_PLAN = {
     "market_regime": ("market_regime_engine", "build_market_regime_report"),
     "market_intelligence": ("market_intelligence_engine", "build_market_intelligence_report"),
@@ -118,8 +115,13 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.write_text(json.dumps(dict(payload), indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def execute_stage(stage_name: str, root_path: str = ".", input_files: Optional[Mapping[str, str]] = None) -> Dict[str, Any]:
-    """Execute one approved stage and write its JSON artifact."""
+def execute_stage(
+    stage_name: str,
+    root_path: str = ".",
+    input_files: Optional[Mapping[str, str]] = None,
+    stage_payloads: Optional[Mapping[str, Mapping[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Execute one approved stage using adapted upstream inputs."""
     if stage_name not in STAGE_EXECUTION_PLAN:
         raise ValueError(f"unsupported stage: {stage_name}")
     module_name, builder_name = STAGE_EXECUTION_PLAN[stage_name]
@@ -127,9 +129,12 @@ def execute_stage(stage_name: str, root_path: str = ".", input_files: Optional[M
     builder = getattr(module, builder_name, None)
     if not callable(builder):
         raise AttributeError(f"{module_name}.{builder_name} is not callable")
-    payload = builder()
+
+    kwargs = prepare_stage_kwargs(stage_name, stage_payloads or {}, builder, root_path)
+    payload = builder(**kwargs)
     if not isinstance(payload, Mapping):
         raise ValueError(f"{stage_name} builder must return a mapping")
+
     files = dict(DEFAULT_INPUT_FILES)
     if input_files:
         files.update(input_files)
@@ -137,14 +142,22 @@ def execute_stage(stage_name: str, root_path: str = ".", input_files: Optional[M
     return dict(payload)
 
 
-def execute_all_stages(root_path: str = ".", input_files: Optional[Mapping[str, str]] = None) -> tuple[Dict[str, Dict[str, Any]], list[str], list[str]]:
-    """Execute all stages in approved order without aborting on one failure."""
+def execute_all_stages(
+    root_path: str = ".",
+    input_files: Optional[Mapping[str, str]] = None,
+) -> tuple[Dict[str, Dict[str, Any]], list[str], list[str]]:
+    """Execute all stages in approved order and preserve upstream payloads."""
     payloads: Dict[str, Dict[str, Any]] = {}
     warnings: list[str] = []
     errors: list[str] = []
     for stage_name in STAGE_ORDER:
         try:
-            payloads[stage_name] = execute_stage(stage_name, root_path, input_files)
+            payloads[stage_name] = execute_stage(
+                stage_name,
+                root_path=root_path,
+                input_files=input_files,
+                stage_payloads=payloads,
+            )
         except (ImportError, AttributeError, OSError, TypeError, ValueError) as exc:
             errors.append(f"Stage {stage_name} failed: {exc}")
     if errors:
