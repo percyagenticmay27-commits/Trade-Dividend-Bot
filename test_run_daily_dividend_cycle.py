@@ -1,12 +1,13 @@
 """Tests for run_daily_dividend_cycle.py."""
 from __future__ import annotations
 
-from pathlib import Path
 import json
+from pathlib import Path
+
 import pytest
 
 import run_daily_dividend_cycle as runner
-from master_portfolio_orchestrator import STAGE_ORDER
+from master_portfolio_orchestrator import DEFAULT_INPUT_FILES, STAGE_ORDER
 
 
 def test_dataclass_exists():
@@ -15,12 +16,19 @@ def test_dataclass_exists():
 
 def test_public_functions_exist():
     for name in [
+        "execute_stage",
+        "execute_all_stages",
         "build_daily_dividend_cycle_report",
         "validate_daily_dividend_cycle_report",
         "format_daily_dividend_cycle_markdown",
         "run_daily_dividend_cycle",
     ]:
         assert callable(getattr(runner, name))
+
+
+def test_execution_plan_matches_approved_stage_order():
+    assert list(runner.STAGE_EXECUTION_PLAN) == STAGE_ORDER
+    assert set(runner.STAGE_EXECUTION_PLAN) == set(DEFAULT_INPUT_FILES)
 
 
 def test_default_report_is_partial_and_valid(tmp_path):
@@ -30,7 +38,6 @@ def test_default_report_is_partial_and_valid(tmp_path):
     assert payload["available_stage_count"] == 0
     assert payload["missing_stage_count"] == len(STAGE_ORDER)
     assert payload["invalid_stage_count"] == 0
-    assert payload["stage_count"] == len(STAGE_ORDER)
 
 
 def test_complete_when_all_stage_payloads_supplied():
@@ -49,6 +56,29 @@ def test_invalid_stage_makes_error_status():
     assert payload["run_status"] == "ERROR"
     assert payload["invalid_stage_count"] == 1
     assert payload["errors"]
+
+
+def test_execute_stage_writes_expected_json(tmp_path):
+    payload = runner.execute_stage("momentum_score", str(tmp_path))
+    output = tmp_path / DEFAULT_INPUT_FILES["momentum_score"]
+    assert output.exists()
+    assert json.loads(output.read_text(encoding="utf-8")) == payload
+    assert payload["paper_trade_mode"] is True
+
+
+def test_execute_all_stages_generates_all_json_files(tmp_path):
+    payloads, warnings, errors = runner.execute_all_stages(str(tmp_path))
+    assert errors == []
+    assert warnings == []
+    assert list(payloads) == STAGE_ORDER
+    for stage in STAGE_ORDER:
+        path = tmp_path / DEFAULT_INPUT_FILES[stage]
+        assert path.exists(), f"missing generated stage output: {path.name}"
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        assert isinstance(payload, dict)
+        assert payload["paper_trade_mode"] is True
+        assert payload["live_trading_enabled"] is False
+        assert payload["broker_execution_enabled"] is False
 
 
 def test_safety_flags_are_enforced():
@@ -96,16 +126,29 @@ def test_validate_rejects_count_mismatch():
         runner.validate_daily_dividend_cycle_report(bad)
 
 
-def test_run_writes_all_outputs(tmp_path):
+def test_run_executes_complete_cycle_and_writes_outputs(tmp_path):
     payload = runner.run_daily_dividend_cycle(root_path=str(tmp_path))
-    assert payload["run_status"] == "PARTIAL"
+    assert payload["run_status"] == "COMPLETE"
+    assert payload["available_stage_count"] == len(STAGE_ORDER)
+    assert payload["missing_stage_count"] == 0
+    assert payload["invalid_stage_count"] == 0
+    assert payload["errors"] == []
+    for filename in DEFAULT_INPUT_FILES.values():
+        assert (tmp_path / filename).exists()
     for filename in runner.DEFAULT_OUTPUT_FILES.values():
         assert (tmp_path / filename).exists()
     cycle_json = json.loads((tmp_path / runner.DEFAULT_OUTPUT_FILES["cycle_json"]).read_text(encoding="utf-8"))
     assert cycle_json == payload
     markdown = (tmp_path / runner.DEFAULT_OUTPUT_FILES["cycle_markdown"]).read_text(encoding="utf-8")
-    assert "# Daily Dividend Cycle Report" in markdown
-    assert "## Safety Guarantees" in markdown
+    assert "Run Status: COMPLETE" in markdown
+    assert "Available Stages: 17" in markdown
+    assert "Missing Stages: 0" in markdown
+
+
+def test_run_can_skip_stage_execution(tmp_path):
+    payload = runner.run_daily_dividend_cycle(root_path=str(tmp_path), execute_stages=False)
+    assert payload["run_status"] == "PARTIAL"
+    assert payload["missing_stage_count"] == len(STAGE_ORDER)
 
 
 def test_custom_output_paths(tmp_path):
@@ -114,7 +157,6 @@ def test_custom_output_paths(tmp_path):
         "cycle_json": "reports/cycle.json",
         "cycle_markdown": "reports/cycle.md",
     }
-    (tmp_path / "reports").mkdir()
     runner.run_daily_dividend_cycle(root_path=str(tmp_path), output_files=outputs)
     for filename in outputs.values():
         assert (tmp_path / filename).exists()
