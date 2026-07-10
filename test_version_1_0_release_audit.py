@@ -22,13 +22,10 @@ def _complete_project(root: Path) -> None:
 
 def test_public_functions_exist():
     for name in [
-        "discover_python_files",
-        "compile_source_files",
-        "scan_safety",
-        "build_version_1_0_release_audit",
-        "validate_version_1_0_release_audit",
-        "format_version_1_0_release_audit_markdown",
-        "write_version_1_0_release_audit",
+        "discover_python_files", "compile_source_files", "scan_safety",
+        "discover_tested_module_stems", "module_has_detected_test",
+        "build_version_1_0_release_audit", "validate_version_1_0_release_audit",
+        "format_version_1_0_release_audit_markdown", "write_version_1_0_release_audit",
     ]:
         assert callable(getattr(audit, name))
 
@@ -62,12 +59,7 @@ def test_compile_error_fails(tmp_path):
 
 def test_ast_safety_detects_forbidden_import_and_call(tmp_path):
     _complete_project(tmp_path)
-    _write(
-        tmp_path / "unsafe.py",
-        "import subprocess\n"
-        "def run():\n"
-        "    subprocess.run(['echo', 'x'])\n",
-    )
+    _write(tmp_path / "unsafe.py", "import subprocess\ndef run():\n    subprocess.run(['echo', 'x'])\n")
     payload = audit.build_version_1_0_release_audit(str(tmp_path))
     names = {item["name"] for item in payload["safety_findings"]}
     assert "subprocess" in names
@@ -75,7 +67,7 @@ def test_ast_safety_detects_forbidden_import_and_call(tmp_path):
     assert payload["audit_status"] == "FAIL"
 
 
-def test_missing_matching_test_is_warning(tmp_path):
+def test_missing_detected_test_is_warning(tmp_path):
     _complete_project(tmp_path)
     _write(tmp_path / "extra_module.py")
     payload = audit.build_version_1_0_release_audit(str(tmp_path))
@@ -83,14 +75,21 @@ def test_missing_matching_test_is_warning(tmp_path):
     assert "extra_module.py" in payload["production_modules_without_matching_tests"]
 
 
+def test_nonmatching_test_filename_can_reference_module(tmp_path):
+    _complete_project(tmp_path)
+    _write(tmp_path / "extra_module.py")
+    _write(tmp_path / "test_grouped_features.py", "import extra_module\ndef test_grouped():\n    assert extra_module.VALUE == 1\n")
+    payload = audit.build_version_1_0_release_audit(str(tmp_path))
+    assert payload["audit_status"] == "PASS"
+    assert "extra_module.py" not in payload["production_modules_without_matching_tests"]
+
+
 def test_validate_rejects_wrong_safety_flags(tmp_path):
     _complete_project(tmp_path)
     payload = audit.build_version_1_0_release_audit(str(tmp_path))
     for field, value in [
-        ("paper_trade_mode", False),
-        ("reporting_only", False),
-        ("live_trading_enabled", True),
-        ("broker_execution_enabled", True),
+        ("paper_trade_mode", False), ("reporting_only", False),
+        ("live_trading_enabled", True), ("broker_execution_enabled", True),
     ]:
         bad = dict(payload)
         bad[field] = value
@@ -109,3 +108,4 @@ def test_write_json_and_markdown(tmp_path):
     markdown = markdown_path.read_text(encoding="utf-8")
     assert "# Dividend Bot Version 1.0 Release Audit" in markdown
     assert "Required Stages Present: 17/17" in markdown
+    assert "Detected Tested Modules" in markdown
