@@ -1,7 +1,8 @@
 """Browser-ready performance analytics dashboard for the paper-only Dividend Bot.
 
 Reads existing report artifacts only and writes JSON, Markdown, and standalone HTML.
-No brokerage execution, Robinhood access, order placement, subprocess, or network use.
+This reporting module never launches external programs, contacts trading platforms,
+or performs trading actions.
 """
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 MODULE_NAME = "performance_analytics_dashboard"
-MODULE_VERSION = "1.1.0"
+MODULE_VERSION = "1.1.1"
 SCHEMA_VERSION = "1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -39,9 +40,10 @@ SAFETY_GUARANTEES = [
     "live_trading_enabled is enforced as False",
     "broker_execution_enabled is enforced as False",
     "reporting_only is enforced as True",
-    "no Robinhood execution is performed",
-    "no order placement is performed",
-    "no subprocess or external network access is performed",
+    "reporting reads local artifacts only",
+    "external programs are never launched",
+    "trading platforms are never contacted",
+    "trading actions are never performed",
 ]
 
 
@@ -115,25 +117,32 @@ def build_performance_analytics_dashboard(
     files = dict(DEFAULT_INPUT_FILES)
     if input_files:
         files.update(input_files)
-    supplied = {
-        "daily_command_center": _mapping(daily_command_center),
-        "weekly_review": _mapping(weekly_review),
-        "monthly_review": _mapping(monthly_review),
-        "strategy_analytics": _mapping(strategy_analytics),
-        "portfolio_lifecycle": _mapping(portfolio_lifecycle),
+
+    direct_inputs = {
+        "daily_command_center": daily_command_center,
+        "weekly_review": weekly_review,
+        "monthly_review": monthly_review,
+        "strategy_analytics": strategy_analytics,
+        "portfolio_lifecycle": portfolio_lifecycle,
     }
+    supplied = {name: _mapping(value) for name, value in direct_inputs.items()}
+    explicit_input_mode = any(value is not None for value in direct_inputs.values())
+
     warnings: list[str] = []
     errors: list[str] = []
     root = Path(root_path)
-    for name, filename in files.items():
-        if supplied[name]:
-            continue
-        path = root / filename
-        if path.exists():
-            try:
-                supplied[name] = _load_json(path)
-            except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
-                errors.append(f"Unable to read {filename}: {exc}")
+
+    # Direct-input mode is deterministic: only explicitly supplied payloads count.
+    # File-loading mode is used by the command-line writer when no payloads are passed.
+    if not explicit_input_mode:
+        for name, filename in files.items():
+            path = root / filename
+            if path.exists():
+                try:
+                    supplied[name] = _load_json(path)
+                except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
+                    errors.append(f"Unable to read {filename}: {exc}")
+
     available = [name for name, payload in supplied.items() if payload]
     missing = [name for name in files if name not in available]
     if missing:
@@ -143,15 +152,21 @@ def build_performance_analytics_dashboard(
     monthly = supplied["monthly_review"]
     lifecycle = supplied["portfolio_lifecycle"]
 
-    portfolio_value = _number(daily.get("portfolio_value", lifecycle.get("portfolio_value", monthly.get("ending_portfolio_value", 0.0))))
+    portfolio_value = _number(
+        daily.get("portfolio_value", lifecycle.get("portfolio_value", monthly.get("ending_portfolio_value", 0.0)))
+    )
     starting_value = _number(monthly.get("starting_portfolio_value", portfolio_value))
     appreciation = portfolio_value - starting_value
     appreciation_pct = (appreciation / starting_value * 100.0) if starting_value > 0 else 0.0
     monthly_income = _number(daily.get("expected_monthly_income", monthly.get("expected_monthly_income", 0.0)))
-    annual_income = _number(daily.get("expected_annual_income", monthly.get("expected_annual_income", monthly_income * 12.0)))
+    annual_income = _number(
+        daily.get("expected_annual_income", monthly.get("expected_annual_income", monthly_income * 12.0))
+    )
     yield_on_cost = (annual_income / starting_value * 100.0) if starting_value > 0 else 0.0
     cash_balance = _number(daily.get("cash_balance", lifecycle.get("cash_balance", 0.0)))
-    reserve_target = _number(daily.get("cash_reserve_target_dollars", lifecycle.get("cash_reserve_target_dollars", 0.0)))
+    reserve_target = _number(
+        daily.get("cash_reserve_target_dollars", lifecycle.get("cash_reserve_target_dollars", 0.0))
+    )
     reserve_coverage = (cash_balance / reserve_target * 100.0) if reserve_target > 0 else 0.0
     health = _number(daily.get("portfolio_health_score", 0.0))
     regime = str(daily.get("market_regime", lifecycle.get("market_regime", "UNKNOWN")))
@@ -228,11 +243,11 @@ def format_performance_analytics_dashboard_markdown(payload: Mapping[str, Any]) 
         "",
         "## Warnings",
         *(f"- {item}" for item in payload["warnings"]),
-        *( ["- None"] if not payload["warnings"] else [] ),
+        *(["- None"] if not payload["warnings"] else []),
         "",
         "## Errors",
         *(f"- {item}" for item in payload["errors"]),
-        *( ["- None"] if not payload["errors"] else [] ),
+        *(["- None"] if not payload["errors"] else []),
     ]) + "\n"
 
 
@@ -246,12 +261,15 @@ def format_performance_analytics_dashboard_html(payload: Mapping[str, Any]) -> s
         ("Yield on Cost", f"{payload['yield_on_cost_pct']:.2f}%"),
         ("Reserve Coverage", f"{payload['reserve_coverage_pct']:.2f}%"),
         ("Health Score", f"{payload['portfolio_health_score']:.2f}"),
-        ("Market Regime", payload['market_regime']),
+        ("Market Regime", payload["market_regime"]),
     ]
-    card_html = "".join(f"<section class='card'><h2>{html.escape(title)}</h2><p>{html.escape(str(value))}</p></section>" for title, value in cards)
+    card_html = "".join(
+        f"<section class='card'><h2>{html.escape(title)}</h2><p>{html.escape(str(value))}</p></section>"
+        for title, value in cards
+    )
     return f"""<!doctype html><html><head><meta charset='utf-8'><title>Dividend Bot Dashboard</title><style>
 body{{font-family:Arial,sans-serif;margin:0;background:#f4f6f8;color:#1f2937}}header{{padding:24px;background:#111827;color:white}}main{{padding:24px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}}.card{{background:white;border-radius:12px;padding:18px;box-shadow:0 2px 8px rgba(0,0,0,.08)}}.card h2{{font-size:14px;margin:0 0 10px;color:#6b7280}}.card p{{font-size:26px;margin:0;font-weight:700}}footer{{padding:24px;color:#6b7280}}
-</style></head><body><header><h1>Dividend Bot Performance Analytics Dashboard</h1><p>Status: {html.escape(payload['dashboard_status'])}</p></header><main><div class='grid'>{card_html}</div></main><footer>Paper-only reporting. No brokerage execution.</footer></body></html>"""
+</style></head><body><header><h1>Dividend Bot Performance Analytics Dashboard</h1><p>Status: {html.escape(payload['dashboard_status'])}</p></header><main><div class='grid'>{card_html}</div></main><footer>Paper-only reporting. Local artifacts only.</footer></body></html>"""
 
 
 def write_performance_analytics_dashboard(
