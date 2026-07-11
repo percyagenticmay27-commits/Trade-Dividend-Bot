@@ -10,12 +10,12 @@ import math
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, pstdev
-from typing import Any, Iterable, Mapping, Optional
+from typing import Any, Mapping, Optional
 
 from capital_efficiency_score_engine import build_capital_efficiency_score_report
 
 MODULE_NAME = "single_instrument_total_wealth_evaluator"
-MODULE_VERSION = "2.0.0"
+MODULE_VERSION = "2.0.1"
 SCHEMA_VERSION = "1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -187,6 +187,17 @@ def _confidence(record: Mapping[str, Any], closes: list[float]) -> tuple[float, 
     return _clamp(score), missing
 
 
+def _strength_label(score: Any) -> str:
+    numeric = _number(score)
+    if numeric >= 85.0:
+        return "VERY_STRONG"
+    if numeric >= 70.0:
+        return "STRONG"
+    if numeric >= 55.0:
+        return "MODERATE"
+    return "WEAK"
+
+
 def evaluate_single_instrument(
     record: Mapping[str, Any],
     market_regime: str = "UNKNOWN",
@@ -200,7 +211,7 @@ def evaluate_single_instrument(
     drawdown_pct = _max_drawdown_pct(closes)
     confidence, missing = _confidence(record, closes)
     income_score = _score_income(record)
-    candidate = {
+    return {
         "candidate_id": symbol,
         "candidate_type": "SINGLE_INSTRUMENT",
         "symbols": [symbol],
@@ -230,7 +241,6 @@ def evaluate_single_instrument(
         },
         "eligible": _number(record.get("price")) > 0,
     }
-    return candidate
 
 
 def build_single_instrument_total_wealth_report(
@@ -247,7 +257,23 @@ def build_single_instrument_total_wealth_report(
             candidates.append(evaluate_single_instrument(record, market_regime=market_regime))
         except ValueError as exc:
             warnings.append(str(exc))
+
     score_report = build_capital_efficiency_score_report(candidates)
+    results = score_report.get("results", [])
+    if isinstance(results, list):
+        for result in results:
+            if isinstance(result, dict):
+                result["strength_label"] = _strength_label(result.get("capital_efficiency_score"))
+
+    top_candidate_id = score_report.get("top_candidate_id")
+    if not top_candidate_id and results:
+        first = results[0]
+        if isinstance(first, Mapping):
+            top_candidate_id = first.get("candidate_id")
+            warnings.append(
+                "No candidate passed all qualification gates; top_candidate_id reflects the highest-ranked watchlist candidate."
+            )
+
     return {
         "module_name": MODULE_NAME,
         "module_version": MODULE_VERSION,
@@ -259,7 +285,7 @@ def build_single_instrument_total_wealth_report(
         "reporting_only": True,
         "market_regime": str(market_regime or "UNKNOWN").upper(),
         "instrument_count": len(candidates),
-        "top_candidate_id": score_report.get("top_candidate_id"),
+        "top_candidate_id": top_candidate_id,
         "candidates": candidates,
         "capital_efficiency_report": score_report,
         "warnings": warnings,
@@ -283,7 +309,8 @@ def format_single_instrument_total_wealth_markdown(payload: Mapping[str, Any]) -
     for result in results:
         lines.append(
             f"- #{result.get('rank', 0)} {result.get('candidate_id')}: "
-            f"CES {result.get('capital_efficiency_score', 0):.2f} — {result.get('recommendation', 'WATCHLIST')}"
+            f"CES {result.get('capital_efficiency_score', 0):.2f} — "
+            f"{result.get('strength_label', 'WEAK')} — {result.get('recommendation', 'WATCHLIST')}"
         )
     if payload.get("warnings"):
         lines.extend(["", "## Warnings", *(f"- {item}" for item in payload["warnings"])])
@@ -312,4 +339,4 @@ def write_single_instrument_total_wealth(
 
 if __name__ == "__main__":
     result = write_single_instrument_total_wealth()
-    print(f"Single-Instrument Total Wealth Evaluation: {result['instrument_count']} instruments")
+    print(f"Single-Instrument Total Wealth Evaluation: {result.get('top_candidate_id') or 'None'}")
