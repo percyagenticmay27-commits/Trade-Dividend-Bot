@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 MODULE_NAME = "decision_stability_engine"
-MODULE_VERSION = "2.1.0"
-SCHEMA_VERSION = "1.1"
+MODULE_VERSION = "2.2.0"
+SCHEMA_VERSION = "1.2"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -24,7 +24,6 @@ DEFAULT_OUTPUT_FILES = {
     "json": "decision_stability.json",
     "markdown": "decision_stability.md",
 }
-
 DEFAULT_REPLACEMENT_THRESHOLD = 5.0
 DEFAULT_MIN_PERSISTENCE_DAYS = 3
 
@@ -306,14 +305,14 @@ def _build_explanation(**values: Any) -> str:
     if values["sale_signal"]:
         return (
             f"Recommendation: Prepare a replacement for {current_id}. "
-            "A confirmed sale signal is active, but the replacement must still pass the entry, risk, evidence-confidence, and Investment Policy requirements."
+            "A confirmed sale signal is active, but the replacement must still pass the entry, risk, Evidence Confidence, and Investment Policy requirements."
         )
     if gate == "CHANGE_ALLOWED":
         return (
             f"Recommendation: Replace {current_id} with {challenger_id}. "
             f"The challenger has a {improvement:.2f}-point higher Capital Efficiency Score, exceeding the required {threshold:.2f}-point improvement. "
             f"The advantage has persisted, Evidence Confidence is {confidence_label}, and the Decision Stability Score is {stability_score:.2f} out of 100 ({stability_label}). "
-            "Together, these conditions indicate that the expected Total Wealth improvement is meaningful enough to justify the portfolio turnover."
+            "Together, these conditions indicate that the expected Total Wealth improvement is meaningful enough to justify the Portfolio Turnover."
         )
     if gate == "WAIT_FOR_PERSISTENCE":
         return (
@@ -324,10 +323,10 @@ def _build_explanation(**values: Any) -> str:
     if challenger_id and improvement > 0:
         return (
             f"Recommendation: Continue holding {current_id}. "
-            f"The strongest alternative, {challenger_id}, currently has a slightly higher Capital Efficiency Score ({improvement:.2f} points higher). "
-            "However, this improvement is below the required replacement threshold and is not large enough to justify replacing the current investment after considering transaction costs, market stability, Evidence Confidence, and Portfolio Turnover. "
-            f"The current recommendation has a Decision Stability Score of {stability_score:.2f} out of 100 ({stability_label}). "
-            "The alternative will continue to be monitored automatically and will be recommended only if it demonstrates a sustained and meaningful improvement in expected Total Wealth (growth + income)."
+            f"Although {challenger_id} currently has a {improvement:.2f}-point higher Capital Efficiency Score, the improvement is not large enough to justify replacing the current investment. "
+            f"The current position has a Decision Stability Score of {stability_score:.2f} out of 100 ({stability_label}), {confidence_label} Evidence Confidence, and lower expected disruption from Portfolio Turnover. "
+            "Changing today would increase Portfolio Turnover without providing a meaningful improvement in the portfolio's objective of maximizing long-term Total Wealth (growth + income). "
+            "The alternative will continue to be monitored automatically and will be recommended only if it demonstrates a sustained and meaningful improvement."
         )
     return (
         f"Recommendation: Continue holding {current_id}. "
@@ -346,8 +345,8 @@ def format_decision_stability_markdown(report: Mapping[str, Any]) -> str:
     current = str(report.get("current_candidate_id", "UNKNOWN"))
     challenger = str(report.get("challenger_candidate_id") or "No qualified challenger")
     current_score = _number(report.get("current_capital_efficiency_score"))
-    challenger_score_value = report.get("challenger_capital_efficiency_score")
-    challenger_score = "Not available" if challenger_score_value is None else f"{_number(challenger_score_value):.2f}"
+    challenger_value = report.get("challenger_capital_efficiency_score")
+    challenger_score = "Not available" if challenger_value is None else f"{_number(challenger_value):.2f}"
     improvement_value = report.get("challenger_improvement_points")
     improvement = "Not available" if improvement_value is None else f"{_number(improvement_value):+.2f}"
     stability_score = _number(report.get("decision_stability_score"))
@@ -356,47 +355,68 @@ def format_decision_stability_markdown(report: Mapping[str, Any]) -> str:
     confidence_label = str(report.get("evidence_confidence_label", "Unknown"))
     action = str(report.get("recommended_capital_action", "KEEP")).replace("_", " ").title()
     regime = str(report.get("market_regime", "UNKNOWN")).replace("_", " ").title()
+    change_allowed = "Yes" if report.get("change_allowed") else "No"
 
     return "\n".join([
         "# AI CIO Decision Stability Review",
         "",
-        "## Executive Recommendation",
+        "## AI CIO Verdict",
         "",
-        f"**Capital Action:** {action}",
+        f"**Current Position:** {current}",
+        "",
+        f"**Decision:** {action}",
+        "",
+        f"**Confidence:** {confidence_label} ({confidence_score:.2f} / 100)",
+        "",
+        "**Expected Review:** Next scheduled portfolio review, or sooner if a protection rule is triggered.",
+        "",
+        "## Recommendation",
         "",
         str(report.get("natural_explanation", "No explanation available.")),
         "",
         "## Compare Candidates",
         "",
-        "| Metric | Current | Challenger |",
+        "| Fields | Current | Challenger |",
         "|---|---:|---:|",
         f"| Investment | {current} | {challenger} |",
         f"| Capital Efficiency Score | {current_score:.2f} | {challenger_score} |",
         f"| Capital Efficiency Score Difference | — | {improvement} |",
-        f"| Decision Stability Score | {stability_score:.2f} / 100 | Not yet established |",
+        f"| Decision Stability Score | {stability_score:.2f} / 100 ({stability_label}) | Not yet established |",
         f"| Evidence Confidence | {confidence_label} ({confidence_score:.2f} / 100) | Requires continued confirmation |",
         f"| Market Regime | {regime} | {regime} |",
         f"| Portfolio Action | {action} | Monitor |",
         "",
         "## Analysis Confidence",
         "",
-        f"The available evidence has an **Evidence Confidence** rating of **{confidence_label} ({confidence_score:.2f} / 100)**. "
-        "This measures the quality, completeness, and freshness of the evidence supporting today's recommendation.",
+        f"Today's recommendation is supported by **{confidence_label} Evidence Confidence ({confidence_score:.2f} / 100)**. "
+        "This reflects the quality, completeness, and freshness of the available evidence. "
+        "When Analysis Confidence is not strong enough, the AI CIO delays non-essential changes rather than forcing a portfolio decision.",
         "",
-        "## Decision Details",
+        "## Decision Summary",
         "",
-        f"- **Current Recommendation:** {action}",
-        f"- **Decision Stability Score:** {stability_score:.2f} / 100 ({stability_label})",
-        f"- **Current Capital Efficiency Score:** {current_score:.2f}",
-        f"- **Best Alternative:** {challenger}",
-        f"- **Best Alternative Capital Efficiency Score:** {challenger_score}",
-        f"- **Capital Efficiency Score Difference:** {improvement}",
-        f"- **Market Regime:** {regime}",
-        f"- **Change Allowed:** {'Yes' if report.get('change_allowed') else 'No'}",
+        f"| Field | Result |",
+        "|---|---|",
+        f"| Current Investment | {current} |",
+        f"| Best Challenger | {challenger} |",
+        f"| Current Capital Efficiency Score | {current_score:.2f} |",
+        f"| Best Alternative Capital Efficiency Score | {challenger_score} |",
+        f"| Capital Efficiency Score Difference | {improvement} |",
+        f"| Decision Stability Score | {stability_score:.2f} / 100 ({stability_label}) |",
+        f"| Evidence Confidence | {confidence_label} ({confidence_score:.2f} / 100) |",
+        f"| Market Regime | {regime} |",
+        f"| Change Allowed | {change_allowed} |",
         "",
-        "## What the Decision Stability Score Means",
+        "## Understanding Today's Decision",
         "",
-        "The Decision Stability Score measures how likely the current recommendation is to remain valid. It combines decision persistence, Capital Efficiency Score separation, market-regime stability, sector persistence, Evidence Confidence, event risk, and proximity to mandatory sale thresholds.",
+        "### Capital Efficiency Score",
+        "",
+        "Measures how effectively an investment is expected to convert capital into long-term Total Wealth by combining growth potential, income generation, quality, risk, and market conditions.",
+        "",
+        "### Decision Stability Score",
+        "",
+        "Measures whether changing investments today is likely to improve long-term results after considering decision persistence, market stability, Evidence Confidence, event risk, sale thresholds, and Portfolio Turnover.",
+        "",
+        "Together, these scores help the AI CIO capture meaningful improvements while avoiding unnecessary movement in and out of investments.",
         "",
         "## Paper-Only Safety",
         "",
@@ -422,10 +442,21 @@ def write_decision_stability(
 
 if __name__ == "__main__":
     sample = {
-        "current_candidate_id": "SGOV",
-        "current_capital_efficiency_score": 50.0,
+        "current_candidate_id": "AMDW + PLTU",
+        "challenger_candidate_id": "AMDW + GGLL",
+        "current_capital_efficiency_score": 84.3,
+        "challenger_capital_efficiency_score": 86.3,
         "current_action": "KEEP",
-        "decision_history": [],
+        "decision_history": [
+            {"capital_action": "KEEP", "current_capital_efficiency_score": 84.1, "challenger_capital_efficiency_score": 85.6},
+            {"capital_action": "KEEP", "current_capital_efficiency_score": 84.2, "challenger_capital_efficiency_score": 86.0},
+            {"capital_action": "KEEP", "current_capital_efficiency_score": 84.3, "challenger_capital_efficiency_score": 86.3},
+        ],
+        "evidence_confidence": 94.0,
+        "market_regime": "BULL",
+        "market_regime_history": ["BULL", "BULL", "BULL"],
+        "sector_persistence_days": 4,
+        "distance_to_sale_threshold": 22.0,
     }
     result = write_decision_stability(sample)
     print(f"Decision Stability Score: {result['decision_stability_score']:.2f}")
