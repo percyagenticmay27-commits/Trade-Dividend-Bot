@@ -13,8 +13,8 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 MODULE_NAME = "decision_stability_engine"
-MODULE_VERSION = "2.0.0"
-SCHEMA_VERSION = "1.0"
+MODULE_VERSION = "2.1.0"
+SCHEMA_VERSION = "1.1"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -59,6 +59,16 @@ def _label(score: float) -> str:
     return "CRITICAL"
 
 
+def _confidence_label(score: float) -> str:
+    if score >= 90:
+        return "Very High"
+    if score >= 75:
+        return "High"
+    if score >= 60:
+        return "Moderate"
+    return "Low"
+
+
 def _history_values(history: Sequence[Mapping[str, Any]], field: str) -> list[float]:
     values: list[float] = []
     for item in history:
@@ -98,8 +108,7 @@ def _trend_score(history: Sequence[Mapping[str, Any]]) -> float:
     latest_gap = challenger_values[-1] - current_values[-1]
     if latest_gap <= prior_gap:
         return 80.0
-    widening = latest_gap - prior_gap
-    return _clamp(70.0 - widening * 8.0)
+    return _clamp(70.0 - (latest_gap - prior_gap) * 8.0)
 
 
 def _regime_score(regime_history: Sequence[str], current_regime: str) -> tuple[float, int]:
@@ -159,6 +168,7 @@ def calculate_decision_stability(
     current_id = str(current_candidate_id or "").strip().upper()
     if not current_id:
         raise ValueError("current_candidate_id is required")
+
     challenger_id = str(challenger_candidate_id or "").strip().upper()
     history = list(decision_history or [])
     regime_history = list(market_regime_history or [])
@@ -199,7 +209,11 @@ def calculate_decision_stability(
 
     hard_exit = bool(earnings_lock or hard_risk_breach or sale_signal)
     challenger_exceeds_threshold = bool(challenger_id and improvement >= threshold)
-    persistence_met = max(consecutive_action_days, int(sector_persistence_days), regime_persistence_days) >= int(minimum_persistence_days)
+    persistence_met = max(
+        consecutive_action_days,
+        int(sector_persistence_days),
+        regime_persistence_days,
+    ) >= int(minimum_persistence_days)
     confidence_met = confidence_component >= 70.0
 
     if hard_exit:
@@ -222,14 +236,11 @@ def calculate_decision_stability(
     explanation = _build_explanation(
         current_id=current_id,
         challenger_id=challenger_id,
-        current_score=current_score,
-        challenger_score=challenger_score,
         improvement=improvement,
         threshold=threshold,
         stability_score=score,
         stability_label=_label(score),
         gate=gate,
-        persistence_met=persistence_met,
         confidence_component=confidence_component,
         earnings_lock=earnings_lock,
         hard_risk_breach=hard_risk_breach,
@@ -253,6 +264,9 @@ def calculate_decision_stability(
         "replacement_threshold_points": threshold,
         "decision_stability_score": score,
         "decision_stability_label": _label(score),
+        "evidence_confidence_score": confidence_component,
+        "evidence_confidence_label": _confidence_label(confidence_component),
+        "market_regime": str(market_regime or "UNKNOWN").upper(),
         "components": components,
         "consecutive_action_days": consecutive_action_days,
         "market_regime_persistence_days": regime_persistence_days,
@@ -275,40 +289,50 @@ def _build_explanation(**values: Any) -> str:
     threshold = values["threshold"]
     stability_score = values["stability_score"]
     stability_label = str(values["stability_label"]).replace("_", " ").title()
+    confidence_label = _confidence_label(values["confidence_component"])
     gate = values["gate"]
+
     if values["earnings_lock"]:
         return (
-            f"{current_id} is under an earnings lock, so the affected paper allocation should be parked in SGOV. "
-            "This protection rule overrides the normal anti-churn threshold. The instrument may compete for re-entry after the event ends."
+            f"Recommendation: Park the affected {current_id} paper allocation in SGOV. "
+            f"{current_id} is under an earnings lock, so the protection rule overrides the normal anti-churn threshold. "
+            "The instrument may compete for re-entry after the earnings event ends, but it will not be restored automatically."
         )
     if values["hard_risk_breach"]:
         return (
-            f"{current_id} has breached a mandatory risk limit. The affected paper allocation should move to SGOV while the AI CIO evaluates qualified replacements."
+            f"Recommendation: Move the affected {current_id} paper allocation to SGOV. "
+            "A mandatory risk limit has been breached, so capital preservation takes priority while the AI CIO evaluates qualified alternatives."
         )
     if values["sale_signal"]:
         return (
-            f"{current_id} has a confirmed sale signal. A replacement may now be prepared, but any new instrument must still pass entry, risk, and Investment Policy requirements."
+            f"Recommendation: Prepare a replacement for {current_id}. "
+            "A confirmed sale signal is active, but the replacement must still pass the entry, risk, evidence-confidence, and Investment Policy requirements."
         )
     if gate == "CHANGE_ALLOWED":
         return (
-            f"{challenger_id} exceeds {current_id} by {improvement:.2f} Capital Efficiency Score points, which is above the required "
-            f"{threshold:.2f}-point improvement. The advantage has sufficient persistence and evidence confidence, while the Decision Stability Score is "
-            f"{stability_score:.2f} out of 100 ({stability_label}), indicating that the current recommendation is no longer stable enough to block a change."
+            f"Recommendation: Replace {current_id} with {challenger_id}. "
+            f"The challenger has a {improvement:.2f}-point higher Capital Efficiency Score, exceeding the required {threshold:.2f}-point improvement. "
+            f"The advantage has persisted, Evidence Confidence is {confidence_label}, and the Decision Stability Score is {stability_score:.2f} out of 100 ({stability_label}). "
+            "Together, these conditions indicate that the expected Total Wealth improvement is meaningful enough to justify the portfolio turnover."
         )
     if gate == "WAIT_FOR_PERSISTENCE":
         return (
-            f"{challenger_id} currently exceeds {current_id} by {improvement:.2f} Capital Efficiency Score points, above the required "
-            f"{threshold:.2f}-point improvement. However, the advantage has not yet satisfied all persistence and evidence requirements. "
-            "The paper portfolio should remain unchanged while the bot confirms that this is a durable improvement rather than short-term market noise."
+            f"Recommendation: Continue holding {current_id} while monitoring {challenger_id}. "
+            f"The challenger currently has a {improvement:.2f}-point higher Capital Efficiency Score, above the required {threshold:.2f}-point improvement. "
+            "However, the advantage has not yet satisfied all persistence and Evidence Confidence requirements. Changing now could increase Portfolio Turnover before the improvement is proven durable."
         )
-    challenger_text = (
-        f" The strongest challenger, {challenger_id}, leads by only {improvement:.2f} points, below the required {threshold:.2f}-point replacement threshold."
-        if challenger_id and improvement > 0
-        else " No qualified challenger currently provides a meaningful advantage."
-    )
+    if challenger_id and improvement > 0:
+        return (
+            f"Recommendation: Continue holding {current_id}. "
+            f"The strongest alternative, {challenger_id}, currently has a slightly higher Capital Efficiency Score ({improvement:.2f} points higher). "
+            "However, this improvement is below the required replacement threshold and is not large enough to justify replacing the current investment after considering transaction costs, market stability, Evidence Confidence, and Portfolio Turnover. "
+            f"The current recommendation has a Decision Stability Score of {stability_score:.2f} out of 100 ({stability_label}). "
+            "The alternative will continue to be monitored automatically and will be recommended only if it demonstrates a sustained and meaningful improvement in expected Total Wealth (growth + income)."
+        )
     return (
-        f"Keep {current_id}. The Decision Stability Score is {stability_score:.2f} out of 100 ({stability_label}), and no mandatory exit condition is active."
-        f"{challenger_text} Changing the paper portfolio now would create unnecessary turnover without enough expected Total Wealth improvement."
+        f"Recommendation: Continue holding {current_id}. "
+        "No qualified challenger currently provides a meaningful Capital Efficiency Score advantage, no mandatory exit condition is active, and changing the paper portfolio would create unnecessary Portfolio Turnover without improving expected Total Wealth (growth + income). "
+        f"The Decision Stability Score is {stability_score:.2f} out of 100 ({stability_label})."
     )
 
 
@@ -319,24 +343,64 @@ def build_decision_stability_report(payload: Mapping[str, Any]) -> dict[str, Any
 
 
 def format_decision_stability_markdown(report: Mapping[str, Any]) -> str:
-    challenger = report.get("challenger_candidate_id") or "None"
+    current = str(report.get("current_candidate_id", "UNKNOWN"))
+    challenger = str(report.get("challenger_candidate_id") or "No qualified challenger")
+    current_score = _number(report.get("current_capital_efficiency_score"))
+    challenger_score_value = report.get("challenger_capital_efficiency_score")
+    challenger_score = "Not available" if challenger_score_value is None else f"{_number(challenger_score_value):.2f}"
+    improvement_value = report.get("challenger_improvement_points")
+    improvement = "Not available" if improvement_value is None else f"{_number(improvement_value):+.2f}"
+    stability_score = _number(report.get("decision_stability_score"))
+    stability_label = str(report.get("decision_stability_label", "UNKNOWN")).replace("_", " ").title()
+    confidence_score = _number(report.get("evidence_confidence_score"))
+    confidence_label = str(report.get("evidence_confidence_label", "Unknown"))
+    action = str(report.get("recommended_capital_action", "KEEP")).replace("_", " ").title()
+    regime = str(report.get("market_regime", "UNKNOWN")).replace("_", " ").title()
+
     return "\n".join([
         "# AI CIO Decision Stability Review",
         "",
-        f"- Current Strategy: {report.get('current_candidate_id', 'UNKNOWN')}",
-        f"- Strongest Challenger: {challenger}",
-        f"- Decision Stability Score: {report.get('decision_stability_score', 0):.2f} / 100",
-        f"- Stability State: {str(report.get('decision_stability_label', 'UNKNOWN')).replace('_', ' ').title()}",
-        f"- Recommended Capital Action: {str(report.get('recommended_capital_action', 'KEEP')).replace('_', ' ')}",
-        f"- Change Allowed: {'Yes' if report.get('change_allowed') else 'No'}",
+        "## Executive Recommendation",
         "",
-        "## Natural Explanation",
+        f"**Capital Action:** {action}",
         "",
         str(report.get("natural_explanation", "No explanation available.")),
         "",
-        "## What the Score Means",
+        "## Compare Candidates",
         "",
-        "The Decision Stability Score measures how likely the current recommendation is to remain valid. It combines persistence, score separation, market-regime stability, sector persistence, evidence quality, event risk, and proximity to mandatory sale thresholds.",
+        "| Metric | Current | Challenger |",
+        "|---|---:|---:|",
+        f"| Investment | {current} | {challenger} |",
+        f"| Capital Efficiency Score | {current_score:.2f} | {challenger_score} |",
+        f"| Capital Efficiency Score Difference | — | {improvement} |",
+        f"| Decision Stability Score | {stability_score:.2f} / 100 | Not yet established |",
+        f"| Evidence Confidence | {confidence_label} ({confidence_score:.2f} / 100) | Requires continued confirmation |",
+        f"| Market Regime | {regime} | {regime} |",
+        f"| Portfolio Action | {action} | Monitor |",
+        "",
+        "## Analysis Confidence",
+        "",
+        f"The available evidence has an **Evidence Confidence** rating of **{confidence_label} ({confidence_score:.2f} / 100)**. "
+        "This measures the quality, completeness, and freshness of the evidence supporting today's recommendation.",
+        "",
+        "## Decision Details",
+        "",
+        f"- **Current Recommendation:** {action}",
+        f"- **Decision Stability Score:** {stability_score:.2f} / 100 ({stability_label})",
+        f"- **Current Capital Efficiency Score:** {current_score:.2f}",
+        f"- **Best Alternative:** {challenger}",
+        f"- **Best Alternative Capital Efficiency Score:** {challenger_score}",
+        f"- **Capital Efficiency Score Difference:** {improvement}",
+        f"- **Market Regime:** {regime}",
+        f"- **Change Allowed:** {'Yes' if report.get('change_allowed') else 'No'}",
+        "",
+        "## What the Decision Stability Score Means",
+        "",
+        "The Decision Stability Score measures how likely the current recommendation is to remain valid. It combines decision persistence, Capital Efficiency Score separation, market-regime stability, sector persistence, Evidence Confidence, event risk, and proximity to mandatory sale thresholds.",
+        "",
+        "## Paper-Only Safety",
+        "",
+        "This report is advisory and paper-only. It does not place orders or communicate with a brokerage.",
         "",
     ])
 
