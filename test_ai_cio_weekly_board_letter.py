@@ -13,25 +13,39 @@ def sample_payload():
             "net_total_wealth_percent": 7.84,
             "primary_driver": "Capital Growth",
             "largest_drag": "Portfolio Turnover Cost",
+            "contributors": [
+                {"source": "AMDW + PLTU", "dollar_contribution": 21.55, "percentage_contribution": 4.31},
+                {"source": "Dividend Income", "dollar_contribution": 10.40, "percentage_contribution": 2.08},
+            ],
         },
         "decision_journal": {
             "entries": [
-                {"capital_action": "KEEP", "reason": "Small challenger advantage.", "applied_to_paper_portfolio": False},
-                {"capital_action": "PARK IN SGOV", "reason": "Earnings protection.", "applied_to_paper_portfolio": True},
+                {"allocation_id": "QQQI + TQQQ", "capital_action": "KEEP", "reason": "Small challenger advantage.", "applied_to_paper_portfolio": False},
+                {"allocation_id": "AMDW + PLTU", "capital_action": "PARK IN SGOV", "reason": "Earnings protection.", "applied_to_paper_portfolio": True},
             ]
         },
         "portfolio_lifecycle": {
             "allocations": [
                 {"allocation_id": "QQQI + TQQQ", "lifecycle_status": "ACTIVE"},
-                {"allocation_id": "AMDW + PLTU", "lifecycle_status": "PROTECTED"},
+                {"allocation_id": "AMDW + PLTU", "lifecycle_status": "PROTECTED", "allocation_percent": 45, "paper_value": 225, "sgov_reason": "AMD earnings protection"},
             ]
         },
         "opportunity_replacement": {"recommendation": "KEEP_CURRENT", "reason": "No meaningful improvement."},
-        "earnings_events": {"actions": [{"allocation_id": "AMDW + PLTU", "recommendation": "PARK_IN_SGOV"}]},
-        "market_intelligence": {"overall_market_intelligence_label": "SUPPORTIVE", "overall_market_intelligence_score": 73.5, "market_regime": "BULL"},
-        "portfolio_risk": {"overall_portfolio_risk_label": "LOW", "overall_portfolio_risk_score": 24.8, "risk_momentum": {"direction": "STABLE"}},
+        "earnings_events": {"actions": [{"allocation_id": "AMDW + PLTU", "underlying_stock": "AMD", "recommendation": "PARK_IN_SGOV"}]},
+        "market_intelligence": {
+            "overall_market_intelligence_label": "SUPPORTIVE",
+            "overall_market_intelligence_score": 73.5,
+            "market_regime": "BULL",
+            "sector_context": [{"sector": "Technology", "percentage": 62.5, "status": "Strong"}],
+        },
+        "portfolio_risk": {
+            "overall_portfolio_risk_label": "LOW",
+            "overall_portfolio_risk_score": 24.8,
+            "risk_momentum": {"direction": "STABLE"},
+            "risk_categories": {"earnings_event_risk": {"score": 35, "status": "Monitor"}},
+        },
         "performance_analytics": {"ai_cio_self_assessment_score": 95.7, "grade": "A", "improvement_findings": ["Collect more replacement outcomes."]},
-        "upcoming_items": [{"event": "Post-earnings requalification", "date": "2026-07-14", "importance": "High"}],
+        "upcoming_items": [{"holding": "AMDW + PLTU", "underlying_stock": "AMD", "sector": "Technology", "event": "Post-earnings requalification", "date": "2026-07-14", "importance": "High", "status": "Protection Active", "ai_cio_action": "Requalify after earnings"}],
     }
 
 
@@ -88,8 +102,7 @@ def test_portfolio_state_counts():
 
 
 def test_learning_findings_preserved():
-    report = build()
-    assert report["what_the_ai_cio_learned"] == ["Collect more replacement outcomes."]
+    assert build()["what_the_ai_cio_learned"] == ["Collect more replacement outcomes."]
 
 
 def test_missing_learning_has_safe_fallback():
@@ -97,10 +110,40 @@ def test_missing_learning_has_safe_fallback():
     assert "Insufficient completed history" in report["what_the_ai_cio_learned"][0]
 
 
-def test_upcoming_items_preserved():
+def test_upcoming_items_are_stock_aware():
+    item = build()["next_week_watchlist"][0]
+    assert item["holding"] == "AMDW + PLTU"
+    assert item["underlying_stock"] == "AMD"
+    assert item["sector"] == "Technology"
+    assert item["event"] == "Post-earnings requalification"
+    assert item["importance"] == "High"
+    assert item["ai_cio_action"] == "Requalify after earnings"
+
+
+def test_metric_analysis_uses_left_and_right_information_model():
+    analysis = build()["metric_analysis"]["total_wealth"]
+    assert analysis["what_it_is"]
+    assert analysis["how_it_is_calculated"]
+    assert analysis["why_it_matters"]
+    assert analysis["measurement_period"] == "2026-07-06 through 2026-07-12"
+    assert analysis["key_insight"]
+    assert analysis["current_contributors"][0]["source"] == "AMDW + PLTU"
+    assert analysis["current_contributors"][0]["dollar_contribution"] == 21.55
+
+
+def test_all_scorecard_metrics_have_analysis_and_contributors_field():
     report = build()
-    assert report["next_week_watchlist"][0]["event"] == "Post-earnings requalification"
-    assert report["next_week_watchlist"][0]["importance"] == "High"
+    for key in ("total_wealth", "portfolio_risk", "market_environment", "decision_quality", "sgov_activity"):
+        assert key in report["metric_analysis"]
+        assert "current_contributors" in report["metric_analysis"][key]
+        assert "ai_cio_commentary" in report["metric_analysis"][key]
+
+
+def test_sgov_analysis_identifies_protected_allocation_and_reason():
+    contributors = build()["metric_analysis"]["sgov_activity"]["current_contributors"]
+    assert contributors[0]["source"] == "AMDW + PLTU"
+    assert contributors[0]["dollar_contribution"] == 225
+    assert "AMD earnings protection" in contributors[0]["context"]
 
 
 def test_governance_rules_are_locked():
@@ -127,8 +170,26 @@ def test_markdown_contains_investor_sections():
     assert "Weekly Scorecard" in markdown
     assert "What Happened This Week" in markdown
     assert "What I Learned This Week" in markdown
-    assert "Next Week" in markdown
+    assert "Upcoming Portfolio Events" in markdown
     assert "AI Chief Investment Officer" in markdown
+
+
+def test_markdown_contains_stock_aware_event_columns():
+    markdown = module.format_ai_cio_weekly_board_letter_markdown(build())
+    assert "Holding / Pair" in markdown
+    assert "Underlying Stock" in markdown
+    assert "AI CIO Action" in markdown
+    assert "AMDW + PLTU" in markdown
+    assert "AMD" in markdown
+
+
+def test_markdown_contains_two_column_analysis_and_contributor_data():
+    markdown = module.format_ai_cio_weekly_board_letter_markdown(build())
+    assert "Understanding the Metric" in markdown
+    assert "Current Portfolio Data" in markdown
+    assert "Current Contributors" in markdown
+    assert "$21.55" in markdown
+    assert "+4.31%" in markdown
 
 
 def test_markdown_contains_more_links():
@@ -146,10 +207,7 @@ def test_empty_optional_inputs_create_warnings_not_errors():
 
 
 def test_nonfinite_values_are_sanitized():
-    report = build(
-        portfolio_summary={"portfolio_value": float("inf")},
-        wealth_attribution={"net_total_wealth_contribution": float("nan"), "net_total_wealth_percent": float("inf")},
-    )
+    report = build(portfolio_summary={"portfolio_value": float("inf")}, wealth_attribution={"net_total_wealth_contribution": float("nan"), "net_total_wealth_percent": float("inf")})
     assert report["portfolio_value"] == 0.0
     assert report["weekly_scorecard"]["net_total_wealth_amount"] == 0.0
     assert report["weekly_scorecard"]["net_total_wealth_percent"] == 0.0
