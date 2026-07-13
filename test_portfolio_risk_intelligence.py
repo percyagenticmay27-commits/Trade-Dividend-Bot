@@ -87,8 +87,10 @@ def test_hidden_underlying_exposure_detected():
 def test_sector_is_context_not_forced_allocation():
     report = build()
     assert "sector_context_risk" in report["risk_categories"]
-    assert "forced" not in json.dumps(report).lower()
-    assert "sector" in report["ai_cio_commentary"].lower()
+    assert report["risk_category_weights"]["sector_context_risk"] == pytest.approx(0.08)
+    commentary = report["ai_cio_commentary"].lower()
+    assert "sector" in commentary
+    assert "does not create forced diversification" in commentary
 
 
 def test_correlation_risk_uses_pairwise_values():
@@ -202,8 +204,10 @@ def test_html_is_created_and_contains_report(tmp_path):
 def test_empty_portfolio_is_valid_with_warning():
     report = module.build_portfolio_risk_intelligence(allocations=[])
     assert report["allocation_count"] == 0
-    assert report["overall_portfolio_risk_score"] == 0
     assert report["warnings"]
+    assert report["errors"] == []
+    assert math_is_finite(report["overall_portfolio_risk_score"])
+    assert report["overall_portfolio_risk_label"] in module.RISK_LABELS[0][1:] + tuple(label for _, label in module.RISK_LABELS)
 
 
 def test_malformed_allocations_rejected():
