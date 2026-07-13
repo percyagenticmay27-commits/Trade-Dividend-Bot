@@ -23,7 +23,9 @@ def test_empty_workflow_is_ready():
     report = module.build_ai_cio_system_integration(workflow=[])
     assert report["overall_status"] == "READY_FOR_END_TO_END_QA"
     assert report["readiness_percent"] == 100.0
-    assert report["workflow_module_count"] == 0
+    assert report["workflow_module_count"] == len(module.DEFAULT_WORKFLOW)
+    assert report["ready_module_count"] == len(module.DEFAULT_WORKFLOW)
+    assert report["execution_results"] == []
 
 
 def test_known_module_is_ready():
