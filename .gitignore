@@ -1,0 +1,45 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging and build output
+build/
+dist/
+*.egg-info/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# IDE and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.swp
+
+# Runtime logs
+*.log
+
+# Do not ignore existing project report artifacts yet.
+# Generated-output migration will be handled separately to avoid breaking
+# the current Dividend Bot workflow.
