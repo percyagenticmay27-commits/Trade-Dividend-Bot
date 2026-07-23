@@ -12,7 +12,7 @@ from .platform_entities import MasterCompanyIntelligenceProfile
 from .platform_foundation import PlatformValidationError, utc_now
 
 MODULE_NAME = "platform_integration"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 MODULE_DESCRIPTION = "Strategy-neutral service registration, MCIP enrichment, and Dividend paper-cycle orchestration."
 
 
@@ -166,12 +166,15 @@ class MCIPIntegrationService:
         *,
         quality_score: float | None = None,
     ) -> MasterCompanyIntelligenceProfile:
+        profile.validate()
         revised = profile
         for domain, values in updates.items():
             revised = cls.apply_section(revised, domain, values)
         if quality_score is not None:
+            if not 0.0 <= float(quality_score) <= 100.0:
+                raise PlatformValidationError("quality_score must be between 0 and 100")
             revised = replace(revised, quality_score=float(quality_score), refreshed_at=utc_now())
-            revised.validate()
+        revised.validate()
         return revised
 
 
