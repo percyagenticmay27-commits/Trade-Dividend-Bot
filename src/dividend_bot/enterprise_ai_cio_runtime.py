@@ -18,7 +18,7 @@ from .platform_entities import MasterCompanyIntelligenceProfile
 from .platform_foundation import JsonSerializer, PlatformValidationError, utc_now
 
 MODULE_NAME = "enterprise_ai_cio_runtime"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 MODULE_DESCRIPTION = "Strategy-neutral Enterprise AI CIO advisory runtime."
 
 
@@ -166,8 +166,31 @@ class EnterpriseAICIORuntime:
 
     @staticmethod
     def render_json(advisory: EnterpriseCIOAdvisory) -> str:
+        """Render without asking dataclasses.asdict to deepcopy MappingProxyType."""
         advisory.validate()
-        return JsonSerializer.dumps(advisory)
+        payload = {
+            "generated_at": advisory.generated_at,
+            "company_id": advisory.company_id,
+            "profile_id": advisory.profile_id,
+            "recommendation": advisory.recommendation,
+            "confidence": advisory.confidence,
+            "rationale": advisory.rationale,
+            "stability_checked": advisory.stability_checked,
+            "evidence_present": advisory.evidence_present,
+            "services": [
+                {
+                    "service_id": state.service_id,
+                    "module_name": state.module_name,
+                    "status": state.status,
+                }
+                for state in advisory.services
+            ],
+            "metadata": dict(advisory.metadata),
+            "paper_trade_mode": advisory.paper_trade_mode,
+            "live_trading_enabled": advisory.live_trading_enabled,
+            "broker_execution_enabled": advisory.broker_execution_enabled,
+        }
+        return JsonSerializer.dumps(payload)
 
     @staticmethod
     def render_markdown(advisory: EnterpriseCIOAdvisory) -> str:
