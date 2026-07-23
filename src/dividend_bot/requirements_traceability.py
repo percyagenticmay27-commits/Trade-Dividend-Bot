@@ -9,7 +9,7 @@ from typing import Iterable
 from .platform_foundation import PlatformValidationError
 
 MODULE_NAME = "requirements_traceability"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 MODULE_DESCRIPTION = "Release-gate validation for approved platform and Dividend Strategy requirements."
 
 
@@ -85,7 +85,7 @@ CORE_MODULE_CHECKS: tuple[TraceabilityCheck, ...] = (
     TraceabilityCheck(
         "audit framework",
         "src/dividend_bot/audit_framework.py",
-        ("StrategyAuditModel", "ReleaseGate"),
+        ("AuditModel", "ReleaseGateResult", "evaluate_release_gate"),
     ),
     TraceabilityCheck(
         "Dividend Strategy adapter",
