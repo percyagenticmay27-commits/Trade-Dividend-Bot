@@ -51,16 +51,19 @@ def _setup(*, funded: bool = True, status: StrategyStatus = StrategyStatus.PAPER
     registry.configure(StrategyConfiguration("DIVIDEND", "1.0.0", {}))
     registry.transition("DIVIDEND", StrategyStatus.CONFIGURED, "Configured for paper validation")
     registry.transition("DIVIDEND", StrategyStatus.PAPER_VALIDATION, "Begin paper validation")
-    if status is StrategyStatus.OPERATIONAL:
-        registry.transition("DIVIDEND", StrategyStatus.OPERATIONAL, "Paper validation passed")
-    elif status is StrategyStatus.SUSPENDED:
-        registry.transition("DIVIDEND", StrategyStatus.SUSPENDED, "Temporarily suspended")
+
     capital = EnterpriseCapitalManager(registry)
     if funded:
         capital.record_deposit(10_000)
         capital.apply_investor_instruction(
             InvestorCapitalInstruction("INVESTOR-1", {"DIVIDEND": 5_000}, "Fund Dividend strategy")
         )
+
+    if status is StrategyStatus.OPERATIONAL:
+        registry.transition("DIVIDEND", StrategyStatus.OPERATIONAL, "Paper validation passed")
+    elif status is StrategyStatus.SUSPENDED:
+        registry.transition("DIVIDEND", StrategyStatus.SUSPENDED, "Temporarily suspended")
+
     return registry, capital, EnterpriseStrategyExecutionCoordinator(registry, capital)
 
 
