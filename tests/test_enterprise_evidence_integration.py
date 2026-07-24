@@ -18,14 +18,14 @@ from src.dividend_bot.enterprise_evidence_integration import (
 from src.dividend_bot.platform_foundation import PlatformValidationError, utc_now
 
 
-def _record() -> EventIntegrationRecord:
+def _record(workflow_id: str = "WF-DEC-2026-000001") -> EventIntegrationRecord:
     bus = EnterpriseEventBus()
-    correlation = "WF-DEC-2026-000001"
+    correlation = workflow_id
     definitions = (
         (EnterpriseEventType.INTELLIGENCE_UPDATED, "ENTERPRISE_INTELLIGENCE_SERVICE", "MCIP-1"),
         (EnterpriseEventType.CIO_ADVISORY_CREATED, "ENTERPRISE_INTELLIGENCE_CIO_PIPELINE", correlation),
-        (EnterpriseEventType.DECISION_CREATED, "ENTERPRISE_DECISION_ENGINE", "DEC-2026-000001"),
-        (EnterpriseEventType.DECISION_GOVERNANCE_UPDATED, "ENTERPRISE_WORKFLOW_ORCHESTRATOR", "DEC-2026-000001"),
+        (EnterpriseEventType.DECISION_CREATED, "ENTERPRISE_DECISION_ENGINE", correlation.replace("WF-", "")),
+        (EnterpriseEventType.DECISION_GOVERNANCE_UPDATED, "ENTERPRISE_WORKFLOW_ORCHESTRATOR", correlation.replace("WF-", "")),
     )
     publications = []
     cause = None
@@ -92,6 +92,15 @@ def test_repository_filters_by_workflow() -> None:
     integration = EnterpriseEvidenceIntegration()
     result = integration.preserve(_record())
     assert integration.repository.for_workflow(result.workflow_id) == result.entries
+
+
+def test_successive_workflows_preserve_global_contiguous_sequence() -> None:
+    integration = EnterpriseEvidenceIntegration()
+    first = integration.preserve(_record("WF-DEC-2026-000001"))
+    second = integration.preserve(_record("WF-DEC-2026-000002"))
+    assert tuple(item.sequence for item in first.entries) == (1, 2, 3, 4)
+    assert tuple(item.sequence for item in second.entries) == (5, 6, 7, 8)
+    second.validate()
 
 
 def test_duplicate_workflow_is_rejected() -> None:
