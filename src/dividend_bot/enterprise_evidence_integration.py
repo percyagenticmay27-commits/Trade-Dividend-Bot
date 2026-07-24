@@ -17,7 +17,7 @@ from .enterprise_event_integration import EventIntegrationRecord
 from .platform_foundation import IdentifierFactory, JsonSerializer, PlatformValidationError, utc_now
 
 MODULE_NAME = "enterprise_evidence_integration"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 MODULE_DESCRIPTION = "Preserve governed workflow milestones as append-only enterprise evidence."
 
 
@@ -86,9 +86,10 @@ class EvidenceIntegrationResult:
             raise PlatformValidationError("evidence integration requires entries")
         if self.completed_at.tzinfo is None:
             raise PlatformValidationError("completed_at must be timezone-aware")
-        for index, entry in enumerate(self.entries, start=1):
+        first_sequence = self.entries[0].sequence
+        for offset, entry in enumerate(self.entries):
             entry.validate()
-            if entry.sequence != index:
+            if entry.sequence != first_sequence + offset:
                 raise PlatformValidationError("evidence entries must preserve deterministic sequence")
             if entry.workflow_id != self.workflow_id or entry.correlation_id != self.correlation_id:
                 raise PlatformValidationError("evidence entries must preserve workflow linkage")
