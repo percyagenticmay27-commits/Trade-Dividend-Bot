@@ -10,8 +10,6 @@ import pytest
 from src.dividend_bot.enterprise_dividend_income_integration import EnterpriseDividendIncomeRecord
 from src.dividend_bot.enterprise_income_forecast_integration import (
     EnterpriseIncomeForecastIntegration,
-    EnterpriseIncomeForecastLedger,
-    EnterpriseIncomeForecastRecord,
     IncomeForecastStatus,
 )
 from src.dividend_bot.platform_foundation import PlatformValidationError, utc_now
@@ -81,11 +79,20 @@ def test_first_forecast_is_active() -> None:
 
 def test_successive_active_forecast_becomes_updated_and_links_prior() -> None:
     service = EnterpriseIncomeForecastIntegration()
-    portfolio_id = uuid4()
-    _, first = _forecast(service, _income(portfolio_id=portfolio_id))
-    _, second = _forecast(service, _income(portfolio_id=portfolio_id, latest_amount=1.40))
+    first_income = _income()
+    _, first = _forecast(service, first_income)
+    second_income = replace(
+        first_income,
+        income_record_id=uuid4(),
+        source_dividend_record_ids=(uuid4(),),
+        latest_amount_per_share=1.40,
+        calculated_at=utc_now(),
+    )
+    _, second = _forecast(service, second_income)
     assert second.record.status is IncomeForecastStatus.UPDATED
     assert second.record.supersedes_forecast_id == first.record.forecast_id
+    assert second.record.company_id == first.record.company_id
+    assert second.record.profile_id == first.record.profile_id
 
 
 def test_suspended_forecast_has_zero_income_and_no_payment_date() -> None:
