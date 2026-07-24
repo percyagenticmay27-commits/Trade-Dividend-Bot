@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, is_dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 import json
 from pathlib import Path
@@ -13,7 +13,7 @@ from typing import Any, Mapping
 from uuid import UUID, uuid4
 
 MODULE_NAME = "platform_foundation"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 MODULE_DESCRIPTION = "Strategy-neutral configuration, identifiers, versions, and serialization."
 
 
@@ -172,6 +172,8 @@ class JsonSerializer:
             if value.tzinfo is None:
                 raise PlatformValidationError("datetime values must be timezone-aware")
             return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        if isinstance(value, date):
+            return value.isoformat()
         if isinstance(value, Mapping):
             return {str(key): cls.to_primitive(item) for key, item in value.items()}
         if isinstance(value, (list, tuple)):
