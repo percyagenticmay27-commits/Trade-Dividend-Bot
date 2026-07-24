@@ -17,7 +17,7 @@ from .enterprise_dividend_income_integration import EnterpriseDividendIncomeReco
 from .platform_foundation import IdentifierFactory, JsonSerializer, PlatformValidationError, utc_now
 
 MODULE_NAME = "enterprise_income_forecast_integration"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 MODULE_DESCRIPTION = "Create immutable paper Dividend income forecasts from governed income summaries."
 
 
@@ -68,8 +68,12 @@ class EnterpriseIncomeForecastRecord:
             raise PlatformValidationError("income forecast integration supports DIVIDEND only")
         if not self.evidence_ids:
             raise PlatformValidationError("income forecast requires evidence links")
-        if self.share_count <= 0 or self.payments_per_year <= 0 or self.market_value <= 0:
-            raise PlatformValidationError("share_count, payments_per_year, and market_value must be positive")
+        if self.share_count <= 0:
+            raise PlatformValidationError("share_count must be greater than zero")
+        if self.payments_per_year <= 0:
+            raise PlatformValidationError("payments_per_year must be greater than zero")
+        if self.market_value <= 0:
+            raise PlatformValidationError("market_value must be greater than zero")
         if min(self.projected_next_payment, self.projected_annual_income, self.projected_yield_percent) < 0:
             raise PlatformValidationError("forecast values must not be negative")
         expected_annual = round(self.projected_next_payment * self.payments_per_year, 8)
@@ -118,8 +122,10 @@ class EnterpriseIncomeForecastLedger:
         if previous is None and record.status is IncomeForecastStatus.UPDATED:
             raise PlatformValidationError("first portfolio forecast cannot use UPDATED status")
         if previous is not None:
-            if previous.company_id != record.company_id or previous.strategy_id != record.strategy_id:
-                raise PlatformValidationError("forecast chain must preserve company and strategy scope")
+            if previous.company_id != record.company_id or previous.profile_id != record.profile_id:
+                raise PlatformValidationError("forecast chain must preserve company and profile scope")
+            if previous.strategy_id != record.strategy_id:
+                raise PlatformValidationError("forecast chain must preserve strategy scope")
         self._records.append(record)
         self._source_income_ids.add(record.source_income_record_id)
         self._forecast_ids.add(record.forecast_id)
@@ -180,6 +186,17 @@ class EnterpriseIncomeForecastIntegration:
         income.validate()
         if income.strategy_id != "DIVIDEND":
             raise PlatformValidationError("only DIVIDEND income records may be forecast")
+
+        resolved_share_count = float(share_count)
+        resolved_payments_per_year = int(payments_per_year)
+        resolved_market_value = float(market_value)
+        if resolved_share_count <= 0:
+            raise PlatformValidationError("share_count must be greater than zero")
+        if resolved_payments_per_year <= 0:
+            raise PlatformValidationError("payments_per_year must be greater than zero")
+        if resolved_market_value <= 0:
+            raise PlatformValidationError("market_value must be greater than zero")
+
         timestamp = completed_at or utc_now()
         if timestamp.tzinfo is None:
             raise PlatformValidationError("completed_at must be timezone-aware")
@@ -187,10 +204,11 @@ class EnterpriseIncomeForecastIntegration:
         resolved_status = status
         if previous is not None and status is IncomeForecastStatus.ACTIVE:
             resolved_status = IncomeForecastStatus.UPDATED
+
         amount_per_share = float(income.latest_amount_per_share or 0.0)
-        next_payment = 0.0 if resolved_status is IncomeForecastStatus.SUSPENDED else round(amount_per_share * float(share_count), 8)
-        annual_income = round(next_payment * int(payments_per_year), 8)
-        projected_yield = round((annual_income / float(market_value)) * 100.0, 8)
+        next_payment = 0.0 if resolved_status is IncomeForecastStatus.SUSPENDED else round(amount_per_share * resolved_share_count, 8)
+        annual_income = round(next_payment * resolved_payments_per_year, 8)
+        projected_yield = round((annual_income / resolved_market_value) * 100.0, 8)
         record = EnterpriseIncomeForecastRecord(
             forecast_id=IdentifierFactory.new_internal_id(),
             sequence=len(self._ledger.all()) + 1,
@@ -205,9 +223,9 @@ class EnterpriseIncomeForecastIntegration:
             strategy_id=income.strategy_id,
             evidence_ids=income.evidence_ids,
             status=resolved_status,
-            share_count=float(share_count),
-            payments_per_year=int(payments_per_year),
-            market_value=float(market_value),
+            share_count=resolved_share_count,
+            payments_per_year=resolved_payments_per_year,
+            market_value=resolved_market_value,
             projected_next_payment=next_payment,
             projected_annual_income=annual_income,
             projected_yield_percent=projected_yield,
