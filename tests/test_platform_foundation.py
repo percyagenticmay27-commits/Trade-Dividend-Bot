@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 from uuid import UUID
 
@@ -112,6 +112,11 @@ def test_json_serializer_is_deterministic_and_platform_aware() -> None:
     assert '"identifier": "00000000-0000-0000-0000-000000000001"' in payload
     assert '"output_path": "results/dividend/weekly"' in payload
     assert payload.endswith("\n")
+
+
+def test_json_serializer_supports_date_only_values() -> None:
+    payload = JsonSerializer.dumps({"run_date": date(2026, 7, 24)})
+    assert '"run_date": "2026-07-24"' in payload
 
 
 def test_json_serializer_rejects_naive_datetime() -> None:
