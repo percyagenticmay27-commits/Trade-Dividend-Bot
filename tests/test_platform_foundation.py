@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, time, timezone
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 from uuid import UUID
 
 import pytest
@@ -98,6 +100,11 @@ class ExampleRecord:
     strategy: IdentifierKind
 
 
+@dataclass(frozen=True)
+class ImmutableMetadataRecord:
+    metadata: Mapping[str, object]
+
+
 def test_json_serializer_is_deterministic_and_platform_aware() -> None:
     record = ExampleRecord(
         identifier=UUID("00000000-0000-0000-0000-000000000001"),
@@ -112,6 +119,15 @@ def test_json_serializer_is_deterministic_and_platform_aware() -> None:
     assert '"identifier": "00000000-0000-0000-0000-000000000001"' in payload
     assert '"output_path": "results/dividend/weekly"' in payload
     assert payload.endswith("\n")
+
+
+def test_json_serializer_supports_immutable_dataclass_metadata() -> None:
+    record = ImmutableMetadataRecord(
+        metadata=MappingProxyType({"runtime_version": "1.0.0", "evidence_count": 3})
+    )
+    payload = JsonSerializer.dumps(record)
+    assert '"runtime_version": "1.0.0"' in payload
+    assert '"evidence_count": 3' in payload
 
 
 def test_json_serializer_supports_date_only_values() -> None:
