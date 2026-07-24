@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, is_dataclass
+from dataclasses import asdict, dataclass, fields, is_dataclass
 from datetime import date, datetime, time, timezone
 from enum import Enum
 import json
@@ -13,7 +13,7 @@ from typing import Any, Mapping
 from uuid import UUID, uuid4
 
 MODULE_NAME = "platform_foundation"
-MODULE_VERSION = "1.0.2"
+MODULE_VERSION = "1.0.3"
 MODULE_DESCRIPTION = "Strategy-neutral configuration, identifiers, versions, and serialization."
 
 
@@ -83,11 +83,7 @@ class IdentifierFactory:
         year: int | None = None,
         sequence: int | None = None,
     ) -> str:
-        """Create an identifier such as ``DEC-2026-000001``.
-
-        Explicit sequences are useful for persistence-backed callers. When omitted,
-        an in-process monotonic sequence is used for deterministic formatting only.
-        """
+        """Create an identifier such as ``DEC-2026-000001``."""
         prefix = kind.value if isinstance(kind, IdentifierKind) else str(kind).upper()
         if not re.fullmatch(r"[A-Z][A-Z0-9]{1,7}", prefix):
             raise PlatformValidationError(f"invalid identifier prefix: {prefix!r}")
@@ -160,8 +156,13 @@ class JsonSerializer:
 
     @classmethod
     def to_primitive(cls, value: Any) -> Any:
+        # Avoid dataclasses.asdict(): it deep-copies nested values and fails on
+        # immutable MappingProxyType metadata used by governed platform records.
         if is_dataclass(value):
-            return cls.to_primitive(asdict(value))
+            return {
+                field.name: cls.to_primitive(getattr(value, field.name))
+                for field in fields(value)
+            }
         if isinstance(value, Enum):
             return value.value
         if isinstance(value, UUID):
