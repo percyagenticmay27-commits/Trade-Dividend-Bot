@@ -1,31 +1,21 @@
-"""Deterministic orchestration for the paper-only enterprise investment workflow.
-
-This coordinator orders existing services without duplicating their business logic. The
-initial Version 1.0 boundary prepares a governed enterprise decision for investor review.
-It does not approve decisions, assign capital, mutate portfolios, or call brokers.
-"""
+"""Deterministic orchestration for the paper-only enterprise investment workflow."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import datetime
+from typing import Any
 
 from .enterprise_ai_cio_runtime import EnterpriseRecommendation
 from .enterprise_decision_engine import EnterpriseDecision, EnterpriseDecisionEngine, StrategyAdvisory
-from .enterprise_intelligence_cio_pipeline import (
-    EnterpriseIntelligenceCIOPipeline,
-    IntelligenceCIOPipelineResult,
-)
-from .enterprise_intelligence_service import (
-    EnterpriseIntelligenceProfile,
-    EnterpriseIntelligenceService,
-    IntelligenceContribution,
-)
+from .enterprise_intelligence_cio_pipeline import EnterpriseIntelligenceCIOPipeline, IntelligenceCIOPipelineResult
+from .enterprise_intelligence_service import EnterpriseIntelligenceProfile, EnterpriseIntelligenceService, IntelligenceContribution
 from .platform_entities import MasterCompanyIntelligenceProfile
 from .platform_foundation import JsonSerializer, PlatformValidationError, utc_now
 
 MODULE_NAME = "enterprise_workflow_orchestrator"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 MODULE_DESCRIPTION = "Coordinate intelligence, AI CIO advisory, and canonical decision preparation."
 
 
@@ -91,14 +81,7 @@ class EnterpriseWorkflowResult:
 
 
 class EnterpriseWorkflowOrchestrator:
-    """Run the approved service sequence up to the investor-review boundary."""
-
-    def __init__(
-        self,
-        intelligence_service: EnterpriseIntelligenceService | None = None,
-        cio_pipeline: EnterpriseIntelligenceCIOPipeline | None = None,
-        decision_engine: EnterpriseDecisionEngine | None = None,
-    ) -> None:
+    def __init__(self, intelligence_service=None, cio_pipeline=None, decision_engine=None) -> None:
         self._intelligence_service = intelligence_service or EnterpriseIntelligenceService()
         self._cio_pipeline = cio_pipeline or EnterpriseIntelligenceCIOPipeline()
         self._decision_engine = decision_engine or EnterpriseDecisionEngine()
@@ -111,23 +94,12 @@ class EnterpriseWorkflowOrchestrator:
     def history(self) -> tuple[EnterpriseWorkflowResult, ...]:
         return tuple(self._history)
 
-    def prepare_for_investor_review(
-        self,
-        request: EnterpriseWorkflowRequest,
-        *,
-        completed_at: datetime | None = None,
-    ) -> EnterpriseWorkflowResult:
+    def prepare_for_investor_review(self, request: EnterpriseWorkflowRequest, *, completed_at: datetime | None = None) -> EnterpriseWorkflowResult:
         request.validate()
         timestamp = completed_at or utc_now()
         if timestamp.tzinfo is None:
             raise PlatformValidationError("completed_at must be timezone-aware")
-
-        intelligence = self._intelligence_service.build(
-            request.profile,
-            request.contributions,
-            evidence_count=request.evidence_count,
-            generated_at=timestamp,
-        )
+        intelligence = self._intelligence_service.build(request.profile, request.contributions, evidence_count=request.evidence_count, generated_at=timestamp)
         pipeline = self._cio_pipeline.run(
             intelligence,
             proposed_recommendation=request.proposed_recommendation,
@@ -157,28 +129,32 @@ class EnterpriseWorkflowOrchestrator:
     @staticmethod
     def render_json(result: EnterpriseWorkflowResult) -> str:
         result.validate()
-        return JsonSerializer.dumps(result)
+        return JsonSerializer.dumps(_safe_primitive(result))
 
     @staticmethod
     def render_markdown(result: EnterpriseWorkflowResult) -> str:
         result.validate()
-        return "\n".join(
-            [
-                "# Enterprise Workflow Orchestration",
-                "",
-                f"- Workflow ID: {result.workflow_id}",
-                f"- Decision ID: {result.decision.identity.public_id}",
-                f"- Decision Action: {result.decision.action.value}",
-                f"- Decision State: {result.decision.state.value}",
-                f"- Intelligence Completeness: {result.intelligence.completeness_score:.1f}",
-                f"- Intelligence Quality: {result.intelligence.quality_score:.1f}",
-                f"- Evidence Count: {result.intelligence.evidence_count}",
-                f"- Completed Stages: {', '.join(result.completed_stages)}",
-                f"- Paper Trade Mode: {'YES' if result.paper_trade_mode else 'NO'}",
-                "",
-                "## Investor Boundary",
-                "",
-                "This workflow stops after canonical decision preparation. Investor approval, capital assignment, portfolio mutation, and broker execution are not performed.",
-                "",
-            ]
-        )
+        return "\n".join([
+            "# Enterprise Workflow Orchestration", "",
+            f"- Workflow ID: {result.workflow_id}",
+            f"- Decision ID: {result.decision.identity.public_id}",
+            f"- Decision Action: {result.decision.action.value}",
+            f"- Decision State: {result.decision.state.value}",
+            f"- Intelligence Completeness: {result.intelligence.completeness_score:.1f}",
+            f"- Intelligence Quality: {result.intelligence.quality_score:.1f}",
+            f"- Evidence Count: {result.intelligence.evidence_count}",
+            f"- Completed Stages: {', '.join(result.completed_stages)}",
+            f"- Paper Trade Mode: {'YES' if result.paper_trade_mode else 'NO'}", "",
+            "## Investor Boundary", "",
+            "This workflow stops after canonical decision preparation. Investor approval, capital assignment, portfolio mutation, and broker execution are not performed.", "",
+        ])
+
+
+def _safe_primitive(value: Any) -> Any:
+    if is_dataclass(value) and not isinstance(value, type):
+        return {item.name: _safe_primitive(getattr(value, item.name)) for item in fields(value)}
+    if isinstance(value, Mapping):
+        return {str(key): _safe_primitive(item) for key, item in value.items()}
+    if isinstance(value, (tuple, list)):
+        return [_safe_primitive(item) for item in value]
+    return value
