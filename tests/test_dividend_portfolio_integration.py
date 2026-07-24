@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 
@@ -57,11 +57,13 @@ def _execution(
     action: str = "BUY",
     disposition: DividendPaperDisposition = DividendPaperDisposition.PAPER_BUY_REVIEW,
     response_status: StrategyResponseStatus = StrategyResponseStatus.ACCEPTED,
+    decision_id: UUID | None = None,
+    decision_public_id: str = "DEC-2026-000001",
 ) -> DividendPaperExecutionRecord:
     request = StrategyExecutionRequest(
         request_id=uuid4(),
-        decision_id=uuid4(),
-        decision_public_id="DEC-2026-000001",
+        decision_id=decision_id or uuid4(),
+        decision_public_id=decision_public_id,
         strategy_id="DIVIDEND",
         effective_action=action,
         requested_capital=1_000,
@@ -148,8 +150,14 @@ def test_watchlist_creates_no_position_change() -> None:
 
 def test_exit_review_closes_existing_position() -> None:
     portfolio, service = _setup()
-    opened = service.apply(_execution(), asset_symbol="SCHD", quantity=10, price=50, explanation="Open")
-    exit_execution = _execution(action="SELL", disposition=DividendPaperDisposition.EXIT_REVIEW)
+    entry_execution = _execution()
+    opened = service.apply(entry_execution, asset_symbol="SCHD", quantity=10, price=50, explanation="Open")
+    exit_execution = _execution(
+        action="SELL",
+        disposition=DividendPaperDisposition.EXIT_REVIEW,
+        decision_id=entry_execution.request.decision_id,
+        decision_public_id=entry_execution.request.decision_public_id,
+    )
     closed = service.apply(
         exit_execution,
         asset_symbol="SCHD",
