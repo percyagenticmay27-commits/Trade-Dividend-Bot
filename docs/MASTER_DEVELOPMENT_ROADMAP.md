@@ -57,20 +57,24 @@ Lifecycle
    - No decision authority or capital movement
    - Local validation reported: 24 tests passed
 
-### In Progress
-
 3. Enterprise Dividend Alert Integration
    - Governed alerts for dividend cuts, suspensions, missed payments, low confidence, negative income growth, reduced projected income, evidence gaps, and review-required states
    - Deterministic alert identity and deduplication
    - JSON and Markdown outputs
    - Paper-only and advisory-only
+   - Local validation reported: 28 tests passed
 
-### Planned
+### In Progress
 
 4. Enterprise Dividend Review Workflow
    - Structured review records
    - States: `OPEN`, `UNDER_REVIEW`, `RESOLVED`, `DEFERRED`, `ESCALATED`
    - Preserve originating analytics, report, evidence, alert, and decision links
+   - Deterministic review identity and duplicate-alert protection
+   - Append-only status history and review notes
+   - Human approval required; no capital movement or execution authority
+
+### Planned
 
 5. Enterprise Dividend Learning Integration
    - Compare forecasts with actual paper income
@@ -143,15 +147,15 @@ Each new Platform V1 module should:
 
 ## Current Branch
 
-`phase-3-enterprise-dividend-alert-integration`
+`phase-4-enterprise-dividend-review-workflow`
 
 ## Next Validation Commands
 
 ```cmd
-python -m py_compile src\dividend_bot\enterprise_dividend_alert_integration.py
-python -m pytest tests\test_enterprise_dividend_alert_integration.py -v
+python -m py_compile src\dividend_bot\enterprise_dividend_review_workflow.py
+python -m pytest tests\test_enterprise_dividend_review_workflow.py -v
 ```
 
 ## Next Phase After Validation
 
-Enterprise Dividend Review Workflow.
+Enterprise Dividend Learning Integration.
