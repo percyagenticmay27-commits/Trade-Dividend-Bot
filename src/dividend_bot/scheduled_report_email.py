@@ -12,7 +12,7 @@ from typing import Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
 
 MODULE_NAME = "scheduled_report_email"
-MODULE_VERSION = "1.0.1"
+MODULE_VERSION = "1.0.2"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -88,6 +88,8 @@ def dashboard_links(base_url: str) -> list[tuple[str, str]]:
         ("Strategy Health", f"{base_url}/strategy_health.html"),
         ("CIO Advisory", f"{base_url}/cio_advisory.html"),
         ("Learning", f"{base_url}/learning.html"),
+        ("Weekly Reports", f"{base_url}/reports/weekly/"),
+        ("Monthly Reports", f"{base_url}/reports/monthly/"),
     ]
 
 
