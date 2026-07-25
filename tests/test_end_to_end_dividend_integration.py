@@ -138,7 +138,7 @@ def _governed_scenario() -> dict:
         registry=registry,
         event_type="DIVIDEND_ALERTS_UPDATED",
         source_service="ALERTS",
-        payload={"alert_ids": [item["alert_id"] for item in alert_report["alerts"]},
+        payload={"alert_ids": [item["alert_id"] for item in alert_report["alerts"]]},
         correlation_id=daily_cycle["cycle_id"],
         occurred_at_utc="2026-07-25T16:31:00Z",
     )
@@ -146,7 +146,7 @@ def _governed_scenario() -> dict:
         registry=registry,
         event_type="DIVIDEND_ALERTS_UPDATED",
         source_service="ALERTS",
-        payload={"alert_ids": [item["alert_id"] for item in alert_report["alerts"]},
+        payload={"alert_ids": [item["alert_id"] for item in alert_report["alerts"]]},
         correlation_id=daily_cycle["cycle_id"],
         occurred_at_utc="2026-07-25T16:32:00Z",
         processed_event_ids=[event["event_id"]],
