@@ -115,8 +115,6 @@ Lifecycle
    - Produce JSON and Markdown outputs
    - Local validation reported: 26 tests passed
 
-### In Progress
-
 10. Enterprise Dividend Service Registry and Event Wiring
     - Register each completed Dividend service in dependency order
     - Define service subscriptions and publications
@@ -124,11 +122,18 @@ Lifecycle
     - Preserve immutable payload hashes, correlation IDs, and routing records
     - Support governed replay metadata without invoking services
     - Produce JSON and Markdown outputs
+    - Local validation reported: 29 tests passed
 
-### Planned
+### In Progress
 
 11. End-to-End Dividend Integration Tests
-    - Test a governed scenario from intelligence through reporting, dashboard, alerts, reviews, learning, CIO recommendation, replacement, health, daily cycle, and event routing
+    - Test a governed dividend-cut scenario from dashboard evidence through alerts, reviews, learning, CIO advisory, daily-cycle completion, and event routing
+    - Verify forecast-versus-actual paper income
+    - Verify originating alert, review, evidence, and correlation links
+    - Verify duplicate-event suppression and immutable routing metadata
+    - Verify permanent paper-only safety boundaries across integrated modules
+
+### Planned
 
 12. Platform V1 Dividend Freeze
     - Record modules, versions, safety boundaries, test totals, known limitations, and deferred Version 2 features
@@ -169,15 +174,15 @@ Each new Platform V1 module should:
 
 ## Current Branch
 
-`phase-10-enterprise-dividend-service-registry-event-wiring`
+`phase-11-end-to-end-dividend-integration-tests`
 
 ## Next Validation Commands
 
 ```cmd
-python -m py_compile src\dividend_bot\enterprise_dividend_service_registry_event_wiring.py
-python -m pytest tests\test_enterprise_dividend_service_registry_event_wiring.py -v
+python -m py_compile tests\test_end_to_end_dividend_integration.py
+python -m pytest tests\test_end_to_end_dividend_integration.py -v
 ```
 
 ## Next Phase After Validation
 
-End-to-End Dividend Integration Tests.
+Platform V1 Dividend Freeze.
