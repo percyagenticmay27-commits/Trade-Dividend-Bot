@@ -64,8 +64,6 @@ Lifecycle
    - Paper-only and advisory-only
    - Local validation reported: 28 tests passed
 
-### In Progress
-
 4. Enterprise Dividend Review Workflow
    - Structured review records
    - States: `OPEN`, `UNDER_REVIEW`, `RESOLVED`, `DEFERRED`, `ESCALATED`
@@ -73,8 +71,9 @@ Lifecycle
    - Deterministic review identity and duplicate-alert protection
    - Append-only status history and review notes
    - Human approval required; no capital movement or execution authority
+   - Local validation reported: 30 tests passed
 
-### Planned
+### In Progress
 
 5. Enterprise Dividend Learning Integration
    - Compare forecasts with actual paper income
@@ -83,6 +82,9 @@ Lifecycle
    - Evaluate review outcomes
    - Create append-only learning records
    - Recommend improvements without changing policy automatically
+   - Preserve deterministic learning identity and source traceability
+
+### Planned
 
 6. Enterprise Dividend CIO Advisory Integration
    - Consume income, forecasts, analytics, alerts, reviews, and learning
@@ -147,15 +149,15 @@ Each new Platform V1 module should:
 
 ## Current Branch
 
-`phase-4-enterprise-dividend-review-workflow`
+`phase-5-enterprise-dividend-learning-integration`
 
 ## Next Validation Commands
 
 ```cmd
-python -m py_compile src\dividend_bot\enterprise_dividend_review_workflow.py
-python -m pytest tests\test_enterprise_dividend_review_workflow.py -v
+python -m py_compile src\dividend_bot\enterprise_dividend_learning_integration.py
+python -m pytest tests\test_enterprise_dividend_learning_integration.py -v
 ```
 
 ## Next Phase After Validation
 
-Enterprise Dividend Learning Integration.
+Enterprise Dividend CIO Advisory Integration.
