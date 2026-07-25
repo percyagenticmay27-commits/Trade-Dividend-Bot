@@ -107,24 +107,28 @@ Lifecycle
    - Paper-only, advisory-only, and no policy-change authority
    - Local validation reported: 29 tests passed
 
-### In Progress
-
 9. Enterprise Dividend Daily Cycle Integration
    - Connect completed Dividend modules in dependency order
    - Produce deterministic paper-only cycle plans and status manifests
    - Aggregate read-only step results without invoking brokerage or execution paths
-   - Block downstream steps when required dependencies fail
+   - Block downstream steps only when required dependencies fail
    - Produce JSON and Markdown outputs
+   - Local validation reported: 26 tests passed
+
+### In Progress
+
+10. Enterprise Dividend Service Registry and Event Wiring
+    - Register each completed Dividend service in dependency order
+    - Define service subscriptions and publications
+    - Enforce deterministic event identity and duplicate-event protection
+    - Preserve immutable payload hashes, correlation IDs, and routing records
+    - Support governed replay metadata without invoking services
+    - Produce JSON and Markdown outputs
 
 ### Planned
 
-10. Enterprise Dividend Service Registry and Event Wiring
-    - Register Dividend services
-    - Subscribe services to enterprise events
-    - Enforce idempotency and duplicate-event protection
-
 11. End-to-End Dividend Integration Tests
-    - Test a governed scenario from intelligence through reporting, dashboard, alerts, reviews, and CIO recommendation
+    - Test a governed scenario from intelligence through reporting, dashboard, alerts, reviews, learning, CIO recommendation, replacement, health, daily cycle, and event routing
 
 12. Platform V1 Dividend Freeze
     - Record modules, versions, safety boundaries, test totals, known limitations, and deferred Version 2 features
@@ -165,15 +169,15 @@ Each new Platform V1 module should:
 
 ## Current Branch
 
-`phase-9-enterprise-dividend-daily-cycle-integration`
+`phase-10-enterprise-dividend-service-registry-event-wiring`
 
 ## Next Validation Commands
 
 ```cmd
-python -m py_compile src\dividend_bot\enterprise_dividend_daily_cycle_integration.py
-python -m pytest tests\test_enterprise_dividend_daily_cycle_integration.py -v
+python -m py_compile src\dividend_bot\enterprise_dividend_service_registry_event_wiring.py
+python -m pytest tests\test_enterprise_dividend_service_registry_event_wiring.py -v
 ```
 
 ## Next Phase After Validation
 
-Enterprise Dividend Service Registry and Event Wiring.
+End-to-End Dividend Integration Tests.
