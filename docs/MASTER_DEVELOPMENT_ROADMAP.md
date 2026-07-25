@@ -73,8 +73,6 @@ Lifecycle
    - Human approval required; no capital movement or execution authority
    - Local validation reported: 30 tests passed
 
-### In Progress
-
 5. Enterprise Dividend Learning Integration
    - Compare forecasts with actual paper income
    - Measure forecast accuracy
@@ -83,13 +81,18 @@ Lifecycle
    - Create append-only learning records
    - Recommend improvements without changing policy automatically
    - Preserve deterministic learning identity and source traceability
+   - Local validation reported: 26 tests passed
 
-### Planned
+### In Progress
 
 6. Enterprise Dividend CIO Advisory Integration
    - Consume income, forecasts, analytics, alerts, reviews, and learning
-   - Produce governed recommendations such as `HOLD`, `REVIEW`, `REDUCE`, `EXIT_REVIEW`, and `REPLACEMENT_REVIEW`
-   - Remain advisory until investor approval
+   - Produce governed recommendations: `HOLD`, `REVIEW`, `REDUCE`, `EXIT_REVIEW`, and `REPLACEMENT_REVIEW`
+   - Preserve originating alert, review, learning, and evidence links
+   - Require investor approval before any decision
+   - Remain advisory-only with no execution, capital movement, or policy-change authority
+
+### Planned
 
 7. Enterprise Dividend Replacement Integration
    - Compare weakening governed holdings with stronger candidates
@@ -149,15 +152,15 @@ Each new Platform V1 module should:
 
 ## Current Branch
 
-`phase-5-enterprise-dividend-learning-integration`
+`phase-6-enterprise-dividend-cio-advisory-integration`
 
 ## Next Validation Commands
 
 ```cmd
-python -m py_compile src\dividend_bot\enterprise_dividend_learning_integration.py
-python -m pytest tests\test_enterprise_dividend_learning_integration.py -v
+python -m py_compile src\dividend_bot\enterprise_dividend_cio_advisory_integration.py
+python -m pytest tests\test_enterprise_dividend_cio_advisory_integration.py -v
 ```
 
 ## Next Phase After Validation
 
-Enterprise Dividend CIO Advisory Integration.
+Enterprise Dividend Replacement Integration.
