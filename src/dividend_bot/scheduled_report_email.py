@@ -8,11 +8,11 @@ import ssl
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Iterable, Mapping, Optional, Sequence
+from typing import Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
 
 MODULE_NAME = "scheduled_report_email"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -21,18 +21,18 @@ DEFAULT_TIMEZONE = "America/Chicago"
 DEFAULT_SEND_HOUR = 19
 WEEKLY_REPORT_FILES = (
     "weekly_portfolio_review.md",
-    "results/enterprise_dividend_dashboard.html",
-    "results/enterprise_investor_dashboard.html",
-    "results/enterprise_dividend_strategy_health.html",
-    "results/enterprise_dividend_cio_advisory.html",
+    "results/html/executive_dashboard.html",
+    "results/html/investor_dashboard.html",
+    "results/html/strategy_health.html",
+    "results/html/cio_advisory.html",
 )
 MONTHLY_REPORT_FILES = (
     "results/monthly_board_report.html",
-    "results/enterprise_dividend_dashboard.html",
-    "results/enterprise_investor_dashboard.html",
-    "results/enterprise_dividend_strategy_health.html",
-    "results/enterprise_dividend_learning.html",
-    "results/enterprise_dividend_cio_advisory.html",
+    "results/html/executive_dashboard.html",
+    "results/html/investor_dashboard.html",
+    "results/html/strategy_health.html",
+    "results/html/learning.html",
+    "results/html/cio_advisory.html",
 )
 
 
@@ -82,11 +82,12 @@ def dashboard_links(base_url: str) -> list[tuple[str, str]]:
     if not base_url:
         return []
     return [
+        ("AI CIO Portal", f"{base_url}/index.html"),
         ("Executive Dashboard", f"{base_url}/executive_dashboard.html"),
         ("Investor Dashboard", f"{base_url}/investor_dashboard.html"),
         ("Strategy Health", f"{base_url}/strategy_health.html"),
-        ("Weekly Reports", f"{base_url}/reports/weekly/"),
-        ("Monthly Reports", f"{base_url}/reports/monthly/"),
+        ("CIO Advisory", f"{base_url}/cio_advisory.html"),
+        ("Learning", f"{base_url}/learning.html"),
     ]
 
 
