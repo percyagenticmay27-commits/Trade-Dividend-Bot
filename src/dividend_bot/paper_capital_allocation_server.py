@@ -36,6 +36,25 @@ def _load_mapping(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def _load_cash_state(path: Path) -> dict[str, Any]:
+    """Read canonical cash state while preserving legacy balance-only fixtures.
+
+    The persistent production file is validated through read_cash_account(). Older
+    test fixtures and pre-migration paper state may contain only available_cash.
+    Those mappings remain readable by the UI but are never written as canonical
+    state by this module.
+    """
+    if not path.is_file():
+        return {}
+    try:
+        return read_cash_account(path)
+    except ValueError:
+        legacy = _load_mapping(path)
+        if available_cash_from_state(legacy) < 0:
+            raise ValueError("available paper cash cannot be negative")
+        return legacy
+
+
 def available_cash_from_state(state: Mapping[str, Any]) -> float:
     for key in ("available_cash", "cash_available", "unallocated_cash", "cash_balance", "balance"):
         value = state.get(key)
@@ -83,9 +102,9 @@ def create_wsgi_app(
         method = str(environ.get("REQUEST_METHOD") or "GET").upper()
         registry = _load_mapping(registry_file)
         plugins = discover_strategy_plugins(registry)
-        cash_state = read_cash_account(cash_file) if cash_file.is_file() else {}
-        available_cash = available_cash_from_state(cash_state)
         try:
+            cash_state = _load_cash_state(cash_file)
+            available_cash = available_cash_from_state(cash_state)
             if method == "GET" and path in {"/", "/allocation"}:
                 payload = render_allocation_html(available_cash=available_cash, strategy_plugins=plugins).encode("utf-8")
                 start_response("200 OK", [("Content-Type", "text/html; charset=utf-8"), ("Content-Length", str(len(payload)))])
