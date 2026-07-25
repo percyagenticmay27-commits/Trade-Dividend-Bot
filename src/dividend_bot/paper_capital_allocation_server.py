@@ -22,6 +22,7 @@ from .paper_capital_allocation import (
     parse_allocation_form,
     render_allocation_html,
 )
+from .paper_cash_account import initialize_cash_account, read_cash_account
 
 DEFAULT_REGISTRY_PATH = Path("results/enterprise_dividend_service_registry.json")
 DEFAULT_CASH_PATH = Path("state/paper_cash_account.json")
@@ -65,17 +66,25 @@ def create_wsgi_app(
     cash_path: str | Path = DEFAULT_CASH_PATH,
     request_log: str | Path = DEFAULT_REQUEST_LOG,
     investor_id: str = "default-investor",
+    initial_paper_cash: Optional[float] = None,
 ) -> Callable:
     registry_file = Path(registry_path)
     cash_file = Path(cash_path)
     log_file = Path(request_log)
+    if not cash_file.is_file() and initial_paper_cash is not None:
+        initialize_cash_account(
+            path=cash_file,
+            investor_money=initial_paper_cash,
+            investor_id=investor_id,
+        )
 
     def app(environ: Mapping[str, Any], start_response: Callable) -> Iterable[bytes]:
         path = str(environ.get("PATH_INFO") or "/")
         method = str(environ.get("REQUEST_METHOD") or "GET").upper()
         registry = _load_mapping(registry_file)
         plugins = discover_strategy_plugins(registry)
-        available_cash = available_cash_from_state(_load_mapping(cash_file))
+        cash_state = read_cash_account(cash_file) if cash_file.is_file() else {}
+        available_cash = available_cash_from_state(cash_state)
         try:
             if method == "GET" and path in {"/", "/allocation"}:
                 payload = render_allocation_html(available_cash=available_cash, strategy_plugins=plugins).encode("utf-8")
@@ -110,11 +119,14 @@ def create_wsgi_app(
 def main() -> int:
     host = os.environ.get("DIVIDEND_ALLOCATION_HOST", "127.0.0.1")
     port = int(os.environ.get("DIVIDEND_ALLOCATION_PORT", "8091"))
+    initial_cash_text = os.environ.get("DIVIDEND_INITIAL_PAPER_CASH")
+    initial_cash = float(initial_cash_text) if initial_cash_text and initial_cash_text.strip() else None
     app = create_wsgi_app(
         registry_path=os.environ.get("DIVIDEND_STRATEGY_REGISTRY", str(DEFAULT_REGISTRY_PATH)),
         cash_path=os.environ.get("DIVIDEND_PAPER_CASH_STATE", str(DEFAULT_CASH_PATH)),
         request_log=os.environ.get("DIVIDEND_ALLOCATION_REQUEST_LOG", str(DEFAULT_REQUEST_LOG)),
         investor_id=os.environ.get("DIVIDEND_INVESTOR_ID", "default-investor"),
+        initial_paper_cash=initial_cash,
     )
     print(f"Paper allocation portal listening on http://{host}:{port}/allocation")
     with make_server(host, port, app) as server:
