@@ -91,20 +91,24 @@ Lifecycle
    - Remain advisory-only with no execution, capital movement, or policy-change authority
    - Local validation reported: 28 tests passed
 
-### In Progress
-
 7. Enterprise Dividend Replacement Integration
    - Compare weakening governed holdings with stronger candidates
    - Use CIO recommendations, alerts, reviews, confidence, income growth, yield, risk, and quality evidence
    - Produce deterministic governed comparison records
    - Require investor approval before any paper portfolio change
    - No automatic selling, purchasing, allocation changes, or capital movement
+   - Local validation reported: 26 tests passed
 
-### Planned
+### In Progress
 
 8. Enterprise Dividend Strategy Health Integration
-   - Measure strategy performance, income growth, forecast accuracy, alert frequency, review outcomes, concentration, and lifecycle quality
-   - Status values: `HEALTHY`, `WATCH`, `DEGRADED`, `CRITICAL`
+   - Measure forecast accuracy, income growth, alert quality, review effectiveness, learning quality, confidence, evidence completeness, concentration, CIO stability, and replacement frequency
+   - Produce `HEALTHY`, `WATCH`, `DEGRADED`, or `CRITICAL`
+   - Generate governed risk flags and suggested review actions
+   - JSON and Markdown outputs
+   - Paper-only, advisory-only, and no policy-change authority
+
+### Planned
 
 9. Enterprise Dividend Daily Cycle Integration
    - Execute completed Dividend modules in dependency order
@@ -156,15 +160,15 @@ Each new Platform V1 module should:
 
 ## Current Branch
 
-`phase-7-enterprise-dividend-replacement-integration`
+`phase-8-enterprise-dividend-strategy-health-integration`
 
 ## Next Validation Commands
 
 ```cmd
-python -m py_compile src\dividend_bot\enterprise_dividend_replacement_integration.py
-python -m pytest tests\test_enterprise_dividend_replacement_integration.py -v
+python -m py_compile src\dividend_bot\enterprise_dividend_strategy_health_integration.py
+python -m pytest tests\test_enterprise_dividend_strategy_health_integration.py -v
 ```
 
 ## Next Phase After Validation
 
-Enterprise Dividend Strategy Health Integration.
+Enterprise Dividend Daily Cycle Integration.
