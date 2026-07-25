@@ -18,29 +18,49 @@ Required:
 
 ```text
 DIVIDEND_BOT_ENV=paper
+GMAIL_USER=percyagenticmay27@gmail.com
+GMAIL_APP_PASSWORD=<Gmail app password stored outside Git>
+REPORT_RECIPIENT=percyagenticmay27@gmail.com
 ```
 
-Optional:
+Recommended:
 
 ```text
 DIVIDEND_BOT_TIMEZONE=America/Chicago
 DIVIDEND_BOT_RESULTS_DIR=results
 DIVIDEND_BOT_LOG_DIR=logs
+DIVIDEND_DASHBOARD_BASE_URL=https://dividend.example.com
 ```
 
 Secrets such as email credentials must be stored outside the repository with permissions limited to the service account. Never commit secrets.
+
+## Report Email Schedule
+
+The report scheduler is checked once per day at 7:00 PM in `DIVIDEND_BOT_TIMEZONE`.
+
+- Weekly report: Friday at 7:00 PM.
+- Monthly report: the last calendar day of each month at 7:00 PM.
+- When the final day of a month is also Friday, both weekly and monthly emails are sent.
+- Emails contain an HTML summary, secure dashboard links when `DIVIDEND_DASHBOARD_BASE_URL` is configured, and any report files that exist at send time.
+- The scheduler remains paper-only and cannot invoke brokerage or capital-movement functions.
+
+The scheduler command is:
+
+```text
+python scheduled_report_email.py
+```
 
 ## DigitalOcean Setup
 
 1. Create an Ubuntu droplet with SSH keys and automatic backups.
 2. Create a service user, clone the repository, and check out the validated release branch.
 3. Create a virtual environment and install only the project's approved dependencies.
-4. Export `DIVIDEND_BOT_ENV=paper` in the service environment.
+4. Store the environment variables in a root-owned or service-account-owned environment file with restrictive permissions.
 5. Run the cloud-readiness tests before scheduling the bot.
 6. Make `start_dividend_bot.sh` executable.
-7. Configure a systemd timer or cron entry for the daily paper cycle.
+7. Configure one systemd timer for the daily paper cycle and a second timer for the 7:00 PM report-delivery check.
 
-## Example systemd Service
+## Example Daily-Cycle systemd Service
 
 ```ini
 [Unit]
@@ -51,13 +71,13 @@ After=network-online.target
 Type=oneshot
 User=dividendbot
 WorkingDirectory=/opt/trade-dividend-bot
-Environment=DIVIDEND_BOT_ENV=paper
+EnvironmentFile=/etc/trade-dividend-bot.env
 ExecStart=/opt/trade-dividend-bot/start_dividend_bot.sh
 NoNewPrivileges=true
 PrivateTmp=true
 ```
 
-## Example Timer
+## Example Daily-Cycle Timer
 
 ```ini
 [Unit]
@@ -71,7 +91,50 @@ Persistent=true
 WantedBy=timers.target
 ```
 
-Set the server timezone explicitly before relying on the timer schedule.
+## Example Report-Email Service
+
+```ini
+[Unit]
+Description=Trade Dividend Bot Scheduled Report Email
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=dividendbot
+WorkingDirectory=/opt/trade-dividend-bot
+EnvironmentFile=/etc/trade-dividend-bot.env
+ExecStart=/opt/trade-dividend-bot/.venv/bin/python /opt/trade-dividend-bot/scheduled_report_email.py
+NoNewPrivileges=true
+PrivateTmp=true
+```
+
+## Example Report-Email Timer
+
+```ini
+[Unit]
+Description=Check Trade Dividend Bot weekly and monthly report schedule
+
+[Timer]
+OnCalendar=*-*-* 19:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Set the server timezone explicitly and keep `DIVIDEND_BOT_TIMEZONE` aligned with the intended reporting timezone. The recommended default is `America/Chicago`.
+
+## Dashboard Access
+
+The HTML reporting layer should be served through Nginx over HTTPS and protected with authentication or an identity-aware access service. The scheduled email module uses `DIVIDEND_DASHBOARD_BASE_URL` to create links to:
+
+- Executive Dashboard
+- Investor Dashboard
+- Strategy Health
+- Weekly Reports
+- Monthly Reports
+
+The email also attaches available report files so the reports remain accessible if the dashboard site is temporarily unavailable.
 
 ## Health Check
 
