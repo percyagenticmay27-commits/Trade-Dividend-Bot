@@ -125,7 +125,8 @@ def build_enterprise_dividend_daily_cycle(
     available = {str(item) for item in (available_artifacts or []) if str(item).strip()}
     supplied_results = {str(key).upper(): dict(value) for key, value in (step_results or {}).items() if isinstance(value, Mapping)}
     warnings: list[str] = []
-    completed: set[str] = set()
+    status_by_name: dict[str, str] = {}
+
     for step in normalized:
         name = step["step_name"]
         missing_inputs = [item for item in step["input_artifacts"] if item not in available]
@@ -133,22 +134,29 @@ def build_enterprise_dividend_daily_cycle(
             message = f"Missing input artifacts: {', '.join(missing_inputs)}"
             step["warnings"].append(message)
             warnings.append(f"{name}: {message}")
+
         if not step["enabled"]:
             step["status"] = "SKIPPED"
+            status_by_name[name] = step["status"]
             continue
-        if any(dep not in completed for dep in step["dependencies"]):
+
+        dependency_statuses = [status_by_name.get(dep, "PENDING") for dep in step["dependencies"]]
+        if any(status in {"FAILED", "BLOCKED"} for status in dependency_statuses):
             step["status"] = "BLOCKED"
             step["error"] = "One or more dependencies did not complete."
+            status_by_name[name] = step["status"]
             continue
+
         result = supplied_results.get(name)
         if result is None:
             step["status"] = "PENDING"
+            status_by_name[name] = step["status"]
             continue
+
         status = _upper(result.get("status"), "COMPLETED")
         step["status"] = status if status in {"COMPLETED", "WARNING", "FAILED", "SKIPPED"} else "COMPLETED"
         step["result"] = result
-        if step["status"] in {"COMPLETED", "WARNING", "SKIPPED"}:
-            completed.add(name)
+        status_by_name[name] = step["status"]
 
     statuses = [item["status"] for item in normalized]
     if "FAILED" in statuses or "BLOCKED" in statuses:
