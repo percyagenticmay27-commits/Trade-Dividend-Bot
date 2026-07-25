@@ -124,19 +124,22 @@ Lifecycle
     - Produce JSON and Markdown outputs
     - Local validation reported: 29 tests passed
 
-### In Progress
-
 11. End-to-End Dividend Integration Tests
     - Test a governed dividend-cut scenario from dashboard evidence through alerts, reviews, learning, CIO advisory, daily-cycle completion, and event routing
     - Verify forecast-versus-actual paper income
     - Verify originating alert, review, evidence, and correlation links
     - Verify duplicate-event suppression and immutable routing metadata
     - Verify permanent paper-only safety boundaries across integrated modules
+    - Local validation reported: 13 tests passed
 
-### Planned
+### In Progress
 
 12. Platform V1 Dividend Freeze
-    - Record modules, versions, safety boundaries, test totals, known limitations, and deferred Version 2 features
+    - Create `docs/PLATFORM_V1_DIVIDEND_FREEZE.md`
+    - Record frozen modules, versions, safety boundaries, validation totals, known limitations, allowed maintenance scope, remaining release gates, and deferred Version 2 features
+    - Validate the freeze document with a dedicated test suite
+
+### Planned
 
 13. Cloud Readiness and Deployment
     - Environment validation
@@ -174,15 +177,15 @@ Each new Platform V1 module should:
 
 ## Current Branch
 
-`phase-11-end-to-end-dividend-integration-tests`
+`phase-12-platform-v1-dividend-freeze`
 
 ## Next Validation Commands
 
 ```cmd
-python -m py_compile tests\test_end_to_end_dividend_integration.py
-python -m pytest tests\test_end_to_end_dividend_integration.py -v
+python -m py_compile tests\test_platform_v1_dividend_freeze.py
+python -m pytest tests\test_platform_v1_dividend_freeze.py -v
 ```
 
 ## Next Phase After Validation
 
-Platform V1 Dividend Freeze.
+Cloud Readiness and Deployment.
