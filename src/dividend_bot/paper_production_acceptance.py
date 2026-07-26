@@ -8,11 +8,13 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
 MODULE_NAME = "paper_production_acceptance"
-MODULE_VERSION = "1.0.0"
-SCHEMA_VERSION = "1.0"
+MODULE_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.1"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
+CAPITAL_MOVEMENT_ENABLED = False
+INVESTOR_CONTROLS_LIVE_MODE = True
 
 REQUIRED_REPORTS = (
     "results/enterprise_dividend_dashboard.json",
@@ -25,6 +27,10 @@ REQUIRED_REPORTS = (
 REQUIRED_OPERATIONAL_FILES = (
     "logs/dividend_bot.jsonl",
     "state/paper_state.json",
+    "state/paper_cash_account.json",
+    "state/paper_cash_transactions.jsonl",
+    "state/paper_allocation_requests.jsonl",
+    "results/enterprise_dividend_service_registry.json",
 )
 
 
@@ -64,6 +70,40 @@ def _json_check(root: Path, relative_path: str) -> AcceptanceCheck:
     return AcceptanceCheck(relative_path, "PASSED", "JSON parsed successfully")
 
 
+def _jsonl_check(root: Path, relative_path: str, required_fields: Sequence[str]) -> AcceptanceCheck:
+    path = root / relative_path
+    if not path.is_file() or path.stat().st_size == 0:
+        return AcceptanceCheck(relative_path, "FAILED", "Required JSONL file is missing or empty")
+    try:
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    except json.JSONDecodeError as exc:
+        return AcceptanceCheck(relative_path, "FAILED", f"Invalid JSONL: {exc}")
+    if not records or any(not isinstance(item, Mapping) for item in records):
+        return AcceptanceCheck(relative_path, "FAILED", "JSONL must contain object records")
+    missing = [field for field in required_fields if field not in records[-1]]
+    if missing:
+        return AcceptanceCheck(relative_path, "FAILED", "Latest record missing fields: " + ", ".join(missing))
+    return AcceptanceCheck(relative_path, "PASSED", f"Validated {len(records)} append-only record(s)")
+
+
+def _cash_account_check(root: Path) -> AcceptanceCheck:
+    path = root / "state/paper_cash_account.json"
+    try:
+        account = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return AcceptanceCheck("paper_cash_account", "FAILED", f"Invalid paper cash account: {exc}")
+    required = {"investor_id", "currency", "starting_cash", "available_cash", "reserved_cash", "allocated_cash"}
+    missing = sorted(required - set(account)) if isinstance(account, Mapping) else sorted(required)
+    if missing:
+        return AcceptanceCheck("paper_cash_account", "FAILED", "Missing fields: " + ", ".join(missing))
+    balances = [float(account[name]) for name in ("starting_cash", "available_cash", "reserved_cash", "allocated_cash")]
+    if any(value < 0 for value in balances):
+        return AcceptanceCheck("paper_cash_account", "FAILED", "Cash balances cannot be negative")
+    if account.get("paper_trade_mode") is not True:
+        return AcceptanceCheck("paper_cash_account", "FAILED", "paper_trade_mode must remain true")
+    return AcceptanceCheck("paper_cash_account", "PASSED", "Canonical investor paper cash account validated")
+
+
 def build_acceptance_report(
     root_dir: str | Path,
     *,
@@ -71,6 +111,7 @@ def build_acceptance_report(
     required_operational_files: Sequence[str] = REQUIRED_OPERATIONAL_FILES,
     email_delivery_status: str = "NOT_TESTED",
     restart_recovery_status: str = "NOT_TESTED",
+    allocation_ui_status: str = "NOT_TESTED",
     generated_at_utc: Optional[str] = None,
 ) -> dict[str, Any]:
     root = Path(root_dir)
@@ -79,50 +120,41 @@ def build_acceptance_report(
         checks.append(_file_check(root, relative_path))
     for relative_path in required_operational_files:
         checks.append(_file_check(root, relative_path))
-
-    for relative_path in required_reports:
+    for relative_path in (*required_reports, *required_operational_files):
         if relative_path.endswith(".json"):
             checks.append(_json_check(root, relative_path))
 
+    checks.append(_cash_account_check(root))
+    checks.append(_jsonl_check(root, "state/paper_cash_transactions.jsonl", ("transaction_id", "amount", "balance_after", "paper_trade_mode")))
+    checks.append(_jsonl_check(root, "state/paper_allocation_requests.jsonl", ("request_id", "status", "requested_cash", "allocations", "paper_trade_mode")))
+
     email_status = str(email_delivery_status).upper()
     recovery_status = str(restart_recovery_status).upper()
-    checks.append(
-        AcceptanceCheck(
-            "email_delivery",
-            "PASSED" if email_status in {"SENT", "DRY_RUN_PASSED"} else "FAILED",
-            f"Email delivery status: {email_status}",
-        )
-    )
-    checks.append(
-        AcceptanceCheck(
-            "restart_recovery",
-            "PASSED" if recovery_status == "PASSED" else "FAILED",
-            f"Restart recovery status: {recovery_status}",
-        )
-    )
+    ui_status = str(allocation_ui_status).upper()
+    checks.append(AcceptanceCheck("email_delivery", "PASSED" if email_status in {"SENT", "DRY_RUN_PASSED"} else "FAILED", f"Email delivery status: {email_status}"))
+    checks.append(AcceptanceCheck("restart_recovery", "PASSED" if recovery_status == "PASSED" else "FAILED", f"Restart recovery status: {recovery_status}"))
+    checks.append(AcceptanceCheck("paper_cash_allocation_ui", "PASSED" if ui_status == "PASSED" else "FAILED", f"Cash funding and allocation UI status: {ui_status}"))
 
     failed = [item for item in checks if item.status == "FAILED"]
-    status = "ACCEPTED" if not failed else "REJECTED"
     return {
         "module_name": MODULE_NAME,
         "module_version": MODULE_VERSION,
         "schema_version": SCHEMA_VERSION,
         "generated_at_utc": generated_at_utc or _now_utc(),
-        "status": status,
+        "status": "ACCEPTED" if not failed else "REJECTED",
         "paper_trade_mode": True,
         "live_trading_enabled": False,
         "broker_execution_enabled": False,
-        "summary": {
-            "total_checks": len(checks),
-            "passed_checks": len(checks) - len(failed),
-            "failed_checks": len(failed),
-        },
+        "capital_movement_enabled": False,
+        "investor_controls_live_mode": True,
+        "summary": {"total_checks": len(checks), "passed_checks": len(checks) - len(failed), "failed_checks": len(failed)},
         "checks": [item.to_dict() for item in checks],
         "governance": {
             "order_execution_allowed": False,
             "brokerage_communication_allowed": False,
             "capital_movement_allowed": False,
             "automatic_policy_change_allowed": False,
+            "live_mode_requires_investor_authorization": True,
         },
     }
 
