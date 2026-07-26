@@ -1,6 +1,7 @@
-"""Persistent paper-only cash account for investor-supplied simulated capital."""
+"""Persistent investor-controlled cash account for paper mode and future live providers."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
@@ -8,19 +9,33 @@ from pathlib import Path
 from typing import Any, Mapping, Optional
 
 MODULE_NAME = "paper_cash_account"
-MODULE_VERSION = "1.0.0"
-SCHEMA_VERSION = "1.0"
+MODULE_VERSION = "1.1.0"
+SCHEMA_VERSION = "1.1"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
+INVESTOR_CONTROLS_LIVE_MODE = True
 
 DEFAULT_CASH_ACCOUNT_PATH = Path("state/paper_cash_account.json")
+DEFAULT_CASH_TRANSACTION_PATH = Path("state/paper_cash_transactions.jsonl")
 DEFAULT_INITIAL_CASH_ENV = "DIVIDEND_INITIAL_PAPER_CASH"
+DEFAULT_CASH_PROVIDER_ENV = "CASH_ACCOUNT_PROVIDER"
+PAPER_PROVIDER = "PAPER"
+ROBINHOOD_PROVIDER = "ROBINHOOD"
+SUPPORTED_PROVIDERS = {PAPER_PROVIDER, ROBINHOOD_PROVIDER}
 
 
 def _now_utc() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def resolve_cash_provider(environment: Optional[Mapping[str, str]] = None) -> str:
+    values = dict(os.environ if environment is None else environment)
+    provider = str(values.get(DEFAULT_CASH_PROVIDER_ENV, PAPER_PROVIDER)).strip().upper()
+    if provider not in SUPPORTED_PROVIDERS:
+        raise ValueError(f"unsupported cash account provider: {provider}")
+    return provider
 
 
 def build_cash_account(
@@ -30,7 +45,6 @@ def build_cash_account(
     currency: str = "USD",
     generated_at_utc: Optional[str] = None,
 ) -> dict[str, Any]:
-    """Build the canonical paper cash account state."""
     amount = round(float(investor_money), 2)
     if amount < 0:
         raise ValueError("investor_money cannot be negative")
@@ -42,6 +56,7 @@ def build_cash_account(
         "generated_at_utc": generated,
         "investor_id": investor_id,
         "currency": currency,
+        "cash_account_provider": PAPER_PROVIDER,
         "starting_cash": amount,
         "available_cash": amount,
         "reserved_cash": 0.0,
@@ -50,18 +65,14 @@ def build_cash_account(
         "live_trading_enabled": False,
         "broker_execution_enabled": False,
         "capital_movement_enabled": False,
+        "investor_controls_live_mode": True,
         "source": "INVESTOR_SUPPLIED_PAPER_CAPITAL",
     }
 
 
 def validate_cash_account(account: Mapping[str, Any]) -> None:
     required = (
-        "investor_id",
-        "currency",
-        "starting_cash",
-        "available_cash",
-        "reserved_cash",
-        "allocated_cash",
+        "investor_id", "currency", "starting_cash", "available_cash", "reserved_cash", "allocated_cash"
     )
     missing = [name for name in required if name not in account]
     if missing:
@@ -106,7 +117,6 @@ def initialize_cash_account(
     environment: Optional[Mapping[str, str]] = None,
     overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Create the account once from an explicit value or environment variable."""
     destination = Path(path)
     if destination.is_file() and not overwrite:
         return read_cash_account(destination)
@@ -122,3 +132,81 @@ def initialize_cash_account(
 def available_cash(account: Mapping[str, Any]) -> float:
     validate_cash_account(account)
     return round(float(account["available_cash"]), 2)
+
+
+def build_paper_deposit(
+    *, account: Mapping[str, Any], amount: float, reason: str = "ADDITIONAL_PAPER_DEPOSIT",
+    investor_id: Optional[str] = None, created_at_utc: Optional[str] = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    validate_cash_account(account)
+    deposit = round(float(amount), 2)
+    if deposit <= 0:
+        raise ValueError("paper deposit amount must be greater than zero")
+    created = created_at_utc or _now_utc()
+    before = round(float(account["available_cash"]), 2)
+    after = round(before + deposit, 2)
+    updated = dict(account)
+    updated["starting_cash"] = round(float(account["starting_cash"]) + deposit, 2)
+    updated["available_cash"] = after
+    updated["generated_at_utc"] = created
+    updated["module_version"] = MODULE_VERSION
+    identity = json.dumps({"investor_id": investor_id or account["investor_id"], "amount": deposit, "created_at_utc": created, "reason": reason}, sort_keys=True)
+    transaction_id = "PCT-" + hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16].upper()
+    transaction = {
+        "transaction_id": transaction_id,
+        "created_at_utc": created,
+        "transaction_type": "PAPER_DEPOSIT",
+        "reason": str(reason).strip() or "ADDITIONAL_PAPER_DEPOSIT",
+        "investor_id": investor_id or account["investor_id"],
+        "currency": account["currency"],
+        "amount": deposit,
+        "balance_before": before,
+        "balance_after": after,
+        "status": "CONFIRMED_BY_INVESTOR",
+        "cash_account_provider": PAPER_PROVIDER,
+        "paper_trade_mode": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "capital_movement_enabled": False,
+        "investor_controls_live_mode": True,
+    }
+    validate_cash_account(updated)
+    return updated, transaction
+
+
+def append_cash_transaction(transaction: Mapping[str, Any], path: str | Path = DEFAULT_CASH_TRANSACTION_PATH) -> bool:
+    destination = Path(path)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    transaction_id = str(transaction.get("transaction_id") or "")
+    if not transaction_id:
+        raise ValueError("transaction_id is required")
+    if destination.exists():
+        for line in destination.read_text(encoding="utf-8").splitlines():
+            if line.strip() and json.loads(line).get("transaction_id") == transaction_id:
+                return False
+    with destination.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(dict(transaction), sort_keys=True) + "\n")
+    return True
+
+
+def apply_paper_deposit(
+    *, account_path: str | Path = DEFAULT_CASH_ACCOUNT_PATH,
+    transaction_path: str | Path = DEFAULT_CASH_TRANSACTION_PATH,
+    amount: float, reason: str = "ADDITIONAL_PAPER_DEPOSIT",
+    investor_id: Optional[str] = None, created_at_utc: Optional[str] = None,
+) -> dict[str, Any]:
+    account = read_cash_account(account_path)
+    if not account:
+        raise RuntimeError("paper cash account has not been initialized")
+    updated, transaction = build_paper_deposit(account=account, amount=amount, reason=reason, investor_id=investor_id, created_at_utc=created_at_utc)
+    if not append_cash_transaction(transaction, transaction_path):
+        return transaction
+    write_cash_account(updated, account_path)
+    return transaction
+
+
+def require_investor_live_authorization(*, investor_approved: bool, provider: str) -> None:
+    """Future-live guard: only the investor can authorize transition from paper to live."""
+    normalized = str(provider).upper()
+    if normalized == ROBINHOOD_PROVIDER and not investor_approved:
+        raise PermissionError("investor approval is required before Robinhood live synchronization")
