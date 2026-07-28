@@ -1,4 +1,11 @@
 .env
+
 .venv/
 __pycache__/
 *.py[cod]
+
+*.bak
+email_delivery_log_test.csv
+__pycache__/
+*.pyc
+

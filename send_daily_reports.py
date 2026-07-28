@@ -1,24 +1,26 @@
-"""Email the four PAPER ONLY daily decision reports through Gmail SMTP."""
+"""Email the four PAPER ONLY daily decision reports through SendGrid REST API."""
 
 from __future__ import annotations
-from dotenv import load_dotenv
-load_dotenv()
 
 import csv
 import json
 import os
-import smtplib
 import ssl
+import smtplib
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Protocol
 
+from dotenv import load_dotenv
+from shared.notifications.sendgrid_email import send_email
 
+
+load_dotenv(".env")
 SMTP_HOST = "smtp.gmail.com"
 SMTP_PORT = 465
-SENDER = "percyagenticmay27@gmail.com"
-RECIPIENT = "percyagenticmay27@gmail.com"
+SENDER = os.getenv("SENDGRID_FROM_EMAIL", "prproducts3000@gmail.com")
+RECIPIENT = os.getenv("REPORT_RECIPIENT", "percyagenticmay27@gmail.com")
 PASSWORD_ENV = "GMAIL_APP_PASSWORD"
 STATE_PATH = Path("paper_state.json")
 DELIVERY_LOG_PATH = Path("email_delivery_log.csv")
@@ -172,27 +174,30 @@ def send_daily_reports(
     if already_sent(delivery_log, current_report_date, recipient):
         return "SKIPPED_ALREADY_SENT"
 
-    app_password = configured_app_password(password)
-    if not app_password:
-        raise RuntimeError(
-            f"{PASSWORD_ENV} is not configured. Set a Gmail app password in the "
-            "user environment; never store it in this project."
-        )
     message = build_message(
-        current_report_date,
-        attachments,
-        sender=sender,
+    current_report_date,
+    attachments,
+    sender=sender,
+    recipient=recipient,
+)
+
+    body_part = message.get_body(preferencelist=("plain",))
+    body_text = body_part.get_content() if body_part else str(message)
+
+    send_email(
+        subject=str(message["Subject"]),
+        body=body_text,
         recipient=recipient,
+        attachments=attachments,
     )
-    with smtp_factory() as smtp:
-        smtp.login(sender, app_password)
-        smtp.send_message(message)
+
     append_delivery_log(
         delivery_log,
         current_report_date,
         message,
         attachments,
     )
+
     return "SENT"
 
 
