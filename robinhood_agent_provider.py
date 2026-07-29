@@ -64,6 +64,10 @@ class RobinhoodAgentProvider:
     invoker: ToolInvoker
     now_factory: Callable[[], datetime] = lambda: datetime.now(timezone.utc)
 
+    @property
+    def provider_name(self) -> str:
+        return PROVIDER_NAME
+
     def _invoke_history(self, symbol: str, period: str, interval: str) -> Mapping[str, Any]:
         ticker = symbol.strip().upper()
         if not ticker:
@@ -82,7 +86,7 @@ class RobinhoodAgentProvider:
         }
         try:
             response = self.invoker(HISTORICAL_OPERATION, request)
-        except Exception as exc:  # runtime/tool boundary
+        except Exception as exc:
             raise MarketDataProviderError(f"Robinhood historical request failed for {ticker}: {exc}") from exc
         if not isinstance(response, Mapping):
             raise MarketDataProviderError("Robinhood response must be a mapping")
