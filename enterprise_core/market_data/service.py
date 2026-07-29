@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from .models import MarketDataRequest, MarketDataResponse
 from .provider_engine import ProviderEngine
+from .quality import MarketDataQuality, assess_history_quality
 
 
 class EnterpriseMarketDataService:
@@ -32,7 +33,27 @@ class EnterpriseMarketDataService:
             end=end,
             limit=limit,
         )
-        return self._provider_engine.get_history(request)
+        response = self._provider_engine.get_history(request)
+        assess_history_quality(response)
+        return response
+
+    def get_history_with_quality(
+        self,
+        symbol: str,
+        *,
+        interval: str = "1d",
+        start: str | None = None,
+        end: str | None = None,
+        limit: int | None = None,
+    ) -> tuple[MarketDataResponse, MarketDataQuality]:
+        response = self.get_history(
+            symbol,
+            interval=interval,
+            start=start,
+            end=end,
+            limit=limit,
+        )
+        return response, assess_history_quality(response)
 
     def provider_names(self) -> tuple[str, ...]:
         """Operational visibility for Enterprise monitoring, not strategies."""
