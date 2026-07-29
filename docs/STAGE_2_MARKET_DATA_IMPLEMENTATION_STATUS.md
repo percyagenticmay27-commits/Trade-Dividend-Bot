@@ -2,7 +2,7 @@
 
 **Branch:** `stage-2-enterprise-market-data`  
 **Pull Request:** #21  
-**Status:** In Progress
+**Status:** Implementation Complete — Runtime QA Pending
 
 ## Completed
 
@@ -15,7 +15,11 @@
 - Robinhood read-only injected-runtime adapter boundary
 - Validated JSON historical-cache provider
 - Deterministic market-data quality assessment
-- Unit tests for provider priority, fallback, normalization, cache validation, quality scoring, and permanent paper-only restrictions
+- Cache-write orchestration for qualified primary-provider responses
+- Provider diagnostics and health snapshots
+- Configuration-driven provider construction
+- Dividend Bot compatibility adapter
+- Unit tests for provider priority, fallback, normalization, cache validation, quality scoring, orchestration, diagnostics, configuration, compatibility behavior, and permanent paper-only restrictions
 
 ## Permanent Safety State
 
@@ -27,17 +31,20 @@ broker_execution_enabled=False
 
 No account management, order placement, capital transfer, or live-trading capability is included.
 
-## Remaining in Market Data Phase
+## Runtime QA Remaining
 
-1. Execute the complete test suite in a mounted runtime.
-2. Add cache-write orchestration after successful primary-provider responses.
-3. Add provider diagnostics and health-report output.
-4. Add configuration-driven provider construction.
-5. Integrate the existing Dividend Bot through a compatibility adapter without changing its strategy calculations.
+Execute in a mounted checkout:
+
+```bash
+python -m py_compile enterprise_core/market_data/*.py enterprise_core/market_data/providers/*.py
+pytest tests/test_enterprise_market_data.py tests/test_enterprise_market_data_providers.py tests/test_enterprise_market_data_quality.py tests/test_enterprise_market_data_runtime.py -v
+```
+
+Production Dividend Bot calculations remain unchanged. The compatibility adapter provides a controlled migration boundary and should be wired into existing data consumers only after the complete test suite passes.
 
 ## Next Roadmap Phase
 
-After the Market Data phase passes QA:
+After Market Data runtime QA passes:
 
 1. Plugin Registry
 2. Manifest Loader
