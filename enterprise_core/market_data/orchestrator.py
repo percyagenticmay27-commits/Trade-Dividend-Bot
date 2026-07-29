@@ -7,14 +7,14 @@ from pathlib import Path
 
 from .models import MarketDataResponse, ProviderStatus
 from .providers.historical_cache import HistoricalCacheProvider
-from .quality import assess_market_data_quality
+from .quality import assess_history_quality
 from .service import EnterpriseMarketDataService
 
 
 @dataclass(frozen=True)
 class OrchestrationResult:
     response: MarketDataResponse
-    quality_score: float
+    quality_score: int
     quality_level: str
     cache_path: str | None
     warnings: tuple[str, ...]
@@ -42,9 +42,9 @@ class MarketDataOrchestrator:
 
     def get_history(self, symbol: str, **kwargs: object) -> OrchestrationResult:
         response = self._service.get_history(symbol, **kwargs)
-        assessment = assess_market_data_quality(response)
+        assessment = assess_history_quality(response)
         cache_path: Path | None = None
-        warnings = list(response.warnings)
+        warnings = list(assessment.warnings)
 
         should_cache = (
             self._cache_provider is not None
@@ -62,7 +62,7 @@ class MarketDataOrchestrator:
         return OrchestrationResult(
             response=response,
             quality_score=assessment.score,
-            quality_level=assessment.level.value,
+            quality_level=assessment.classification,
             cache_path=str(cache_path) if cache_path is not None else None,
             warnings=tuple(warnings),
         )
