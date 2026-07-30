@@ -18,7 +18,14 @@ class ManifestValidationResult:
 class StrategyManifestValidator:
     SUPPORTED_SCHEMA_VERSIONS = frozenset({"1.0"})
     ALLOWED_LIFECYCLE_STATUSES = frozenset(
-        {"DEVELOPMENT", "QA", "PAPER_CERTIFIED", "PRODUCTION_PAPER", "RETIRED"}
+        {
+            "DEVELOPMENT",
+            "QA",
+            "PAPER",
+            "PAPER_CERTIFIED",
+            "PRODUCTION_PAPER",
+            "RETIRED",
+        }
     )
     ALLOWED_CERTIFICATION_LEVELS = frozenset(
         {"UNCERTIFIED", "DEVELOPMENT", "QA", "PAPER_CERTIFIED", "PRODUCTION_PAPER"}
