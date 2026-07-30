@@ -86,6 +86,24 @@ def _normalize_service(service: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
+def default_dividend_strategy_plugins() -> list[dict[str, Any]]:
+    """Return the canonical paper-only Dividend strategy plugin registration."""
+    return [{
+        "strategy_id": "dividend",
+        "display_name": "Dividend Income Strategy",
+        "plugin_type": "STRATEGY",
+        "strategy_plugin": True,
+        "status": "READY",
+        "enabled": True,
+        "version": "1.0.0",
+        "health": "HEALTHY",
+        "paper_trade_mode": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "capital_movement_enabled": False,
+    }]
+
+
 def default_dividend_services() -> list[dict[str, Any]]:
     event_names = {
         "LIFECYCLE": "DIVIDEND_LIFECYCLE_UPDATED",
@@ -146,6 +164,7 @@ def build_service_registry(
         for event_type in subscribers
         if event_type != "DIVIDEND_CYCLE_REQUESTED" and event_type not in publishers
     ]
+    strategy_plugins = default_dividend_strategy_plugins()
     registry_hash = hashlib.sha256(json.dumps(normalized, sort_keys=True).encode("utf-8")).hexdigest()
     return {
         "module_name": MODULE_NAME,
@@ -165,8 +184,10 @@ def build_service_registry(
             "disabled_count": sum(1 for item in normalized if not item["enabled"]),
             "event_type_count": len(set(publishers) | set(subscribers)),
             "warning_count": len(warnings),
+            "strategy_plugin_count": len(strategy_plugins),
         },
         "services": normalized,
+        "strategy_plugins": strategy_plugins,
         "publishers": {key: sorted(value, key=SERVICE_ORDER.index) for key, value in sorted(publishers.items())},
         "subscribers": {key: sorted(value, key=SERVICE_ORDER.index) for key, value in sorted(subscribers.items())},
         "warnings": warnings,
@@ -226,6 +247,7 @@ def render_service_registry_markdown(registry: Mapping[str, Any]) -> str:
         "# Enterprise Dividend Service Registry and Event Wiring", "",
         f"- Registry hash: `{registry.get('registry_hash', '')}`",
         f"- Services: **{registry.get('summary', {}).get('service_count', 0)}**",
+        f"- Strategy plugins: **{registry.get('summary', {}).get('strategy_plugin_count', 0)}**",
         f"- Paper trade mode: `{registry.get('paper_trade_mode')}`", "",
         "## Registered Services", "",
         "| # | Service | Status | Enabled | Subscriptions | Publications |",
@@ -236,6 +258,12 @@ def render_service_registry_markdown(registry: Mapping[str, Any]) -> str:
             f"| {service.get('sequence')} | {service.get('service_name')} | {service.get('status')} | "
             f"{service.get('enabled')} | {', '.join(service.get('subscriptions', [])) or '-'} | "
             f"{', '.join(service.get('publications', [])) or '-'} |"
+        )
+    lines.extend(["", "## Strategy Plugins", ""])
+    for plugin in registry.get("strategy_plugins", []):
+        lines.append(
+            f"- **{plugin.get('display_name')}** (`{plugin.get('strategy_id')}`): "
+            f"{plugin.get('status')} / {plugin.get('health')} / paper-only"
         )
     lines.extend(["", "## Warnings", ""])
     warnings = list(registry.get("warnings") or [])
