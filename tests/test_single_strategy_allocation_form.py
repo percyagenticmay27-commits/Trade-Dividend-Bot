@@ -75,7 +75,7 @@ def test_dashboard_single_strategy_shows_current_allocation_as_read_only() -> No
     page = render_allocation_page(
         10000,
         [PLUGIN],
-        allocated_cash=1250,
+        strategy_allocations={"dividend": 1250},
     )
 
     assert 'name="amount_dividend"' not in page
@@ -108,6 +108,7 @@ def test_wsgi_single_strategy_request_requires_only_top_amount(tmp_path: Path) -
 
     assert status == "201 Created"
     assert "PENDING_GOVERNANCE_REVIEW" in page
+    assert "Approve and Apply Paper Allocation" in page
     recorded = json.loads(request_log.read_text(encoding="utf-8").strip())
     assert recorded["requested_cash"] == 5000
     assert recorded["allocations"] == [
