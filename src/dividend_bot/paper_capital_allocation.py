@@ -15,7 +15,7 @@ from typing import Any, Mapping, Optional, Sequence
 from urllib.parse import parse_qs
 
 MODULE_NAME = "paper_capital_allocation"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 SCHEMA_VERSION = "1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -168,20 +168,28 @@ def append_allocation_request(request: Mapping[str, Any], path: str | Path) -> b
 def render_allocation_html(*, available_cash: float, strategy_plugins: Sequence[Mapping[str, Any]]) -> str:
     """Render a secure-server-hosted form populated only from registered plugins."""
     cards = []
+    single_strategy = len(strategy_plugins) == 1
     for item in strategy_plugins:
         sid = html.escape(str(item.get("strategy_id")))
         name = html.escape(str(item.get("display_name") or sid))
         status = html.escape(str(item.get("status") or "UNKNOWN"))
         health = html.escape(str(item.get("health") or "UNKNOWN"))
-        cards.append(
-            f'<label class="strategy"><input type="checkbox" name="strategy" value="{sid}">'
-            f'<span><strong>{name}</strong><small>{status} · Health {health}</small></span>'
-            f'<input class="amount" name="amount_{sid}" type="number" min="0" step="0.01" placeholder="$0.00"></label>'
-        )
+        if single_strategy:
+            cards.append(
+                f'<div class="strategy"><input type="hidden" name="strategy" value="{sid}">'
+                f'<span><strong>{name}</strong><small>{status} · Health {health}</small></span>'
+                '<span class="automatic"><strong>100% of request</strong><small>Automatically assigned from the total above</small></span></div>'
+            )
+        else:
+            cards.append(
+                f'<label class="strategy"><input type="checkbox" name="strategy" value="{sid}">'
+                f'<span><strong>{name}</strong><small>{status} · Health {health}</small></span>'
+                f'<input class="amount" name="amount_{sid}" type="number" min="0" step="0.01" placeholder="$0.00"></label>'
+            )
     strategies = "".join(cards) or '<p class="empty">No eligible paper strategy plugins are registered.</p>'
     return f"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Paper Capital Allocation</title><style>
-body{{margin:0;font-family:Arial;background:#f5f7fb;color:#101828}}header{{background:#081a39;color:white;padding:24px 32px}}main{{max-width:980px;margin:24px auto;padding:0 18px}}.panel{{background:white;border:1px solid #dfe3ec;border-radius:16px;padding:24px;box-shadow:0 5px 18px #10182812}}.cash{{font-size:32px;color:#5d18d6;font-weight:800}}.strategy{{display:grid;grid-template-columns:28px 1fr 160px;gap:12px;align-items:center;padding:16px;border-top:1px solid #e4e7ec}}small{{display:block;color:#667085;margin-top:5px}}input{{padding:10px;border:1px solid #cfd4dc;border-radius:8px}}button{{background:#5d18d6;color:white;border:0;border-radius:9px;padding:12px 18px;font-weight:700}}.warning{{background:#fff4e5;border-left:5px solid #f79009;padding:12px;margin:16px 0}}@media(max-width:650px){{.strategy{{grid-template-columns:28px 1fr}}.amount{{grid-column:2}}}}
+body{{margin:0;font-family:Arial;background:#f5f7fb;color:#101828}}header{{background:#081a39;color:white;padding:24px 32px}}main{{max-width:980px;margin:24px auto;padding:0 18px}}.panel{{background:white;border:1px solid #dfe3ec;border-radius:16px;padding:24px;box-shadow:0 5px 18px #10182812}}.cash{{font-size:32px;color:#5d18d6;font-weight:800}}.strategy{{display:grid;grid-template-columns:{'1fr 210px' if single_strategy else '28px 1fr 160px'};gap:12px;align-items:center;padding:16px;border-top:1px solid #e4e7ec}}small{{display:block;color:#667085;margin-top:5px}}input{{padding:10px;border:1px solid #cfd4dc;border-radius:8px}}button{{background:#5d18d6;color:white;border:0;border-radius:9px;padding:12px 18px;font-weight:700}}.warning{{background:#fff4e5;border-left:5px solid #f79009;padding:12px;margin:16px 0}}.automatic{{text-align:right}}@media(max-width:650px){{.strategy{{grid-template-columns:1fr}}.amount{{grid-column:1}}.automatic{{text-align:left}}}}
 </style></head><body><header><h1>Enterprise Paper Capital Allocation</h1><p>Choose how much simulated cash to assign to registered strategy plugins.</p></header><main><div class="panel"><p>Available paper cash</p><div class="cash">${float(available_cash):,.2f}</div><div class="warning"><strong>PAPER ONLY.</strong> Submitting this form records an immutable allocation request. It does not transfer cash, place an order, or activate a strategy automatically.</div><form method="post" action="/allocation/request"><label>Cash to allocate<br><input id="requested" name="requested_cash" type="number" min="0.01" max="{float(available_cash):.2f}" step="0.01" required></label><h2>Available strategies</h2>{strategies}<p><button type="submit">Review and record paper allocation</button></p></form></div></main></body></html>"""
 
 
@@ -189,5 +197,9 @@ def parse_allocation_form(body: bytes) -> tuple[float, dict[str, float]]:
     values = parse_qs(body.decode("utf-8"), keep_blank_values=False)
     requested = float(values.get("requested_cash", ["0"])[0])
     selected = values.get("strategy", [])
-    allocations = {sid: float(values.get(f"amount_{sid}", ["0"])[0]) for sid in selected}
+    allocations: dict[str, float] = {}
+    for sid in selected:
+        raw_amount = values.get(f"amount_{sid}", [""])[0]
+        amount = float(raw_amount) if str(raw_amount).strip() else 0.0
+        allocations[sid] = requested if len(selected) == 1 and amount <= 0 else amount
     return requested, allocations
