@@ -125,7 +125,8 @@ def test_wsgi_get_and_post_record_request(tmp_path: Path):
     assert status == "200 OK" and "Dividend Income" in page
     status, page = _call_app(app, "POST", "/allocation/request", b"requested_cash=200&strategy=dividend-income&amount_dividend-income=200")
     assert status == "201 Created"
-    assert "No cash was transferred" in page
+    assert "No cash has been transferred" in page
+    assert "Approve and Apply Paper Allocation" in page
     assert log.exists()
 
 
