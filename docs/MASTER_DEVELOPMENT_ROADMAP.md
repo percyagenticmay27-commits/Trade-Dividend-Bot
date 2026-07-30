@@ -2,22 +2,26 @@
 
 ## Purpose
 
-This document is the repository-owned source of truth for Platform V1 Dividend development. It records completed phases, current work, remaining integration steps, permanent safety boundaries, and deferred Version 2 scope.
+This document is the repository-owned source of truth for Platform V1 Dividend development and Enterprise AI CIO Version 1 integration. It records completed implementation phases, validated milestones, remaining deployment verification, permanent safety boundaries, and deferred future scope.
 
 ## Permanent Safety Boundaries
 
 - `paper_trade_mode=True`
+- `live_trading_enabled=False`
+- `broker_execution_enabled=False`
 - No Robinhood execution
 - No brokerage communication
 - No real order placement
 - No automatic capital movement
 - Investor-facing modules are advisory and reporting only
-- Enterprise AI CIO recommendations require investor approval
+- Enterprise AI CIO recommendations require investor and governance approval
 - Learning records are append-only
 - Learning may recommend improvements but must never silently change policy
 - Alerts, reviews, evidence, reports, decisions, and learning records must remain traceable
 - Duplicate events must not create duplicate records
-- Swing, Options, and Futures integrations remain deferred until the Dividend production workflow is stable
+- The Enterprise Runtime retains scheduling ownership
+- `paper_capital_allocation.py` retains ownership of investor-confirmed immutable paper allocation requests
+- Swing, Options, and Futures deployment remains deferred until the Dividend production workflow is operationally validated
 
 ## Platform Dependency Flow
 
@@ -38,13 +42,16 @@ Lifecycle
 → Service Registry and Event Wiring
 → End-to-End Tests
 → Platform Freeze
-→ Cloud Deployment
+→ Cloud Readiness
 → Paper Production Acceptance
 → Platform V1 Release
+→ Enterprise Core Integration
+→ Enterprise AI CIO V1
+→ DigitalOcean Production Verification
 
 ## Development Status
 
-### Complete
+### Platform V1 Dividend — Complete
 
 1. Enterprise Dividend Dashboard Integration
    - Immutable executive dashboard snapshots
@@ -132,37 +139,111 @@ Lifecycle
     - Verify permanent paper-only safety boundaries across integrated modules
     - Local validation reported: 13 tests passed
 
-### In Progress
-
 12. Platform V1 Dividend Freeze
-    - Create `docs/PLATFORM_V1_DIVIDEND_FREEZE.md`
-    - Record frozen modules, versions, safety boundaries, validation totals, known limitations, allowed maintenance scope, remaining release gates, and deferred Version 2 features
-    - Validate the freeze document with a dedicated test suite
+    - Frozen feature set, dependency order, safety boundaries, known limitations, and allowed maintenance scope
+    - Freeze document: `docs/PLATFORM_V1_DIVIDEND_FREEZE.md`
 
-### Planned
-
-13. Cloud Readiness and Deployment
+13. Cloud Readiness and Deployment Foundation
     - Environment validation
-    - Output directories
-    - Structured logs
-    - Scheduler entry points
-    - Health checks
-    - Startup scripts
+    - Persistent output, state, log, and runtime directories
+    - Structured logs and health checks
+    - Scheduler entry points and startup scripts
     - DigitalOcean deployment documentation
+    - Implementation complete; server deployment verification remains operational work
 
-14. Paper Production Acceptance Test
-    - Run a realistic paper-only cycle
-    - Verify JSON, Markdown, logs, reports, alerts, dashboards, email delivery, and restart recovery
+14. Paper Production Acceptance
+    - Acceptance coverage for required JSON, Markdown, HTML, logs, email delivery, persistent state, cash funding, allocation records, and restart recovery
+    - Acceptance module and tests are complete
+    - Final deployed-server acceptance run remains operational work
 
 15. Platform V1 Release
-    - Tag the validated branch
-    - Preserve freeze documentation
-    - Deploy the Dividend Bot
-    - Keep Swing, Options, and Futures deferred
+    - Platform V1 release implementation and release gates completed
+    - Dashboard and workflow ownership frozen
+    - Paper cash and governed allocation workflow included
+
+### Enterprise Core and AI CIO Version 1 — Complete
+
+Enterprise Stages 1–8 established the architecture, market-data boundary, Strategy Registry, AI CIO discovery, Event Bus, Plugin SDK, Dividend Enterprise Plugin, and Enterprise Runtime.
+
+Enterprise AI CIO Stages 10–18 added:
+
+10. Strategy Inventory Service
+11. Enterprise Health Service
+12. Enterprise Executive Dashboard
+13. AI CIO Portfolio Manager
+14. Cross-Strategy Risk Engine
+15. Capital Allocation Review Service
+16. Strategy Performance Analytics
+17. Learning and Feedback Service
+18. Enterprise AI CIO Release Readiness
+
+Final local validation reported on 2026-07-30:
+
+- Stage 18 release-readiness suite: 9 passed
+- Complete Stage 10–18 regression suite: 115 passed
+- Failures: 0
+- Errors: 0
+- Release tag: `v1.0-enterprise-ai-cio`
+- Pre-merge backup branch: `backup/pre-enterprise-ai-cio-v1`
+
+## Current Repository Status
+
+- Platform V1 Dividend implementation: `COMPLETE`
+- Enterprise Core integration: `COMPLETE`
+- Enterprise AI CIO Version 1 implementation: `COMPLETE`
+- Current code baseline: `main`
+- Release marker: `v1.0-enterprise-ai-cio`
+- Paper trading: `ENABLED`
+- Live trading: `DISABLED`
+- Broker execution: `DISABLED`
+- Automatic capital movement: `DISABLED`
+
+## Remaining Dividend Roadmap Work
+
+The remaining work is deployment and operational validation, not new feature development.
+
+1. DigitalOcean Production Verification
+   - Deploy the tagged `main` baseline
+   - Validate environment variables, persistent directories, startup scripts, logs, health checks, and permissions
+   - Confirm permanent paper-only safety settings
+
+2. Scheduler and Email Verification
+   - Confirm the daily paper cycle executes at the intended schedule
+   - Confirm Gmail report delivery and delivery logging
+   - Confirm controlled failure reporting without broker or execution behavior
+
+3. Restart and Recovery Verification
+   - Restart the server and application services
+   - Verify state, cash records, allocation records, reports, logs, and runtime artifacts persist
+   - Verify scheduler and services resume correctly
+
+4. Deployed Paper Production Acceptance
+   - Run a realistic complete paper-only cycle on DigitalOcean
+   - Verify required reports, dashboards, alerts, logs, email delivery, persistent state, and restart recovery
+   - Produce final acceptance evidence
+
+5. Dividend Platform Closeout
+   - Record deployed acceptance results
+   - Confirm release-readiness status
+   - Create the final deployment tag or release record
+   - Keep Swing deployment deferred until this closeout is complete
+
+## Scope Freeze Before Deployment
+
+No additional dashboard, strategy, allocation, learning, or workflow feature development is permitted before deployment unless a specific missing release requirement or validated defect is identified.
+
+Allowed work before deployment:
+
+- Documentation corrections
+- Test corrections
+- Deployment configuration
+- Security and secret-handling corrections
+- Defect fixes that preserve frozen calculations and contracts
+- Operational validation and release evidence
 
 ## Standard Module Requirements
 
-Each new Platform V1 module should:
+Each Platform V1 and Enterprise AI CIO module must:
 
 - Preserve paper-only safety constants
 - Use standard-library dependencies unless explicitly approved otherwise
@@ -175,17 +256,22 @@ Each new Platform V1 module should:
 - Preserve backward-compatible public interfaces where required
 - Provide traceable links to upstream source artifacts
 
+## Deferred Scope
+
+The following remain deferred until the Dividend production workflow is stable and accepted on DigitalOcean:
+
+- Swing Bot deployment and Enterprise registration
+- Options strategy integration
+- Futures strategy integration
+- Live trading
+- Broker execution
+- Automatic capital movement
+- Automatic policy or portfolio-weight changes
+
 ## Current Branch
 
-`phase-12-platform-v1-dividend-freeze`
+`main`
 
-## Next Validation Commands
+## Next Operational Milestone
 
-```cmd
-python -m py_compile tests\test_platform_v1_dividend_freeze.py
-python -m pytest tests\test_platform_v1_dividend_freeze.py -v
-```
-
-## Next Phase After Validation
-
-Cloud Readiness and Deployment.
+DigitalOcean Production Verification.
