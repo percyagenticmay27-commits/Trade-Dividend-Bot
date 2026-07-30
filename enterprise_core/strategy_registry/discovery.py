@@ -34,7 +34,7 @@ class StrategyDiscoveryService:
         roots: list[str | Path] | tuple[str | Path, ...],
         registry: StrategyRegistry | None = None,
     ) -> DiscoveryResult:
-        target_registry = registry or StrategyRegistry()
+        target_registry = registry if registry is not None else StrategyRegistry()
         rejected: list[str] = []
         warnings: list[str] = []
 
