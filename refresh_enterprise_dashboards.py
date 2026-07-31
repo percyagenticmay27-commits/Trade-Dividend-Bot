@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 from src.dividend_bot.enterprise_dashboard_evidence_adapter import build_dashboard_evidence
+from src.dividend_bot.enterprise_strategy_kpi_adapter import build_strategy_kpis
 from src.dividend_bot.enterprise_executive_dashboard import build_executive_dashboard, render_executive_dashboard_markdown
 from src.dividend_bot.enterprise_investor_dashboard_integration import build_enterprise_investor_dashboard, render_enterprise_investor_dashboard_markdown
 
@@ -75,15 +76,52 @@ def _existing_investor_source(directory: Path, candidates: Sequence[str | Path])
     return {}, None, warnings
 
 
-def refresh_enterprise_dashboards(*, results_dir: str | Path = DEFAULT_RESULTS_DIR, root_dir: str | Path = ".", state_dir: str | Path = "state", investor_source_candidates: Sequence[str | Path] = DEFAULT_INVESTOR_SOURCE_CANDIDATES) -> dict[str, Any]:
-    """Publish dashboard artifacts from existing host evidence only."""
+def _strategy_allocations(cash_state: Mapping[str, Any]) -> dict[str, Any]:
+    for key in ("strategy_allocations", "allocations", "allocated_by_strategy"):
+        value = cash_state.get(key)
+        if isinstance(value, Mapping):
+            return dict(value)
+    return {}
+
+
+def refresh_enterprise_dashboards(
+    *,
+    results_dir: str | Path = DEFAULT_RESULTS_DIR,
+    root_dir: str | Path = ".",
+    state_dir: str | Path = "state",
+    investor_source_candidates: Sequence[str | Path] = DEFAULT_INVESTOR_SOURCE_CANDIDATES,
+) -> dict[str, Any]:
+    """Publish existing dashboards plus registry-driven per-strategy evidence."""
+    root = Path(root_dir)
     directory = Path(results_dir)
+    if not directory.is_absolute():
+        directory = root / directory
+    state = Path(state_dir)
+    if not state.is_absolute():
+        state = root / state
     directory.mkdir(parents=True, exist_ok=True)
-    evidence = build_dashboard_evidence(root_dir=root_dir, results_dir=directory, state_dir=state_dir)
+
+    evidence = build_dashboard_evidence(root_dir=root, results_dir=directory, state_dir=state)
     _atomic_write_json(directory / "strategy_inventory.json", evidence["strategy_inventory"])
     _atomic_write_json(directory / "enterprise_health.json", evidence["enterprise_health"])
 
+    registry, registry_warning = _read_mapping(directory / "enterprise_dividend_service_registry.json")
+    cash_state, cash_warning = _read_mapping(state / "paper_cash_account.json")
+    strategy_kpis, kpi_warnings = build_strategy_kpis(
+        registry=registry,
+        strategy_allocations=_strategy_allocations(cash_state),
+        root_dir=root,
+    )
+    _atomic_write_json(directory / "enterprise_strategy_kpis.json", {
+        "scope": "ALL_REGISTERED_STRATEGIES",
+        "strategy_count": len(strategy_kpis),
+        "strategies": strategy_kpis,
+        "warnings": kpi_warnings,
+    })
+
     executive = build_executive_dashboard(input_dir=directory)
+    executive["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
+    executive["strategy_kpis"] = strategy_kpis
     executive_json = _atomic_write_json(directory / DEFAULT_EXECUTIVE_JSON, executive)
     executive_markdown = _atomic_write_text(directory / DEFAULT_EXECUTIVE_MARKDOWN, render_executive_dashboard_markdown(executive))
 
@@ -101,10 +139,13 @@ def refresh_enterprise_dashboards(*, results_dir: str | Path = DEFAULT_RESULTS_D
             review_flags=adapted.get("review_flags"),
         )
         investor_source = "enterprise_dashboard_evidence_adapter" if adapted.get("portfolio_summary") else None
+    investor["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
+    investor["strategy_kpis"] = strategy_kpis
     investor_json = _atomic_write_json(directory / DEFAULT_INVESTOR_JSON, investor)
     investor_markdown = _atomic_write_text(directory / DEFAULT_INVESTOR_MARKDOWN, render_enterprise_investor_dashboard_markdown(investor))
 
-    warnings = list(evidence.get("warnings", [])) + source_warnings
+    warnings = list(evidence.get("warnings", [])) + source_warnings + kpi_warnings
+    warnings.extend(item for item in (registry_warning, cash_warning) if item)
     warnings.extend(str(item) for item in executive.get("warnings", []) if item)
     warnings.extend(str(item) for item in investor.get("warnings", []) if item)
     errors = [str(item) for item in executive.get("errors", []) if item]
@@ -114,13 +155,15 @@ def refresh_enterprise_dashboards(*, results_dir: str | Path = DEFAULT_RESULTS_D
         "broker_execution_enabled": False,
         "capital_movement_enabled": False,
         "reporting_only": True,
+        "dashboard_scope": "ENTERPRISE_ALL_REGISTERED_STRATEGIES",
         "executive_dashboard_status": executive.get("enterprise_summary", {}).get("enterprise_status", "UNKNOWN"),
         "investor_dashboard_status": investor.get("dashboard_status", "UNKNOWN"),
         "investor_source": investor_source,
-        "registered_strategy_count": executive.get("enterprise_summary", {}).get("registered_strategy_count", 0),
+        "registered_strategy_count": len(strategy_kpis),
         "paths": {
             "strategy_inventory": str(directory / "strategy_inventory.json"),
             "enterprise_health": str(directory / "enterprise_health.json"),
+            "strategy_kpis": str(directory / "enterprise_strategy_kpis.json"),
             "executive_json": str(executive_json),
             "executive_markdown": str(executive_markdown),
             "investor_json": str(investor_json),
@@ -142,12 +185,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     except Exception as exc:
         print(f"Dashboard refresh failed: {exc}")
         return 1
+    print(f"Dashboard scope: {summary['dashboard_scope']}")
     print(f"Executive dashboard: {summary['paths']['executive_json']}")
     print(f"Investor dashboard: {summary['paths']['investor_json']}")
+    print(f"Strategy KPIs: {summary['paths']['strategy_kpis']}")
     print(f"Registered strategies: {summary['registered_strategy_count']}")
     print(f"Executive status: {summary['executive_dashboard_status']}")
     print(f"Investor status: {summary['investor_dashboard_status']}")
-    print(f"Investor source: {summary['investor_source'] or 'none'}")
     for warning in summary["warnings"]:
         print(f"WARNING: {warning}")
     for error in summary["errors"]:
