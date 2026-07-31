@@ -26,6 +26,11 @@ from .paper_cash_account import (
     initialize_cash_account,
     read_cash_account,
 )
+from .portal_dashboard_routes import (
+    load_executive_dashboard_body,
+    load_investor_dashboard_body,
+    render_unavailable_dashboard,
+)
 
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -36,6 +41,9 @@ INVESTOR_CONTROLS_LIVE_MODE = True
 DEFAULT_REGISTRY_PATH = Path("results/enterprise_dividend_service_registry.json")
 DEFAULT_CASH_PATH = Path("state/paper_cash_account.json")
 DEFAULT_REQUEST_LOG = Path("state/paper_allocation_requests.jsonl")
+DEFAULT_EXECUTIVE_DASHBOARD_HTML = Path("results/ai_cio_executive_dashboard.html")
+DEFAULT_EXECUTIVE_DASHBOARD_JSON = Path("results/ai_cio_executive_dashboard.json")
+DEFAULT_INVESTOR_DASHBOARD_JSON = Path("results/enterprise_investor_dashboard.json")
 
 
 def _load_mapping(path: Path) -> dict[str, Any]:
@@ -70,11 +78,11 @@ def _layout(title: str, body: str, active: str) -> str:
     items = (
         ("Cash Account", "/cash"),
         ("Strategy Allocation", "/allocation"),
-        ("Executive Dashboard", "/executive_dashboard.html"),
-        ("Investor Dashboard", "/investor_dashboard.html"),
+        ("Executive Dashboard", "/executive-dashboard"),
+        ("Investor Dashboard", "/investor-dashboard"),
     )
     nav = "".join(f'<a class="{"active" if name == active else ""}" href="{url}">{name}</a>' for name, url in items)
-    return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(title)}</title><style>:root{{--purple:#5d18d6;--line:#dfe3ec;--bg:#f5f7fb;--muted:#667085}}*{{box-sizing:border-box}}body{{margin:0;font-family:Arial;background:var(--bg);color:#101828}}header{{background:linear-gradient(120deg,#07172f,#10244b);color:white;padding:24px 32px}}header h1{{margin:0}}nav{{display:flex;gap:18px;flex-wrap:wrap;padding:12px 32px;background:white;border-bottom:1px solid var(--line)}}nav a{{color:#344054;text-decoration:none;font-weight:700}}nav a.active{{color:var(--purple)}}.banner{{margin:18px 24px;padding:12px 16px;border-left:5px solid var(--purple);background:#f1eaff;font-weight:700}}main{{max-width:1180px;margin:auto;padding:0 24px 32px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}}.card,.panel{{background:white;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 14px #1018280d}}.card{{padding:20px;min-height:130px}}.label{{font-weight:700;color:#344054}}.value{{font-size:28px;font-weight:800;color:var(--purple);margin-top:18px}}.two{{display:grid;grid-template-columns:1fr 1.4fr;gap:18px}}.panel{{padding:22px}}.panel h2{{margin-top:0;color:#43169a}}label{{display:block;font-weight:700;margin:14px 0 6px}}input,select{{width:100%;padding:11px;border:1px solid #cfd4dc;border-radius:8px}}button{{background:var(--purple);color:white;border:0;border-radius:9px;padding:12px 18px;font-weight:700}}.strategy{{display:grid;grid-template-columns:28px 1fr 180px;gap:12px;align-items:center;padding:16px;border-top:1px solid #e4e7ec}}.strategy.single{{grid-template-columns:1fr 240px}}.strategy input[type=checkbox]{{width:auto}}.current-allocation{{text-align:right}}.current-allocation strong{{display:block;color:var(--purple);font-size:18px}}.proposed{{text-align:right;color:#43169a;font-weight:700}}.allocation-summary{{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:12px;margin:18px 0}}.allocation-summary div{{background:#f8f5ff;border:1px solid #d9cdf5;border-radius:10px;padding:12px}}.allocation-summary strong{{display:block;color:var(--purple);font-size:18px;margin-top:5px}}.amount-wrap[hidden],.proposed[hidden]{{display:none}}small{{display:block;color:var(--muted);margin-top:5px}}.commentary{{background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px;line-height:1.55}}.warning{{background:#fff4e5;border-left:5px solid #f79009;padding:12px;margin:16px 0}}.approve{{margin-top:18px;padding:18px;border:1px solid #b9a2ef;background:#f7f3ff;border-radius:12px}}@media(max-width:800px){{.two{{grid-template-columns:1fr}}.strategy,.strategy.single{{grid-template-columns:1fr}}.strategy .amount-wrap{{grid-column:1}}.current-allocation,.proposed{{text-align:left}}.allocation-summary{{grid-template-columns:1fr}}}}</style></head><body><header><h1>{html.escape(title)}</h1><p>Enterprise AI CIO investor-controlled capital portal</p></header><nav>{nav}</nav><div class='banner'>PAPER ONLY · No brokerage connection · No live orders · Only the investor can authorize future live mode</div><main>{body}</main></body></html>"""
+    return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(title)}</title><style>:root{{--purple:#5d18d6;--line:#dfe3ec;--bg:#f5f7fb;--muted:#667085}}*{{box-sizing:border-box}}body{{margin:0;font-family:Arial;background:var(--bg);color:#101828}}header{{background:linear-gradient(120deg,#07172f,#10244b);color:white;padding:24px 32px}}header h1{{margin:0}}nav{{display:flex;gap:18px;flex-wrap:wrap;padding:12px 32px;background:white;border-bottom:1px solid var(--line)}}nav a{{color:#344054;text-decoration:none;font-weight:700}}nav a.active{{color:var(--purple)}}.banner{{margin:18px 24px;padding:12px 16px;border-left:5px solid var(--purple);background:#f1eaff;font-weight:700}}main{{max-width:1180px;margin:auto;padding:0 24px 32px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}}.card,.panel{{background:white;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 14px #1018280d}}.card{{padding:20px;min-height:130px}}.label{{font-weight:700;color:#344054}}.value{{font-size:28px;font-weight:800;color:var(--purple);margin-top:18px}}.two{{display:grid;grid-template-columns:1fr 1.4fr;gap:18px}}.panel{{padding:22px;margin-bottom:18px}}.panel h2{{margin-top:0;color:#43169a}}label{{display:block;font-weight:700;margin:14px 0 6px}}input,select{{width:100%;padding:11px;border:1px solid #cfd4dc;border-radius:8px}}button{{background:var(--purple);color:white;border:0;border-radius:9px;padding:12px 18px;font-weight:700}}.strategy{{display:grid;grid-template-columns:28px 1fr 180px;gap:12px;align-items:center;padding:16px;border-top:1px solid #e4e7ec}}.strategy.single{{grid-template-columns:1fr 240px}}.strategy input[type=checkbox]{{width:auto}}.current-allocation{{text-align:right}}.current-allocation strong{{display:block;color:var(--purple);font-size:18px}}.proposed{{text-align:right;color:#43169a;font-weight:700}}.allocation-summary{{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:12px;margin:18px 0}}.allocation-summary div{{background:#f8f5ff;border:1px solid #d9cdf5;border-radius:10px;padding:12px}}.allocation-summary strong{{display:block;color:var(--purple);font-size:18px;margin-top:5px}}.amount-wrap[hidden],.proposed[hidden]{{display:none}}small{{display:block;color:var(--muted);margin-top:5px}}.commentary{{background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px;line-height:1.55}}.warning{{background:#fff4e5;border-left:5px solid #f79009;padding:12px;margin:16px 0}}.approve{{margin-top:18px;padding:18px;border:1px solid #b9a2ef;background:#f7f3ff;border-radius:12px}}table th,table td{{padding:10px;border-bottom:1px solid var(--line)}}@media(max-width:800px){{.two{{grid-template-columns:1fr}}.strategy,.strategy.single{{grid-template-columns:1fr}}.strategy .amount-wrap{{grid-column:1}}.current-allocation,.proposed{{text-align:left}}.allocation-summary{{grid-template-columns:1fr}}}}</style></head><body><header><h1>{html.escape(title)}</h1><p>Enterprise AI CIO investor-controlled capital portal</p></header><nav>{nav}</nav><div class='banner'>PAPER ONLY · No brokerage connection · No live orders · Only the investor can authorize future live mode</div><main>{body}</main></body></html>"""
 
 
 def render_cash_account_html(account: Mapping[str, Any]) -> str:
@@ -179,6 +187,9 @@ def create_wsgi_app(
     transaction_log: str | Path = DEFAULT_CASH_TRANSACTION_PATH,
     approval_log: str | Path = DEFAULT_APPROVAL_LOG,
     allocation_transaction_log: str | Path = DEFAULT_ALLOCATION_TRANSACTION_LOG,
+    executive_dashboard_html: str | Path = DEFAULT_EXECUTIVE_DASHBOARD_HTML,
+    executive_dashboard_json: str | Path = DEFAULT_EXECUTIVE_DASHBOARD_JSON,
+    investor_dashboard_json: str | Path = DEFAULT_INVESTOR_DASHBOARD_JSON,
     investor_id: str = "default-investor",
     initial_paper_cash: Optional[float] = None,
 ) -> Callable:
@@ -188,6 +199,9 @@ def create_wsgi_app(
     transaction_file = Path(transaction_log)
     approval_file = Path(approval_log)
     allocation_transaction_file = Path(allocation_transaction_log)
+    executive_html_file = Path(executive_dashboard_html)
+    executive_json_file = Path(executive_dashboard_json)
+    investor_json_file = Path(investor_dashboard_json)
     if not cash_file.is_file() and initial_paper_cash is not None:
         initialize_cash_account(path=cash_file, investor_money=initial_paper_cash, investor_id=investor_id)
 
@@ -198,6 +212,31 @@ def create_wsgi_app(
             account = _cash_state(cash_file)
             if method == "GET" and path in {"/", "/cash"}:
                 payload = render_cash_account_html(account).encode()
+                status = "200 OK"
+            elif method == "GET" and path == "/executive-dashboard":
+                try:
+                    dashboard, complete_document = load_executive_dashboard_body(
+                        html_path=executive_html_file,
+                        json_path=executive_json_file,
+                    )
+                    payload = dashboard.encode("utf-8") if complete_document else _layout("AI CIO Executive Dashboard", dashboard, "Executive Dashboard").encode("utf-8")
+                except (OSError, ValueError, json.JSONDecodeError) as exc:
+                    payload = _layout(
+                        "AI CIO Executive Dashboard",
+                        render_unavailable_dashboard("Executive Dashboard Unavailable", f"Executive dashboard artifact could not be read: {exc}"),
+                        "Executive Dashboard",
+                    ).encode("utf-8")
+                status = "200 OK"
+            elif method == "GET" and path == "/investor-dashboard":
+                try:
+                    dashboard, _ = load_investor_dashboard_body(json_path=investor_json_file)
+                    payload = _layout("Enterprise Investor Dashboard", dashboard, "Investor Dashboard").encode("utf-8")
+                except (OSError, ValueError, json.JSONDecodeError) as exc:
+                    payload = _layout(
+                        "Enterprise Investor Dashboard",
+                        render_unavailable_dashboard("Investor Dashboard Unavailable", f"Investor dashboard artifact could not be read: {exc}"),
+                        "Investor Dashboard",
+                    ).encode("utf-8")
                 status = "200 OK"
             elif method == "POST" and path == "/cash/deposit":
                 length = int(environ.get("CONTENT_LENGTH") or 0)
@@ -276,6 +315,9 @@ def main() -> int:
         transaction_log=os.environ.get("DIVIDEND_CASH_TRANSACTION_LOG", str(DEFAULT_CASH_TRANSACTION_PATH)),
         approval_log=os.environ.get("DIVIDEND_ALLOCATION_APPROVAL_LOG", str(DEFAULT_APPROVAL_LOG)),
         allocation_transaction_log=os.environ.get("DIVIDEND_ALLOCATION_TRANSACTION_LOG", str(DEFAULT_ALLOCATION_TRANSACTION_LOG)),
+        executive_dashboard_html=os.environ.get("DIVIDEND_EXECUTIVE_DASHBOARD_HTML", str(DEFAULT_EXECUTIVE_DASHBOARD_HTML)),
+        executive_dashboard_json=os.environ.get("DIVIDEND_EXECUTIVE_DASHBOARD_JSON", str(DEFAULT_EXECUTIVE_DASHBOARD_JSON)),
+        investor_dashboard_json=os.environ.get("DIVIDEND_INVESTOR_DASHBOARD_JSON", str(DEFAULT_INVESTOR_DASHBOARD_JSON)),
         investor_id=os.environ.get("DIVIDEND_INVESTOR_ID", "default-investor"),
         initial_paper_cash=initial,
     )
