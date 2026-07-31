@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0",
+  "registrations": [
+    {
+      "strategy_id": "SWING-001",
+      "registration_path": "/home/tradebot/Trade-Swing-Bot/main/configs/swing_strategy_service_registration.json",
+      "required": false
+    }
+  ]
+}
