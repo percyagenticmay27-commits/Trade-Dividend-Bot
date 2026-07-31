@@ -17,12 +17,28 @@ LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
 REPORTING_ONLY = True
-
 DEFAULT_RESULTS_DIR = Path("results")
 DEFAULT_EXECUTIVE_JSON = "ai_cio_executive_dashboard.json"
 DEFAULT_EXECUTIVE_MARKDOWN = "ai_cio_executive_dashboard.md"
 DEFAULT_INVESTOR_JSON = "enterprise_investor_dashboard.json"
 DEFAULT_INVESTOR_MARKDOWN = "enterprise_investor_dashboard.md"
+DEFAULT_INVESTOR_SOURCE_CANDIDATES = (
+    "enterprise_dividend_investor_dashboard.json",
+    "dividend_investor_dashboard.json",
+    "investor_portfolio_report.json",
+)
+
+
+def _read_mapping(path: Path) -> tuple[dict[str, Any], str | None]:
+    if not path.is_file():
+        return {}, None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        return {}, f"invalid dashboard source {path}: {exc}"
+    if not isinstance(value, dict):
+        return {}, f"invalid dashboard source {path}: root must be an object"
+    return value, None
 
 
 def _atomic_write_text(path: Path, content: str) -> Path:
@@ -45,11 +61,24 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> Path:
     return _atomic_write_text(path, json.dumps(dict(payload), indent=2, sort_keys=True) + "\n")
 
 
-def refresh_enterprise_dashboards(*, results_dir: str | Path = DEFAULT_RESULTS_DIR, root_dir: str | Path = ".", state_dir: str | Path = "state", investor_source_candidates: Sequence[str | Path] = ()) -> dict[str, Any]:
+def _existing_investor_source(directory: Path, candidates: Sequence[str | Path]) -> tuple[dict[str, Any], Path | None, list[str]]:
+    warnings: list[str] = []
+    for candidate in candidates:
+        path = Path(candidate)
+        if not path.is_absolute():
+            path = directory / path
+        payload, warning = _read_mapping(path)
+        if warning:
+            warnings.append(warning)
+        elif payload:
+            return payload, path, warnings
+    return {}, None, warnings
+
+
+def refresh_enterprise_dashboards(*, results_dir: str | Path = DEFAULT_RESULTS_DIR, root_dir: str | Path = ".", state_dir: str | Path = "state", investor_source_candidates: Sequence[str | Path] = DEFAULT_INVESTOR_SOURCE_CANDIDATES) -> dict[str, Any]:
     """Publish dashboard artifacts from existing host evidence only."""
     directory = Path(results_dir)
     directory.mkdir(parents=True, exist_ok=True)
-
     evidence = build_dashboard_evidence(root_dir=root_dir, results_dir=directory, state_dir=state_dir)
     _atomic_write_json(directory / "strategy_inventory.json", evidence["strategy_inventory"])
     _atomic_write_json(directory / "enterprise_health.json", evidence["enterprise_health"])
@@ -58,18 +87,24 @@ def refresh_enterprise_dashboards(*, results_dir: str | Path = DEFAULT_RESULTS_D
     executive_json = _atomic_write_json(directory / DEFAULT_EXECUTIVE_JSON, executive)
     executive_markdown = _atomic_write_text(directory / DEFAULT_EXECUTIVE_MARKDOWN, render_executive_dashboard_markdown(executive))
 
-    investor_evidence = evidence["investor_evidence"]
-    investor = build_enterprise_investor_dashboard(
-        portfolio_summary=investor_evidence.get("portfolio_summary"),
-        holdings=investor_evidence.get("holdings"),
-        payment_history=investor_evidence.get("payment_history"),
-        upcoming_payments=investor_evidence.get("upcoming_payments"),
-        review_flags=investor_evidence.get("review_flags"),
-    )
+    existing_source, source_path, source_warnings = _existing_investor_source(directory, investor_source_candidates)
+    if existing_source:
+        investor = build_enterprise_investor_dashboard(dividend_dashboard=existing_source)
+        investor_source = str(source_path)
+    else:
+        adapted = evidence["investor_evidence"]
+        investor = build_enterprise_investor_dashboard(
+            portfolio_summary=adapted.get("portfolio_summary"),
+            holdings=adapted.get("holdings"),
+            payment_history=adapted.get("payment_history"),
+            upcoming_payments=adapted.get("upcoming_payments"),
+            review_flags=adapted.get("review_flags"),
+        )
+        investor_source = "enterprise_dashboard_evidence_adapter" if adapted.get("portfolio_summary") else None
     investor_json = _atomic_write_json(directory / DEFAULT_INVESTOR_JSON, investor)
     investor_markdown = _atomic_write_text(directory / DEFAULT_INVESTOR_MARKDOWN, render_enterprise_investor_dashboard_markdown(investor))
 
-    warnings = list(evidence.get("warnings", []))
+    warnings = list(evidence.get("warnings", [])) + source_warnings
     warnings.extend(str(item) for item in executive.get("warnings", []) if item)
     warnings.extend(str(item) for item in investor.get("warnings", []) if item)
     errors = [str(item) for item in executive.get("errors", []) if item]
@@ -81,7 +116,7 @@ def refresh_enterprise_dashboards(*, results_dir: str | Path = DEFAULT_RESULTS_D
         "reporting_only": True,
         "executive_dashboard_status": executive.get("enterprise_summary", {}).get("enterprise_status", "UNKNOWN"),
         "investor_dashboard_status": investor.get("dashboard_status", "UNKNOWN"),
-        "investor_source": "enterprise_dashboard_evidence_adapter",
+        "investor_source": investor_source,
         "registered_strategy_count": executive.get("enterprise_summary", {}).get("registered_strategy_count", 0),
         "paths": {
             "strategy_inventory": str(directory / "strategy_inventory.json"),
@@ -112,6 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Registered strategies: {summary['registered_strategy_count']}")
     print(f"Executive status: {summary['executive_dashboard_status']}")
     print(f"Investor status: {summary['investor_dashboard_status']}")
+    print(f"Investor source: {summary['investor_source'] or 'none'}")
     for warning in summary["warnings"]:
         print(f"WARNING: {warning}")
     for error in summary["errors"]:
