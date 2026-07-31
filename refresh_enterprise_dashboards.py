@@ -28,6 +28,13 @@ DEFAULT_INVESTOR_SOURCE_CANDIDATES = (
     "dividend_investor_dashboard.json",
     "investor_portfolio_report.json",
 )
+OPTIONAL_EXECUTIVE_INPUTS = (
+    "runtime_snapshot.json",
+    "event_statistics.json",
+    "plugin_registry.json",
+    "runtime_metrics.json",
+    "scheduler_status.json",
+)
 
 
 def _read_mapping(path: Path) -> tuple[dict[str, Any], str | None]:
@@ -84,6 +91,50 @@ def _strategy_allocations(cash_state: Mapping[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _publish_optional_executive_evidence(
+    directory: Path,
+    *,
+    inventory: Mapping[str, Any],
+    registry: Mapping[str, Any],
+) -> None:
+    """Publish explicit read-only availability records without inventing metrics."""
+    strategies = inventory.get("strategies") if isinstance(inventory.get("strategies"), list) else []
+    summary = inventory.get("summary") if isinstance(inventory.get("summary"), Mapping) else {}
+    running = int(summary.get("running_count", 0) or 0)
+    plugin_count = len(strategies)
+    runtime_status = "RUNNING" if running else "UNKNOWN"
+    documents: dict[str, dict[str, Any]] = {
+        "runtime_snapshot.json": {
+            "runtime_status": runtime_status,
+            "plugin_count": plugin_count,
+            "running_strategy_count": running,
+            "evidence_status": "DERIVED_FROM_STRATEGY_INVENTORY",
+            "read_only": True,
+        },
+        "plugin_registry.json": dict(registry) if registry else {
+            "strategy_plugins": strategies,
+            "evidence_status": "DERIVED_FROM_EXISTING_STRATEGY_INVENTORY",
+            "read_only": True,
+        },
+        "event_statistics.json": {
+            "evidence_status": "NOT_REPORTED",
+            "read_only": True,
+        },
+        "runtime_metrics.json": {
+            "evidence_status": "NOT_REPORTED",
+            "read_only": True,
+        },
+        "scheduler_status.json": {
+            "evidence_status": "NOT_REPORTED",
+            "read_only": True,
+        },
+    }
+    for filename in OPTIONAL_EXECUTIVE_INPUTS:
+        path = directory / filename
+        if not path.exists():
+            _atomic_write_json(path, documents[filename])
+
+
 def refresh_enterprise_dashboards(
     *,
     results_dir: str | Path = DEFAULT_RESULTS_DIR,
@@ -102,10 +153,16 @@ def refresh_enterprise_dashboards(
     directory.mkdir(parents=True, exist_ok=True)
 
     evidence = build_dashboard_evidence(root_dir=root, results_dir=directory, state_dir=state)
-    _atomic_write_json(directory / "strategy_inventory.json", evidence["strategy_inventory"])
-    _atomic_write_json(directory / "enterprise_health.json", evidence["enterprise_health"])
+    inventory = evidence.get("strategy_inventory") if isinstance(evidence.get("strategy_inventory"), Mapping) else {}
+    health = evidence.get("enterprise_health") if isinstance(evidence.get("enterprise_health"), Mapping) else {}
+    if evidence.get("required_evidence_available"):
+        _atomic_write_json(directory / "strategy_inventory.json", inventory)
+        _atomic_write_json(directory / "enterprise_health.json", health)
 
     registry, registry_warning = _read_mapping(directory / "enterprise_dividend_service_registry.json")
+    if evidence.get("required_evidence_available"):
+        _publish_optional_executive_evidence(directory, inventory=inventory, registry=registry)
+
     cash_state, cash_warning = _read_mapping(state / "paper_cash_account.json")
     strategy_kpis, kpi_warnings = build_strategy_kpis(
         registry=registry,
@@ -126,6 +183,7 @@ def refresh_enterprise_dashboards(
     executive_markdown = _atomic_write_text(directory / DEFAULT_EXECUTIVE_MARKDOWN, render_executive_dashboard_markdown(executive))
 
     existing_source, source_path, source_warnings = _existing_investor_source(directory, investor_source_candidates)
+    adapter_warning: str | None = None
     if existing_source:
         investor = build_enterprise_investor_dashboard(dividend_dashboard=existing_source)
         investor_source = str(source_path)
@@ -138,14 +196,19 @@ def refresh_enterprise_dashboards(
             upcoming_payments=adapted.get("upcoming_payments"),
             review_flags=adapted.get("review_flags"),
         )
-        investor_source = "enterprise_dashboard_evidence_adapter" if adapted.get("portfolio_summary") else None
+        if adapted.get("portfolio_summary"):
+            investor_source = "enterprise_dashboard_evidence_adapter"
+            adapter_warning = "enterprise_dashboard_evidence_adapter: fallback investor evidence used"
+        else:
+            investor_source = None
+            adapter_warning = "enterprise_dashboard_evidence_adapter: no usable investor evidence was available"
     investor["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
     investor["strategy_kpis"] = strategy_kpis
     investor_json = _atomic_write_json(directory / DEFAULT_INVESTOR_JSON, investor)
     investor_markdown = _atomic_write_text(directory / DEFAULT_INVESTOR_MARKDOWN, render_enterprise_investor_dashboard_markdown(investor))
 
     warnings = list(evidence.get("warnings", [])) + source_warnings + kpi_warnings
-    warnings.extend(item for item in (registry_warning, cash_warning) if item)
+    warnings.extend(item for item in (registry_warning, cash_warning, adapter_warning) if item)
     warnings.extend(str(item) for item in executive.get("warnings", []) if item)
     warnings.extend(str(item) for item in investor.get("warnings", []) if item)
     errors = [str(item) for item in executive.get("errors", []) if item]
@@ -159,7 +222,7 @@ def refresh_enterprise_dashboards(
         "executive_dashboard_status": executive.get("enterprise_summary", {}).get("enterprise_status", "UNKNOWN"),
         "investor_dashboard_status": investor.get("dashboard_status", "UNKNOWN"),
         "investor_source": investor_source,
-        "registered_strategy_count": len(strategy_kpis),
+        "registered_strategy_count": len(strategy_kpis) or int(executive.get("enterprise_summary", {}).get("registered_strategy_count", 0) or 0),
         "paths": {
             "strategy_inventory": str(directory / "strategy_inventory.json"),
             "enterprise_health": str(directory / "enterprise_health.json"),
