@@ -4,9 +4,7 @@ from __future__ import annotations
 import html
 import json
 from pathlib import Path
-from typing import Any, Mapping, Optional
-
-from .enterprise_executive_dashboard import format_dashboard_html
+from typing import Any, Mapping
 
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -36,10 +34,122 @@ def _percent(value: Any) -> str:
         return "0.00%"
 
 
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
 def render_unavailable_dashboard(title: str, message: str) -> str:
     safe_title = html.escape(title)
     safe_message = html.escape(message)
-    return f"""<section class='panel'><h2>{safe_title}</h2><div class='commentary'>{safe_message}</div><p>This page is read-only and does not fabricate portfolio data.</p></section>"""
+    return (
+        f"<section class='panel'><h2>{safe_title}</h2>"
+        f"<div class='commentary'>{safe_message}</div>"
+        "<p>This page is read-only and does not fabricate portfolio data.</p></section>"
+    )
+
+
+def _cards(items: tuple[tuple[str, str], ...]) -> str:
+    return "".join(
+        "<article class='card'>"
+        f"<div class='label'>{html.escape(label)}</div>"
+        f"<div class='value'>{html.escape(value)}</div>"
+        "</article>"
+        for label, value in items
+    )
+
+
+def _text_list(values: Any) -> str:
+    if not isinstance(values, list) or not values:
+        return "<p>None reported.</p>"
+    return "<ul>" + "".join(f"<li>{html.escape(str(value))}</li>" for value in values) + "</ul>"
+
+
+def render_executive_dashboard_body(report: Mapping[str, Any]) -> str:
+    """Render existing executive JSON as read-only HTML without recalculating it."""
+    portfolio = _mapping(report.get("portfolio_summary"))
+    enterprise = _mapping(report.get("enterprise_summary"))
+    health = _mapping(report.get("health_summary"))
+    runtime = _mapping(report.get("runtime_summary"))
+    safety = _mapping(report.get("paper_safety"))
+    alerts = _mapping(report.get("alerts"))
+
+    portfolio_value = portfolio.get("portfolio_value", report.get("portfolio_value", 0))
+    available_cash = portfolio.get("available_cash", portfolio.get("cash_or_reserve_value", 0))
+    allocated_cash = portfolio.get("allocated_cash", 0)
+    projected_income = portfolio.get(
+        "projected_annual_dividend_income",
+        portfolio.get("projected_annual_income", 0),
+    )
+    registered = enterprise.get(
+        "registered_strategy_count",
+        report.get("registered_strategy_count", len(report.get("strategy_summary", [])) if isinstance(report.get("strategy_summary"), list) else 0),
+    )
+    status = enterprise.get("enterprise_status", report.get("status", "UNKNOWN"))
+    generated = report.get("generated_at_utc", "Not available")
+
+    cards = _cards((
+        ("Portfolio Value", _money(portfolio_value)),
+        ("Available Cash", _money(available_cash)),
+        ("Allocated Cash", _money(allocated_cash)),
+        ("Projected Annual Income", _money(projected_income)),
+        ("Registered Strategies", str(registered)),
+        ("Enterprise Status", str(status)),
+    ))
+
+    strategy_rows: list[str] = []
+    strategies = report.get("strategy_summary")
+    if isinstance(strategies, list):
+        for row in strategies:
+            if not isinstance(row, Mapping):
+                continue
+            strategy_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(row.get('strategy_name') or row.get('display_name') or row.get('strategy_id') or 'UNKNOWN'))}</td>"
+                f"<td>{html.escape(str(row.get('runtime_status') or row.get('status') or 'UNKNOWN'))}</td>"
+                f"<td>{html.escape(str(row.get('health_status') or row.get('health') or 'UNKNOWN'))}</td>"
+                f"<td>{html.escape(str(row.get('readiness') or 'UNKNOWN'))}</td>"
+                "</tr>"
+            )
+    strategies_html = "".join(strategy_rows) or "<tr><td colspan='4'>No strategy summary is available.</td></tr>"
+
+    critical = alerts.get("critical", report.get("critical_alerts", []))
+    warnings = alerts.get("warnings", report.get("warnings", []))
+    informational = alerts.get("informational", [])
+
+    return f"""
+<section class='grid'>{cards}</section>
+<section class='panel'>
+  <h2>AI CIO Executive Dashboard</h2>
+  <p><strong>Generated:</strong> {html.escape(str(generated))}</p>
+  <p>This dashboard is read-only, reporting-only, and paper-only.</p>
+</section>
+<section class='panel'>
+  <h2>Strategy Summary</h2>
+  <table style='width:100%;border-collapse:collapse'>
+    <thead><tr><th align='left'>Strategy</th><th align='left'>Runtime</th><th align='left'>Health</th><th align='left'>Readiness</th></tr></thead>
+    <tbody>{strategies_html}</tbody>
+  </table>
+</section>
+<section class='two'>
+  <article class='panel'><h2>Health Summary</h2><ul>
+    <li><strong>Healthy:</strong> {html.escape(str(health.get('healthy_count', 0)))}</li>
+    <li><strong>Warning:</strong> {html.escape(str(health.get('warning_count', 0)))}</li>
+    <li><strong>Degraded:</strong> {html.escape(str(health.get('degraded_count', 0)))}</li>
+    <li><strong>Critical:</strong> {html.escape(str(health.get('critical_count', 0)))}</li>
+  </ul></article>
+  <article class='panel'><h2>Runtime Summary</h2><ul>
+    <li><strong>Status:</strong> {html.escape(str(runtime.get('runtime_status', 'UNKNOWN')))}</li>
+    <li><strong>Running Strategies:</strong> {html.escape(str(runtime.get('running_strategy_count', 0)))}</li>
+    <li><strong>Plugin Count:</strong> {html.escape(str(runtime.get('plugin_count', registered)))}</li>
+    <li><strong>Paper Safety:</strong> {html.escape(str(safety.get('status', 'UNKNOWN')))}</li>
+  </ul></article>
+</section>
+<section class='two'>
+  <article class='panel'><h2>Critical Alerts</h2>{_text_list(critical)}</article>
+  <article class='panel'><h2>Warnings</h2>{_text_list(warnings)}</article>
+</section>
+<section class='panel'><h2>Informational</h2>{_text_list(informational)}</section>
+"""
 
 
 def load_executive_dashboard_body(
@@ -52,7 +162,7 @@ def load_executive_dashboard_body(
         return html_path.read_text(encoding="utf-8"), True
     if json_path.is_file():
         report = _load_mapping(json_path)
-        return format_dashboard_html(report), True
+        return render_executive_dashboard_body(report), False
     return render_unavailable_dashboard(
         "Executive Dashboard Unavailable",
         "Executive dashboard data has not been generated yet.",
@@ -84,18 +194,14 @@ def render_investor_dashboard_body(report: Mapping[str, Any]) -> str:
     generated = html.escape(str(report.get("generated_at_utc") or "Not available"))
     health = html.escape(str(report.get("portfolio_health") or "UNKNOWN"))
 
-    summary_cards = (
+    cards = _cards((
         ("Portfolio Value", _money(summary.get("portfolio_value"))),
         ("Capital Appreciation", _money(summary.get("capital_appreciation"))),
         ("Projected Annual Income", _money(summary.get("projected_annual_dividend_income"))),
         ("Current Yield", _percent(summary.get("current_yield_percent"))),
         ("Cash / Reserve", _money(summary.get("cash_or_reserve_value"))),
         ("Portfolio Health", health),
-    )
-    cards = "".join(
-        f"<article class='card'><div class='label'>{html.escape(label)}</div><div class='value'>{html.escape(value)}</div></article>"
-        for label, value in summary_cards
-    )
+    ))
 
     reliability_rows = "".join(
         f"<li><strong>{html.escape(str(key).replace('_', ' ').title())}:</strong> {html.escape(str(value))}</li>"
@@ -114,7 +220,7 @@ def render_investor_dashboard_body(report: Mapping[str, Any]) -> str:
     ) or "<tr><td colspan='4'>No holdings data is available.</td></tr>"
 
     warnings = report.get("warnings") if isinstance(report.get("warnings"), list) else []
-    warning_html = "<ul>" + "".join(f"<li>{html.escape(str(item))}</li>" for item in warnings) + "</ul>" if warnings else "<p>None reported.</p>"
+    warning_html = _text_list(warnings)
 
     return f"""
 <section class='grid'>{cards}</section>
@@ -135,7 +241,7 @@ def render_investor_dashboard_body(report: Mapping[str, Any]) -> str:
 def load_investor_dashboard_body(*, json_path: Path) -> tuple[str, bool]:
     if json_path.is_file():
         report = _load_mapping(json_path)
-        return render_investor_dashboard_body(report), True
+        return render_investor_dashboard_body(report), False
     return render_unavailable_dashboard(
         "Investor Dashboard Unavailable",
         "Investor dashboard data has not been generated yet.",
