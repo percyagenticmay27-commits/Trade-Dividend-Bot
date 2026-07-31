@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Optional
 
-from .ai_cio_executive_dashboard import format_dashboard_html
+from .enterprise_executive_dashboard import format_dashboard_html
 
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
