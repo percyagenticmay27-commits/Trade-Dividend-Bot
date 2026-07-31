@@ -12,8 +12,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from .external_strategy_registration import (
+    load_external_strategy_plugins,
+    required_registration_failures,
+)
+
 MODULE_NAME = "enterprise_dividend_service_registry_event_wiring"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 SCHEMA_VERSION = "1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -140,6 +145,7 @@ def build_service_registry(
     *,
     services: Optional[Sequence[Mapping[str, Any]]] = None,
     generated_at_utc: Optional[str] = None,
+    external_registration_config: Optional[str | Path] = None,
 ) -> dict[str, Any]:
     generated_at = generated_at_utc or _now_utc()
     normalized = default_dividend_services() if services is None else [
@@ -165,6 +171,21 @@ def build_service_registry(
         if event_type != "DIVIDEND_CYCLE_REQUESTED" and event_type not in publishers
     ]
     strategy_plugins = default_dividend_strategy_plugins()
+    external_warnings: list[dict[str, Any]] = []
+    accepted_external_count = 0
+    if external_registration_config is not None:
+        external_plugins, external_warnings = load_external_strategy_plugins(
+            external_registration_config,
+            existing_strategy_ids=[item["strategy_id"] for item in strategy_plugins],
+        )
+        required_failures = required_registration_failures(external_warnings)
+        if required_failures:
+            messages = "; ".join(str(item.get("message")) for item in required_failures)
+            raise ValueError(f"Required external strategy registration failed: {messages}")
+        strategy_plugins.extend(external_plugins)
+        accepted_external_count = len(external_plugins)
+        warnings.extend(str(item.get("message")) for item in external_warnings)
+    strategy_plugins.sort(key=lambda item: (item["strategy_id"] != "dividend", item["strategy_id"]))
     registry_hash = hashlib.sha256(json.dumps(normalized, sort_keys=True).encode("utf-8")).hexdigest()
     return {
         "module_name": MODULE_NAME,
@@ -185,12 +206,14 @@ def build_service_registry(
             "event_type_count": len(set(publishers) | set(subscribers)),
             "warning_count": len(warnings),
             "strategy_plugin_count": len(strategy_plugins),
+            "accepted_external_strategy_count": accepted_external_count,
         },
         "services": normalized,
         "strategy_plugins": strategy_plugins,
         "publishers": {key: sorted(value, key=SERVICE_ORDER.index) for key, value in sorted(publishers.items())},
         "subscribers": {key: sorted(value, key=SERVICE_ORDER.index) for key, value in sorted(subscribers.items())},
         "warnings": warnings,
+        "external_registration_warnings": external_warnings,
         "governance": {
             "service_invocation_allowed": False,
             "order_execution_allowed": False,
@@ -275,13 +298,19 @@ def render_service_registry_markdown(registry: Mapping[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    temp_path = path.with_name(f".{path.name}.tmp")
+    temp_path.write_text(content, encoding="utf-8")
+    temp_path.replace(path)
+
+
 def write_service_registry(registry: Mapping[str, Any], output_dir: Path | str) -> dict[str, str]:
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     json_path = output_path / DEFAULT_OUTPUT_FILES["json"]
     markdown_path = output_path / DEFAULT_OUTPUT_FILES["markdown"]
-    json_path.write_text(json.dumps(dict(registry), indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    markdown_path.write_text(render_service_registry_markdown(registry), encoding="utf-8")
+    _atomic_write_text(json_path, json.dumps(dict(registry), indent=2, sort_keys=True) + "\n")
+    _atomic_write_text(markdown_path, render_service_registry_markdown(registry))
     return {"json": str(json_path), "markdown": str(markdown_path)}
 
 
