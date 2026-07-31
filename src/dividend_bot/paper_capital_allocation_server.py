@@ -74,7 +74,7 @@ def _layout(title: str, body: str, active: str) -> str:
         ("Investor Dashboard", "/investor_dashboard.html"),
     )
     nav = "".join(f'<a class="{"active" if name == active else ""}" href="{url}">{name}</a>' for name, url in items)
-    return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(title)}</title><style>:root{{--purple:#5d18d6;--line:#dfe3ec;--bg:#f5f7fb;--muted:#667085}}*{{box-sizing:border-box}}body{{margin:0;font-family:Arial;background:var(--bg);color:#101828}}header{{background:linear-gradient(120deg,#07172f,#10244b);color:white;padding:24px 32px}}header h1{{margin:0}}nav{{display:flex;gap:18px;flex-wrap:wrap;padding:12px 32px;background:white;border-bottom:1px solid var(--line)}}nav a{{color:#344054;text-decoration:none;font-weight:700}}nav a.active{{color:var(--purple)}}.banner{{margin:18px 24px;padding:12px 16px;border-left:5px solid var(--purple);background:#f1eaff;font-weight:700}}main{{max-width:1180px;margin:auto;padding:0 24px 32px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}}.card,.panel{{background:white;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 14px #1018280d}}.card{{padding:20px;min-height:130px}}.label{{font-weight:700;color:#344054}}.value{{font-size:28px;font-weight:800;color:var(--purple);margin-top:18px}}.two{{display:grid;grid-template-columns:1fr 1.4fr;gap:18px}}.panel{{padding:22px}}.panel h2{{margin-top:0;color:#43169a}}label{{display:block;font-weight:700;margin:14px 0 6px}}input,select{{width:100%;padding:11px;border:1px solid #cfd4dc;border-radius:8px}}button{{background:var(--purple);color:white;border:0;border-radius:9px;padding:12px 18px;font-weight:700}}.strategy{{display:grid;grid-template-columns:28px 1fr 180px;gap:12px;align-items:center;padding:16px;border-top:1px solid #e4e7ec}}.strategy.single{{grid-template-columns:1fr 240px}}.strategy input[type=checkbox]{{width:auto}}.current-allocation{{text-align:right}}.current-allocation strong{{display:block;color:var(--purple);font-size:18px}}small{{display:block;color:var(--muted);margin-top:5px}}.commentary{{background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px;line-height:1.55}}.warning{{background:#fff4e5;border-left:5px solid #f79009;padding:12px;margin:16px 0}}.approve{{margin-top:18px;padding:18px;border:1px solid #b9a2ef;background:#f7f3ff;border-radius:12px}}@media(max-width:800px){{.two{{grid-template-columns:1fr}}.strategy,.strategy.single{{grid-template-columns:1fr}}.strategy .amount{{grid-column:1}}.current-allocation{{text-align:left}}}}</style></head><body><header><h1>{html.escape(title)}</h1><p>Enterprise AI CIO investor-controlled capital portal</p></header><nav>{nav}</nav><div class='banner'>PAPER ONLY · No brokerage connection · No live orders · Only the investor can authorize future live mode</div><main>{body}</main></body></html>"""
+    return f"""<!doctype html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>{html.escape(title)}</title><style>:root{{--purple:#5d18d6;--line:#dfe3ec;--bg:#f5f7fb;--muted:#667085}}*{{box-sizing:border-box}}body{{margin:0;font-family:Arial;background:var(--bg);color:#101828}}header{{background:linear-gradient(120deg,#07172f,#10244b);color:white;padding:24px 32px}}header h1{{margin:0}}nav{{display:flex;gap:18px;flex-wrap:wrap;padding:12px 32px;background:white;border-bottom:1px solid var(--line)}}nav a{{color:#344054;text-decoration:none;font-weight:700}}nav a.active{{color:var(--purple)}}.banner{{margin:18px 24px;padding:12px 16px;border-left:5px solid var(--purple);background:#f1eaff;font-weight:700}}main{{max-width:1180px;margin:auto;padding:0 24px 32px}}.grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:18px}}.card,.panel{{background:white;border:1px solid var(--line);border-radius:14px;box-shadow:0 4px 14px #1018280d}}.card{{padding:20px;min-height:130px}}.label{{font-weight:700;color:#344054}}.value{{font-size:28px;font-weight:800;color:var(--purple);margin-top:18px}}.two{{display:grid;grid-template-columns:1fr 1.4fr;gap:18px}}.panel{{padding:22px}}.panel h2{{margin-top:0;color:#43169a}}label{{display:block;font-weight:700;margin:14px 0 6px}}input,select{{width:100%;padding:11px;border:1px solid #cfd4dc;border-radius:8px}}button{{background:var(--purple);color:white;border:0;border-radius:9px;padding:12px 18px;font-weight:700}}.strategy{{display:grid;grid-template-columns:28px 1fr 180px;gap:12px;align-items:center;padding:16px;border-top:1px solid #e4e7ec}}.strategy.single{{grid-template-columns:1fr 240px}}.strategy input[type=checkbox]{{width:auto}}.current-allocation{{text-align:right}}.current-allocation strong{{display:block;color:var(--purple);font-size:18px}}.proposed{{text-align:right;color:#43169a;font-weight:700}}.allocation-summary{{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:12px;margin:18px 0}}.allocation-summary div{{background:#f8f5ff;border:1px solid #d9cdf5;border-radius:10px;padding:12px}}.allocation-summary strong{{display:block;color:var(--purple);font-size:18px;margin-top:5px}}.amount-wrap[hidden],.proposed[hidden]{{display:none}}small{{display:block;color:var(--muted);margin-top:5px}}.commentary{{background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px;line-height:1.55}}.warning{{background:#fff4e5;border-left:5px solid #f79009;padding:12px;margin:16px 0}}.approve{{margin-top:18px;padding:18px;border:1px solid #b9a2ef;background:#f7f3ff;border-radius:12px}}@media(max-width:800px){{.two{{grid-template-columns:1fr}}.strategy,.strategy.single{{grid-template-columns:1fr}}.strategy .amount-wrap{{grid-column:1}}.current-allocation,.proposed{{text-align:left}}.allocation-summary{{grid-template-columns:1fr}}}}</style></head><body><header><h1>{html.escape(title)}</h1><p>Enterprise AI CIO investor-controlled capital portal</p></header><nav>{nav}</nav><div class='banner'>PAPER ONLY · No brokerage connection · No live orders · Only the investor can authorize future live mode</div><main>{body}</main></body></html>"""
 
 
 def render_cash_account_html(account: Mapping[str, Any]) -> str:
@@ -88,7 +88,6 @@ def render_cash_account_html(account: Mapping[str, Any]) -> str:
 
 def render_allocation_page(cash: float, plugins: list[dict[str, Any]], strategy_allocations: Optional[Mapping[str, Any]] = None) -> str:
     cards: list[str] = []
-    single_strategy = len(plugins) == 1
     existing = dict(strategy_allocations or {})
     for item in plugins:
         raw_sid = str(item.get("strategy_id"))
@@ -97,13 +96,62 @@ def render_allocation_page(cash: float, plugins: list[dict[str, Any]], strategy_
         status = html.escape(str(item.get("status") or "UNKNOWN"))
         health = html.escape(str(item.get("health") or "UNKNOWN"))
         current = float(existing.get(raw_sid, 0) or 0)
-        if single_strategy:
-            cards.append(f'<div class="strategy single"><input type="hidden" name="strategy" value="{sid}"><span><strong>{name}</strong><small>{status} · Health {health}</small><small>The total entered above will be assigned automatically.</small></span><span class="current-allocation"><small>Currently allocated</small><strong>${current:,.2f}</strong></span></div>')
-        else:
-            cards.append(f'<label class="strategy"><input type="checkbox" name="strategy" value="{sid}"><span><strong>{name}</strong><small>{status} · Health {health}</small><small>Currently allocated: ${current:,.2f}</small></span><input class="amount" name="amount_{sid}" type="number" min="0" step="0.01" placeholder="$0.00"></label>')
+        cards.append(
+            f'<label class="strategy" data-strategy-row>'
+            f'<input type="checkbox" name="strategy" value="{sid}" data-strategy-checkbox>'
+            f'<span><strong>{name}</strong><small>{status} · Health {health}</small>'
+            f'<small>Currently allocated: ${current:,.2f}</small></span>'
+            f'<span class="amount-wrap" data-amount-wrap hidden><input class="amount" name="amount_{sid}" '
+            f'type="number" min="0.01" step="0.01" placeholder="$0.00" data-allocation-amount disabled></span>'
+            f'<span class="proposed" data-proposed hidden>Proposed allocation: 100% of requested cash</span>'
+            f'</label>'
+        )
     strategies = "".join(cards) or "<p>No eligible paper strategy plugins are registered.</p>"
-    guidance = "The single available strategy automatically receives the full amount entered above." if single_strategy else "Select strategies and divide the total amount among them. Strategy amounts must equal the total."
-    body = f"""<section class='grid'><article class='card'><div class='label'>Available Paper Cash</div><div class='value'>${cash:,.2f}</div></article><article class='card'><div class='label'>Eligible Strategies</div><div class='value'>{len(plugins)}</div></article><article class='card'><div class='label'>Cash Provider</div><div class='value'>PAPER</div></article></section><section class='panel'><h2>Allocate Cash to Detected Strategies</h2><div class='warning'>Only enabled, paper-compatible strategies discovered from the Enterprise Service Registry are shown. {guidance}</div><form method='post' action='/allocation/request'><label>Total cash to allocate</label><input name='requested_cash' type='number' min='0.01' max='{cash:.2f}' step='0.01' required><h2>Available Strategies</h2>{strategies}<p><button type='submit'>Record Paper Allocation Request</button></p></form></section>"""
+    body = f"""<section class='grid'><article class='card'><div class='label'>Available Paper Cash</div><div class='value'>${cash:,.2f}</div></article><article class='card'><div class='label'>Eligible Strategies</div><div class='value'>{len(plugins)}</div></article><article class='card'><div class='label'>Cash Provider</div><div class='value'>PAPER</div></article></section><section class='panel'><h2>Allocate Cash to Detected Strategies</h2><div class='warning'>Only enabled, paper-compatible strategies discovered from the Enterprise Service Registry are shown. Select one strategy to assign 100% automatically, or select multiple strategies to divide the request manually.</div><form id='allocation-form' method='post' action='/allocation/request'><label>Total cash to allocate</label><input id='requested-cash' name='requested_cash' type='number' min='0.01' max='{cash:.2f}' step='0.01' required><h2>Available Strategies</h2>{strategies}<section class='allocation-summary' aria-live='polite'><div>Total requested<strong id='summary-requested'>$0.00</strong></div><div>Total assigned<strong id='summary-assigned'>$0.00</strong></div><div>Remaining unassigned<strong id='summary-remaining'>$0.00</strong></div></section><p><button type='submit'>Record Paper Allocation Request</button></p></form></section><script>
+(function(){{
+  const form=document.getElementById('allocation-form');
+  if(!form)return;
+  const requested=document.getElementById('requested-cash');
+  const boxes=[...form.querySelectorAll('[data-strategy-checkbox]')];
+  const money=value=>'$'+(Number(value)||0).toLocaleString(undefined,{{minimumFractionDigits:2,maximumFractionDigits:2}});
+  function update(){{
+    const selected=boxes.filter(box=>box.checked);
+    let assigned=0;
+    boxes.forEach(box=>{{
+      const row=box.closest('[data-strategy-row]');
+      const wrap=row.querySelector('[data-amount-wrap]');
+      const amount=row.querySelector('[data-allocation-amount]');
+      const proposed=row.querySelector('[data-proposed]');
+      const manual=selected.length>1 && box.checked;
+      const automatic=selected.length===1 && box.checked;
+      wrap.hidden=!manual;
+      proposed.hidden=!automatic;
+      amount.disabled=!manual;
+      amount.required=manual;
+      if(!manual)amount.value='';
+      if(manual)assigned+=Number(amount.value)||0;
+    }});
+    const total=Number(requested.value)||0;
+    if(selected.length===1)assigned=total;
+    document.getElementById('summary-requested').textContent=money(total);
+    document.getElementById('summary-assigned').textContent=money(assigned);
+    document.getElementById('summary-remaining').textContent=money(total-assigned);
+  }}
+  boxes.forEach(box=>box.addEventListener('change',update));
+  requested.addEventListener('input',update);
+  form.querySelectorAll('[data-allocation-amount]').forEach(input=>input.addEventListener('input',update));
+  form.addEventListener('submit',event=>{{
+    const selected=boxes.filter(box=>box.checked);
+    if(selected.length===0){{event.preventDefault();alert('Select at least one strategy.');return;}}
+    if(selected.length>1){{
+      const total=Number(requested.value)||0;
+      const assigned=selected.reduce((sum,box)=>sum+(Number(box.closest('[data-strategy-row]').querySelector('[data-allocation-amount]').value)||0),0);
+      if(Math.round(total*100)!==Math.round(assigned*100)){{event.preventDefault();alert('Strategy allocations must equal Total cash to allocate.');}}
+    }}
+  }});
+  update();
+}})();
+</script>"""
     return _layout("Enterprise Strategy Allocation", body, "Strategy Allocation")
 
 
