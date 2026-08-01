@@ -26,6 +26,24 @@ BROKER_EXECUTION_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
 REPORTING_ONLY = True
 
+_CONTRIBUTOR_EVIDENCE_FIELDS = (
+    "performance_percent",
+    "return_percent",
+    "total_return_percent",
+    "realized_pnl",
+    "unrealized_pnl",
+    "wins",
+    "losses",
+    "completed_observations",
+    "yield_percent",
+    "current_yield_percent",
+    "yield_basis",
+    "invested_value",
+    "capital_appreciation",
+    "capital_appreciation_value",
+    "lifecycle_status",
+)
+
 
 def _mapping(value: Any) -> dict[str, Any]:
     return dict(value) if isinstance(value, Mapping) else {}
@@ -37,15 +55,49 @@ def _kpi_rows(value: Any) -> list[dict[str, Any]]:
     return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
+def _preserve_contributor_evidence(
+    interpretation: Mapping[str, Any],
+    strategy_kpis: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Copy only reported contributor fields into matching interpreted rows."""
+    enriched = dict(interpretation)
+    raw_strategies = interpretation.get("strategies")
+    strategies = (
+        [dict(item) for item in raw_strategies if isinstance(item, Mapping)]
+        if isinstance(raw_strategies, list)
+        else []
+    )
+    kpi_index = {
+        str(item.get("strategy_id") or "").strip(): item
+        for item in strategy_kpis
+        if isinstance(item, Mapping) and str(item.get("strategy_id") or "").strip()
+    }
+    for strategy in strategies:
+        strategy_id = str(strategy.get("strategy_id") or "").strip()
+        source = kpi_index.get(strategy_id)
+        if source is None:
+            continue
+        for field in _CONTRIBUTOR_EVIDENCE_FIELDS:
+            if field in source:
+                strategy[field] = source[field]
+    enriched["strategies"] = strategies
+    return enriched
+
+
 def build_enterprise_dashboard_intelligence(
     *,
     strategy_discovery: Mapping[str, Any],
     strategy_kpis: Sequence[Mapping[str, Any]] = (),
 ) -> tuple[dict[str, Any], list[str]]:
     """Build the canonical Phase 3 intelligence document once."""
+    normalized_kpis = _kpi_rows(strategy_kpis)
     interpretation, interpretation_warnings = build_ai_cio_strategy_interpretation(
         strategy_discovery=strategy_discovery,
-        strategy_kpis=strategy_kpis,
+        strategy_kpis=normalized_kpis,
+    )
+    interpretation = _preserve_contributor_evidence(
+        interpretation,
+        normalized_kpis,
     )
     comparison, comparison_warnings = build_enterprise_strategy_comparison(
         interpretation=interpretation,
@@ -79,6 +131,7 @@ def build_enterprise_dashboard_intelligence(
             "strategy_calculations_changed": False,
             "recommendations_generated": False,
             "allocation_changes_generated": False,
+            "missing_evidence_invented": False,
         },
         "paper_trade_mode": True,
         "live_trading_enabled": False,
