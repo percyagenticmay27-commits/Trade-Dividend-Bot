@@ -27,6 +27,11 @@ def _plugin(strategy_id: str, name: str, artifact_path: str | None = None) -> di
         "runtime_status": "ONLINE",
         "health_status": "HEALTHY",
         "readiness": "READY",
+        "paper_trade_mode": True,
+        "paper_compatible": True,
+        "advisory_only": True,
+        "reporting_only": True,
+        "enabled": True,
         "capabilities": ["portfolio", "watchlist", "portfolio"],
         "dashboard_artifacts": artifacts,
     }
@@ -35,8 +40,20 @@ def _plugin(strategy_id: str, name: str, artifact_path: str | None = None) -> di
 def test_builds_one_row_per_registered_strategy(tmp_path: Path) -> None:
     dividend = tmp_path / "dividend.json"
     swing = tmp_path / "swing.json"
-    dividend.write_text(json.dumps({"portfolio_value": 5100, "holdings": [{"symbol": "A"}]}), encoding="utf-8")
-    swing.write_text(json.dumps({"portfolio_value": 4700, "watchlist": [{"symbol": "B"}], "opportunity_quality_score": 88}), encoding="utf-8")
+    dividend.write_text(
+        json.dumps({"portfolio_value": 5100, "holdings": [{"symbol": "A"}]}),
+        encoding="utf-8",
+    )
+    swing.write_text(
+        json.dumps(
+            {
+                "portfolio_value": 4700,
+                "watchlist": [{"symbol": "B"}],
+                "opportunity_quality_score": 88,
+            }
+        ),
+        encoding="utf-8",
+    )
     registry = {
         "strategy_plugins": [
             _plugin("SWING-001", "Trade Swing Bot", str(swing)),
@@ -64,7 +81,11 @@ def test_builds_one_row_per_registered_strategy(tmp_path: Path) -> None:
 def test_capabilities_and_artifacts_are_normalized_deterministically(tmp_path: Path) -> None:
     artifact = tmp_path / "portfolio.json"
     artifact.write_text("{}", encoding="utf-8")
-    registry = {"strategy_plugins": [_plugin("SWING-001", "Trade Swing Bot", str(artifact))]}
+    registry = {
+        "strategy_plugins": [
+            _plugin("SWING-001", "Trade Swing Bot", str(artifact))
+        ]
+    }
 
     rows, warnings = build_strategy_kpis(registry=registry, root_dir=tmp_path)
 
@@ -80,7 +101,11 @@ def test_capabilities_and_artifacts_are_normalized_deterministically(tmp_path: P
 
 def test_missing_optional_artifact_keeps_registry_only_strategy_visible(tmp_path: Path) -> None:
     missing = tmp_path / "missing.json"
-    registry = {"strategy_plugins": [_plugin("SWING-001", "Trade Swing Bot", str(missing))]}
+    registry = {
+        "strategy_plugins": [
+            _plugin("SWING-001", "Trade Swing Bot", str(missing))
+        ]
+    }
 
     rows, warnings = build_strategy_kpis(registry=registry, root_dir=tmp_path)
 
@@ -104,6 +129,53 @@ def test_registry_status_fields_are_preserved(tmp_path: Path) -> None:
     assert row["readiness"] == "READY"
 
 
+def test_discovery_safety_fields_are_preserved_in_kpi_record(tmp_path: Path) -> None:
+    registry = {
+        "strategy_plugins": [
+            _plugin("SWING-001", "Trade Swing Bot")
+        ]
+    }
+
+    rows, warnings = build_strategy_kpis(registry=registry, root_dir=tmp_path)
+
+    assert warnings == []
+    row = rows[0]
+    assert row["enabled"] is True
+    assert row["paper_trade_mode"] is True
+    assert row["paper_compatible"] is True
+    assert row["advisory_only"] is True
+    assert row["reporting_only"] is True
+
+
+def test_duplicate_strategy_id_is_filtered_by_discovery_layer(tmp_path: Path) -> None:
+    registry = {
+        "strategy_plugins": [
+            _plugin("SWING-001", "Trade Swing Bot"),
+            _plugin("SWING-001", "Duplicate Swing Bot"),
+        ]
+    }
+
+    rows, warnings = build_strategy_kpis(registry=registry, root_dir=tmp_path)
+
+    assert len(rows) == 1
+    assert rows[0]["display_name"] == "Trade Swing Bot"
+    assert warnings == ["Duplicate strategy ID ignored: SWING-001"]
+
+
+def test_malformed_plugin_is_filtered_without_hiding_valid_strategy(tmp_path: Path) -> None:
+    registry = {
+        "strategy_plugins": [
+            "bad-plugin-record",
+            _plugin("DIVIDEND-001", "Dividend Income Strategy"),
+        ]
+    }
+
+    rows, warnings = build_strategy_kpis(registry=registry, root_dir=tmp_path)
+
+    assert [row["strategy_id"] for row in rows] == ["DIVIDEND-001"]
+    assert warnings == ["strategy_plugins[0] is not an object and was ignored."]
+
+
 def test_no_strategy_plugins_returns_warning() -> None:
     rows, warnings = build_strategy_kpis(registry={})
 
@@ -115,7 +187,11 @@ def test_adapter_is_read_only(tmp_path: Path) -> None:
     artifact = tmp_path / "portfolio.json"
     original = json.dumps({"portfolio_value": 1234})
     artifact.write_text(original, encoding="utf-8")
-    registry = {"strategy_plugins": [_plugin("DIVIDEND-001", "Dividend Income Strategy", str(artifact))]}
+    registry = {
+        "strategy_plugins": [
+            _plugin("DIVIDEND-001", "Dividend Income Strategy", str(artifact))
+        ]
+    }
 
     build_strategy_kpis(registry=registry, root_dir=tmp_path)
 
