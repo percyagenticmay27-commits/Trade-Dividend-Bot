@@ -1,10 +1,8 @@
 """Read-only AI CIO interpretation of registered strategy evidence.
 
-This module consumes the canonical strategy-discovery document and the existing
-per-strategy KPI rows. It does not import strategy production code, calculate
-orders, change allocations, move capital, or modify dashboard-builder results.
-Missing evidence remains explicit and is never converted into an invented zero
-at the per-strategy level.
+Consumes the canonical strategy-discovery document and existing per-strategy KPI
+rows. It never imports strategy production code, changes allocations, moves
+capital, creates orders, or modifies dashboard-builder calculations.
 """
 from __future__ import annotations
 
@@ -24,7 +22,7 @@ _NUMERIC_METRICS = (
     "income",
 )
 _COUNT_METRICS = ("watchlist_count", "position_count")
-_LEADER_METRICS = (
+_COMPARISON_METRICS = (
     "portfolio_value",
     "opportunity_quality",
     "win_rate_percent",
@@ -41,20 +39,21 @@ def _number(value: Any) -> float | None:
         return None
 
 
-def _strategy_ids(discovery: Mapping[str, Any]) -> list[str]:
-    strategies = discovery.get("strategies")
-    if not isinstance(strategies, list):
+def _discovery_rows(discovery: Mapping[str, Any]) -> list[dict[str, Any]]:
+    raw = discovery.get("strategies")
+    if not isinstance(raw, list):
         return []
-    result: list[str] = []
+    rows: list[dict[str, Any]] = []
     seen: set[str] = set()
-    for item in strategies:
+    for item in raw:
         if not isinstance(item, Mapping):
             continue
         strategy_id = str(item.get("strategy_id") or "").strip()
-        if strategy_id and strategy_id not in seen:
-            seen.add(strategy_id)
-            result.append(strategy_id)
-    return result
+        if not strategy_id or strategy_id in seen:
+            continue
+        seen.add(strategy_id)
+        rows.append(dict(item))
+    return rows
 
 
 def _index_kpis(
@@ -77,19 +76,15 @@ def _index_kpis(
     return indexed, warnings
 
 
-def _enterprise_total(
+def _total(
     strategies: Sequence[Mapping[str, Any]], metric: str, *, integer: bool = False
 ) -> dict[str, Any]:
-    values: list[float] = []
-    for strategy in strategies:
-        value = _number(strategy.get(metric))
-        if value is not None:
-            values.append(value)
-    total: float | int = sum(values)
-    if integer:
-        total = int(total)
-    else:
-        total = round(float(total), 2)
+    values = [
+        value
+        for strategy in strategies
+        if (value := _number(strategy.get(metric))) is not None
+    ]
+    total: int | float = int(sum(values)) if integer else round(sum(values), 2)
     return {
         "value": total,
         "reported_strategy_count": len(values),
@@ -106,13 +101,9 @@ def _leader(
         value = _number(strategy.get(metric))
         if value is None:
             continue
-        candidates.append(
-            (
-                value,
-                str(strategy.get("strategy_id") or "UNKNOWN"),
-                str(strategy.get("display_name") or strategy.get("strategy_id") or "Unknown"),
-            )
-        )
+        strategy_id = str(strategy.get("strategy_id") or "UNKNOWN")
+        display_name = str(strategy.get("display_name") or strategy_id)
+        candidates.append((value, strategy_id, display_name))
     if not candidates:
         return None
     value, strategy_id, display_name = sorted(
@@ -132,10 +123,12 @@ def _commentary(
 ) -> list[str]:
     if not strategies:
         return ["No registered strategy evidence is available for AI CIO interpretation."]
-
-    names = ", ".join(str(item.get("display_name") or item["strategy_id"]) for item in strategies)
-    comments = [f"The AI CIO interpreted {len(strategies)} registered strategies: {names}."]
-
+    names = ", ".join(
+        str(item.get("display_name") or item["strategy_id"]) for item in strategies
+    )
+    comments = [
+        f"The AI CIO interpreted {len(strategies)} registered strategies: {names}."
+    ]
     registry_only = [
         str(item["strategy_id"])
         for item in strategies
@@ -143,14 +136,15 @@ def _commentary(
     ]
     if registry_only:
         comments.append(
-            "Detailed KPI evidence is not yet available for: " + ", ".join(registry_only) + "."
+            "Detailed KPI evidence is not yet available for: "
+            + ", ".join(registry_only)
+            + "."
         )
-
     portfolio = totals["portfolio_value"]
     comments.append(
         "Enterprise portfolio value is based on "
-        f"{portfolio['reported_strategy_count']} of {portfolio['registered_strategy_count']} "
-        "registered strategies."
+        f"{portfolio['reported_strategy_count']} of "
+        f"{portfolio['registered_strategy_count']} registered strategies."
     )
     return comments
 
@@ -160,40 +154,35 @@ def build_ai_cio_strategy_interpretation(
     strategy_discovery: Mapping[str, Any],
     strategy_kpis: Sequence[Mapping[str, Any]] = (),
 ) -> tuple[dict[str, Any], list[str]]:
-    """Build a deterministic, read-only multi-strategy interpretation document."""
-    warnings: list[str] = []
-    strategy_ids = _strategy_ids(strategy_discovery)
-    kpi_index, kpi_warnings = _index_kpis(strategy_kpis)
-    warnings.extend(kpi_warnings)
-
-    discovery_rows = strategy_discovery.get("strategies")
-    discovery_index = {
-        str(item.get("strategy_id")): dict(item)
-        for item in discovery_rows
-        if isinstance(discovery_rows, list)
-        for item in discovery_rows
-        if isinstance(item, Mapping) and item.get("strategy_id")
-    }
+    """Build a deterministic, evidence-only multi-strategy interpretation."""
+    discovery_rows = _discovery_rows(strategy_discovery)
+    kpi_index, warnings = _index_kpis(strategy_kpis)
+    registered_ids = [str(item["strategy_id"]) for item in discovery_rows]
 
     strategies: list[dict[str, Any]] = []
-    for strategy_id in strategy_ids:
-        discovered = discovery_index.get(strategy_id, {})
+    for discovered in discovery_rows:
+        strategy_id = str(discovered["strategy_id"])
         kpi = kpi_index.get(strategy_id)
         if kpi is None:
             warnings.append(f"{strategy_id}: strategy KPI evidence is unavailable.")
             kpi = {}
-
-        row = {
+        row: dict[str, Any] = {
             "strategy_id": strategy_id,
             "display_name": str(
-                discovered.get("display_name")
-                or kpi.get("display_name")
-                or strategy_id
+                discovered.get("display_name") or kpi.get("display_name") or strategy_id
             ),
-            "strategy_type": discovered.get("strategy_type", kpi.get("strategy_type", "UNKNOWN")),
-            "runtime_status": discovered.get("runtime_status", kpi.get("runtime_status", "UNKNOWN")),
-            "health_status": discovered.get("health_status", kpi.get("health_status", "UNKNOWN")),
-            "readiness": discovered.get("readiness", kpi.get("readiness", "UNKNOWN")),
+            "strategy_type": discovered.get(
+                "strategy_type", kpi.get("strategy_type", "UNKNOWN")
+            ),
+            "runtime_status": discovered.get(
+                "runtime_status", kpi.get("runtime_status", "UNKNOWN")
+            ),
+            "health_status": discovered.get(
+                "health_status", kpi.get("health_status", "UNKNOWN")
+            ),
+            "readiness": discovered.get(
+                "readiness", kpi.get("readiness", "UNKNOWN")
+            ),
             "enabled": bool(discovered.get("enabled", kpi.get("enabled", False))),
             "paper_trade_mode": bool(
                 discovered.get("paper_trade_mode", kpi.get("paper_trade_mode", False))
@@ -211,56 +200,51 @@ def build_ai_cio_strategy_interpretation(
             "win_rate_percent",
         ):
             value = _number(kpi.get(metric))
-            row[metric] = int(value) if metric in _COUNT_METRICS and value is not None else value
+            row[metric] = (
+                int(value)
+                if metric in _COUNT_METRICS and value is not None
+                else value
+            )
         strategies.append(row)
 
-    for strategy_id in sorted(set(kpi_index) - set(strategy_ids)):
+    for strategy_id in sorted(set(kpi_index) - set(registered_ids)):
         warnings.append(f"Unregistered strategy KPI row ignored: {strategy_id}")
 
     unsafe = [
-        item["strategy_id"]
+        str(item["strategy_id"])
         for item in strategies
         if not item["paper_trade_mode"] or not item["reporting_only"]
     ]
     if unsafe:
-        warnings.append(
-            "Unsafe strategy safety metadata detected: " + ", ".join(unsafe)
-        )
+        warnings.append("Unsafe strategy safety metadata detected: " + ", ".join(unsafe))
 
-    totals = {
-        metric: _enterprise_total(strategies, metric)
-        for metric in _NUMERIC_METRICS
-    }
+    totals = {metric: _total(strategies, metric) for metric in _NUMERIC_METRICS}
     totals.update(
-        {
-            metric: _enterprise_total(strategies, metric, integer=True)
-            for metric in _COUNT_METRICS
-        }
+        {metric: _total(strategies, metric, integer=True) for metric in _COUNT_METRICS}
     )
-
     leaders = {
         metric: leader
-        for metric in _LEADER_METRICS
+        for metric in _COMPARISON_METRICS
         if (leader := _leader(strategies, metric)) is not None
     }
 
-    health_counts: dict[str, int] = {}
-    readiness_counts: dict[str, int] = {}
+    health: dict[str, int] = {}
+    readiness: dict[str, int] = {}
     for strategy in strategies:
-        health = str(strategy["health_status"])
-        readiness = str(strategy["readiness"])
-        health_counts[health] = health_counts.get(health, 0) + 1
-        readiness_counts[readiness] = readiness_counts.get(readiness, 0) + 1
+        health_key = str(strategy["health_status"])
+        readiness_key = str(strategy["readiness"])
+        health[health_key] = health.get(health_key, 0) + 1
+        readiness[readiness_key] = readiness.get(readiness_key, 0) + 1
 
     document = {
         "schema_version": "1.0",
         "source": "ENTERPRISE_AI_CIO_MULTI_STRATEGY_INTERPRETATION",
         "scope": "ALL_REGISTERED_STRATEGIES",
         "registered_strategy_count": len(strategies),
-        "strategy_ids": [item["strategy_id"] for item in strategies],
+        "strategy_ids": registered_ids,
         "enterprise_totals": totals,
-        "health_summary": dict(sorted(health_counts.items())),
-        "readiness_summary": dict(sorted(readiness_counts.items())),
+        "health_summary": dict(sorted(health.items())),
+        "readiness_summary": dict(sorted(readiness.items())),
         "strategy_comparisons": {"leaders": leaders},
         "strategies": strategies,
         "commentary": _commentary(strategies, totals),
