@@ -12,6 +12,9 @@ from src.dividend_bot.registry_dashboard_evidence_adapter_v2 import (
     build_registry_dashboard_evidence_v2,
 )
 from src.dividend_bot.enterprise_strategy_kpi_adapter import build_strategy_kpis
+from src.dividend_bot.enterprise_dashboard_strategy_discovery import (
+    build_dashboard_refresh_consumer_payloads,
+)
 from src.dividend_bot.enterprise_executive_dashboard import (
     build_executive_dashboard,
     render_executive_dashboard_markdown,
@@ -162,12 +165,7 @@ def _publish_optional_executive_evidence(
 
 
 def _adapter_availability(adapted: Mapping[str, Any]) -> dict[str, bool]:
-    """Report actual reconstructed components, using metadata only as support.
-
-    Older and test adapters may omit or incompletely populate evidence_metadata.
-    Classification must therefore inspect the evidence payload itself so valid
-    host-state reconstruction is never mislabeled as NONE.
-    """
+    """Report actual reconstructed components, using metadata only as support."""
     metadata = adapted.get("evidence_metadata")
     if not isinstance(metadata, Mapping):
         metadata = {}
@@ -215,9 +213,6 @@ def _classify_investor_evidence(
             "available_components": availability,
         }
 
-    # Host-state reconstruction is deliberately PARTIAL and non-authoritative,
-    # even when several components happen to be available. Only a published
-    # plugin artifact may be classified COMPLETE/authoritative.
     return {
         "source_type": "ADAPTER_RECONSTRUCTION",
         "source_id": "enterprise_dashboard_evidence_adapter",
@@ -333,15 +328,6 @@ def refresh_enterprise_dashboards(
         strategy_allocations=_strategy_allocations(cash_state),
         root_dir=root,
     )
-    _atomic_write_json(
-        directory / "enterprise_strategy_kpis.json",
-        {
-            "scope": "ALL_REGISTERED_STRATEGIES",
-            "strategy_count": len(strategy_kpis),
-            "strategies": strategy_kpis,
-            "warnings": kpi_warnings,
-        },
-    )
 
     executive = build_executive_dashboard(input_dir=directory)
     executive["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
@@ -350,14 +336,6 @@ def refresh_enterprise_dashboards(
     executive["registry_declared_evidence_summary"] = registry_evidence["summary"]
     executive["registry_declared_strategy_evidence"] = registry_evidence["strategies"]
     executive["strategy_kpis"] = strategy_kpis
-    executive_json = _atomic_write_json(
-        directory / DEFAULT_EXECUTIVE_JSON,
-        executive,
-    )
-    executive_markdown = _atomic_write_text(
-        directory / DEFAULT_EXECUTIVE_MARKDOWN,
-        render_executive_dashboard_markdown(executive),
-    )
 
     existing_source, source_path, source_warnings = _existing_investor_source(
         directory,
@@ -411,6 +389,31 @@ def refresh_enterprise_dashboards(
     investor["registry_declared_evidence_summary"] = registry_evidence["summary"]
     investor["registry_declared_strategy_evidence"] = registry_evidence["strategies"]
     investor["strategy_kpis"] = strategy_kpis
+
+    consumer_payloads, discovery_warnings = build_dashboard_refresh_consumer_payloads(
+        registry=registry,
+        executive_dashboard=executive,
+        investor_dashboard=investor,
+        strategy_kpis=strategy_kpis,
+        kpi_warnings=kpi_warnings,
+    )
+    executive = consumer_payloads["executive_dashboard"]
+    investor = consumer_payloads["investor_dashboard"]
+    strategy_kpi_document = consumer_payloads["strategy_kpi_document"]
+    strategy_discovery = consumer_payloads["strategy_discovery"]
+
+    _atomic_write_json(
+        directory / "enterprise_strategy_kpis.json",
+        strategy_kpi_document,
+    )
+    executive_json = _atomic_write_json(
+        directory / DEFAULT_EXECUTIVE_JSON,
+        executive,
+    )
+    executive_markdown = _atomic_write_text(
+        directory / DEFAULT_EXECUTIVE_MARKDOWN,
+        render_executive_dashboard_markdown(executive),
+    )
     investor_json = _atomic_write_json(
         directory / DEFAULT_INVESTOR_JSON,
         investor,
@@ -420,7 +423,12 @@ def refresh_enterprise_dashboards(
         render_enterprise_investor_dashboard_markdown(investor),
     )
 
-    warnings = list(evidence.get("warnings", [])) + source_warnings + kpi_warnings
+    warnings = (
+        list(evidence.get("warnings", []))
+        + source_warnings
+        + kpi_warnings
+        + discovery_warnings
+    )
     warnings.extend(
         item
         for item in (registry_warning, cash_warning, adapter_warning)
@@ -431,6 +439,7 @@ def refresh_enterprise_dashboards(
     errors = [str(item) for item in executive.get("errors", []) if item]
 
     registry_summary = registry_evidence["summary"]
+    discovery_summary = strategy_discovery.get("summary", {})
     return {
         "paper_trade_mode": True,
         "live_trading_enabled": False,
@@ -441,18 +450,16 @@ def refresh_enterprise_dashboards(
         "dashboard_evidence_contract_version": "2.0",
         "plugin_evidence_source": registry_evidence["plugin_evidence_source"],
         "registry_declared_evidence_summary": registry_summary,
+        "strategy_discovery": strategy_discovery,
+        "strategy_discovery_summary": discovery_summary,
         "executive_dashboard_status": executive.get(
             "enterprise_summary", {}
         ).get("enterprise_status", "UNKNOWN"),
         "investor_dashboard_status": effective_investor_status,
         "investor_source": investor_source,
         "investor_evidence_provenance": provenance,
-        "registered_strategy_count": len(strategy_kpis)
-        or int(
-            executive.get("enterprise_summary", {}).get(
-                "registered_strategy_count", 0
-            )
-            or 0
+        "registered_strategy_count": int(
+            discovery_summary.get("registered_strategy_count", 0) or 0
         ),
         "paths": {
             "strategy_inventory": str(directory / "strategy_inventory.json"),
@@ -495,6 +502,14 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"Registry strategy evidence: {summary['paths']['registry_strategy_evidence']}")
     print(f"Strategy KPIs: {summary['paths']['strategy_kpis']}")
     print(f"Registered strategies: {summary['registered_strategy_count']}")
+    discovery_summary = summary["strategy_discovery_summary"]
+    print(f"Enabled strategies: {discovery_summary.get('enabled_strategy_count', 0)}")
+    print(
+        "Paper-compatible strategies: "
+        f"{discovery_summary.get('paper_compatible_strategy_count', 0)}"
+    )
+    strategy_ids = discovery_summary.get("strategy_ids", [])
+    print(f"Strategy IDs: {', '.join(strategy_ids) if strategy_ids else 'none'}")
     evidence_summary = summary["registry_declared_evidence_summary"]
     print(f"Declared strategy evidence: {evidence_summary.get('strategy_count', 0)}")
     print(f"Available strategy evidence: {evidence_summary.get('available_count', 0)}")
