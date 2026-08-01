@@ -6,7 +6,7 @@ capital state, broker state, or strategy execution.
 """
 from __future__ import annotations
 
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 from src.dividend_bot.enterprise_strategy_discovery import (
     discover_registered_strategies,
@@ -77,3 +77,60 @@ def attach_dashboard_strategy_discovery(
         "read_only": True,
     }
     return enriched
+
+
+def build_dashboard_refresh_consumer_payloads(
+    *,
+    registry: Mapping[str, Any],
+    executive_dashboard: Mapping[str, Any],
+    investor_dashboard: Mapping[str, Any],
+    strategy_kpis: Sequence[Mapping[str, Any]] = (),
+    kpi_warnings: Sequence[str] = (),
+) -> tuple[dict[str, Any], list[str]]:
+    """Build identical registry-discovery metadata for all refresh consumers.
+
+    Dashboard calculations are accepted as already complete and are copied
+    unchanged. The function creates one discovery document and publishes that
+    same reporting view to the Executive Dashboard, Investor Dashboard, KPI
+    artifact payload, and refresh summary.
+    """
+    discovery, discovery_warnings = build_dashboard_strategy_discovery(registry)
+    summary = discovery.get("summary")
+    normalized_summary = dict(summary) if isinstance(summary, Mapping) else {}
+    normalized_kpis = [dict(item) for item in strategy_kpis]
+
+    executive = attach_dashboard_strategy_discovery(
+        executive_dashboard,
+        discovery,
+    )
+    investor = attach_dashboard_strategy_discovery(
+        investor_dashboard,
+        discovery,
+    )
+    kpi_document = {
+        "scope": "ALL_REGISTERED_STRATEGIES",
+        "strategy_count": len(normalized_kpis),
+        "strategy_discovery_summary": normalized_summary,
+        "strategies": normalized_kpis,
+        "warnings": [str(item) for item in kpi_warnings if item],
+        "paper_trade_mode": True,
+        "reporting_only": True,
+        "read_only": True,
+    }
+    refresh_summary = {
+        "source": "ENTERPRISE_STRATEGY_DISCOVERY",
+        "scope": "ALL_REGISTERED_STRATEGIES",
+        "summary": normalized_summary,
+        "strategies": list(discovery.get("strategies", [])),
+        "paper_trade_mode": True,
+        "reporting_only": True,
+        "read_only": True,
+    }
+
+    return {
+        "discovery": discovery,
+        "executive_dashboard": executive,
+        "investor_dashboard": investor,
+        "strategy_kpi_document": kpi_document,
+        "refresh_summary": refresh_summary,
+    }, discovery_warnings
