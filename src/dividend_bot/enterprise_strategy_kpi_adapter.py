@@ -58,6 +58,43 @@ def _declared_paths(value: Any) -> list[str]:
     return sorted(set(found))
 
 
+def _capability_names(plugin: Mapping[str, Any]) -> list[str]:
+    raw = plugin.get("capabilities")
+    names: list[str] = []
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str) and item.strip():
+                names.append(item.strip())
+            elif isinstance(item, Mapping):
+                name = _first(item, ("capability_id", "name", "display_name"))
+                if name not in (None, ""):
+                    names.append(str(name).strip())
+    elif isinstance(raw, Mapping):
+        names.extend(str(key).strip() for key, enabled in raw.items() if enabled)
+    return sorted(set(name for name in names if name))
+
+
+def _artifact_declarations(plugin: Mapping[str, Any]) -> list[dict[str, Any]]:
+    declarations: list[dict[str, Any]] = []
+    for key in ("dashboard_artifacts", "published_artifacts", "artifacts"):
+        raw = plugin.get(key)
+        if not isinstance(raw, list):
+            continue
+        for item in raw:
+            if not isinstance(item, Mapping):
+                continue
+            declarations.append({
+                "artifact_id": str(_first(item, ("artifact_id", "report_id", "name"), "UNKNOWN")),
+                "artifact_type": str(_first(item, ("artifact_type", "report_type", "type"), "UNKNOWN")),
+                "path": _first(item, ("path", "report_path", "artifact_path", "output_path")),
+                "format": str(_first(item, ("format", "file_format"), "UNKNOWN")),
+                "authoritative": bool(item.get("authoritative", False)),
+                "required": bool(item.get("required", False)),
+            })
+    declarations.sort(key=lambda item: (item["artifact_id"], str(item.get("path") or "")))
+    return declarations
+
+
 def _safe_path(raw: str, root_dir: Path) -> Path | None:
     candidate = Path(raw)
     if not candidate.is_absolute():
@@ -71,8 +108,7 @@ def _safe_path(raw: str, root_dir: Path) -> Path | None:
 
 def _read_artifact(path: Path) -> Any:
     if path.suffix.lower() == ".json":
-        value = json.loads(path.read_text(encoding="utf-8"))
-        return value
+        return json.loads(path.read_text(encoding="utf-8"))
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return [dict(row) for row in csv.DictReader(handle)]
 
@@ -130,6 +166,8 @@ def build_strategy_kpis(
             continue
         strategy_id = str(_first(plugin, ("strategy_id", "plugin_id", "service_id"), "UNKNOWN"))
         display_name = str(_first(plugin, ("display_name", "strategy_name", "name"), strategy_id))
+        capability_names = _capability_names(plugin)
+        artifact_declarations = _artifact_declarations(plugin)
         payloads: list[Any] = []
         accepted_paths: list[str] = []
         for raw_path in _declared_paths(plugin):
@@ -162,9 +200,14 @@ def build_strategy_kpis(
             "strategy_id": strategy_id,
             "display_name": display_name,
             "strategy_type": str(_first(plugin, ("strategy_type", "plugin_type", "bot_type"), "STRATEGY")),
+            "lifecycle_status": str(_first(plugin, ("lifecycle_status", "service_lifecycle", "status"), "UNKNOWN")),
             "runtime_status": str(_first(plugin, ("runtime_status", "status"), "UNKNOWN")),
             "health_status": str(_first(plugin, ("health_status", "health"), "UNKNOWN")),
-            "readiness": str(_first(plugin, ("readiness", "status"), "UNKNOWN")),
+            "readiness": str(_first(plugin, ("readiness", "readiness_status", "status"), "UNKNOWN")),
+            "capability_count": len(capability_names),
+            "capabilities": capability_names,
+            "published_artifact_count": len(artifact_declarations),
+            "published_artifacts": artifact_declarations,
             "allocated_capital": round(allocated, 2),
             "portfolio_value": round(portfolio_value, 2) if portfolio_value is not None else None,
             "realized_gain": round(realized, 2) if realized is not None else None,
@@ -174,7 +217,7 @@ def build_strategy_kpis(
             "position_count": positions,
             "opportunity_quality": round(opportunity, 2) if opportunity is not None else None,
             "win_rate_percent": round(win_rate, 2) if win_rate is not None else None,
-            "evidence_paths": accepted_paths,
+            "evidence_paths": sorted(set(accepted_paths)),
             "evidence_status": "AVAILABLE" if accepted_paths else "REGISTRY_ONLY",
         })
 
