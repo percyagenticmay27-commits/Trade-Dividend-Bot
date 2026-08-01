@@ -4,6 +4,7 @@ from copy import deepcopy
 
 from src.dividend_bot.enterprise_dashboard_strategy_discovery import (
     attach_dashboard_strategy_discovery,
+    build_dashboard_refresh_consumer_payloads,
     build_dashboard_strategy_discovery,
 )
 
@@ -132,3 +133,81 @@ def test_executive_and_investor_payloads_receive_identical_discovery() -> None:
     )
 
     assert executive["strategy_discovery"] == investor["strategy_discovery"]
+
+
+def test_refresh_consumer_builds_one_identical_discovery_view() -> None:
+    payloads, warnings = build_dashboard_refresh_consumer_payloads(
+        registry=_registry(),
+        executive_dashboard={"dashboard_type": "EXECUTIVE"},
+        investor_dashboard={"dashboard_type": "INVESTOR"},
+        strategy_kpis=[
+            {"strategy_id": "DIVIDEND-001", "allocated_capital": 5000.0},
+            {"strategy_id": "SWING-001", "allocated_capital": 4500.0},
+        ],
+    )
+
+    assert warnings == []
+    executive_discovery = payloads["executive_dashboard"]["strategy_discovery"]
+    investor_discovery = payloads["investor_dashboard"]["strategy_discovery"]
+    refresh_discovery = payloads["refresh_summary"]
+    kpi_summary = payloads["strategy_kpi_document"]["strategy_discovery_summary"]
+
+    assert executive_discovery == investor_discovery
+    assert executive_discovery["summary"] == refresh_discovery["summary"]
+    assert executive_discovery["summary"] == kpi_summary
+    assert kpi_summary["strategy_ids"] == ["DIVIDEND-001", "SWING-001"]
+
+
+def test_refresh_consumer_preserves_completed_dashboard_calculations() -> None:
+    executive = {
+        "enterprise_summary": {
+            "portfolio_value": 10000.0,
+            "available_cash": 500.0,
+        }
+    }
+    investor = {
+        "portfolio_summary": {
+            "portfolio_value": 10000.0,
+            "projected_annual_income": 800.0,
+        }
+    }
+    executive_before = deepcopy(executive)
+    investor_before = deepcopy(investor)
+
+    payloads, _ = build_dashboard_refresh_consumer_payloads(
+        registry=_registry(),
+        executive_dashboard=executive,
+        investor_dashboard=investor,
+    )
+
+    assert executive == executive_before
+    assert investor == investor_before
+    assert payloads["executive_dashboard"]["enterprise_summary"] == executive_before[
+        "enterprise_summary"
+    ]
+    assert payloads["investor_dashboard"]["portfolio_summary"] == investor_before[
+        "portfolio_summary"
+    ]
+
+
+def test_refresh_consumer_kpi_document_is_read_only_and_copies_inputs() -> None:
+    strategy_kpis = [
+        {"strategy_id": "DIVIDEND-001", "allocated_capital": 5000.0}
+    ]
+    before = deepcopy(strategy_kpis)
+
+    payloads, _ = build_dashboard_refresh_consumer_payloads(
+        registry=_registry(),
+        executive_dashboard={},
+        investor_dashboard={},
+        strategy_kpis=strategy_kpis,
+        kpi_warnings=["sample warning"],
+    )
+
+    document = payloads["strategy_kpi_document"]
+    assert strategy_kpis == before
+    assert document["strategies"] == before
+    assert document["warnings"] == ["sample warning"]
+    assert document["paper_trade_mode"] is True
+    assert document["reporting_only"] is True
+    assert document["read_only"] is True
