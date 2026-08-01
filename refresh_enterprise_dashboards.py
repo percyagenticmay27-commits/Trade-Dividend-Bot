@@ -162,14 +162,29 @@ def _publish_optional_executive_evidence(
 
 
 def _adapter_availability(adapted: Mapping[str, Any]) -> dict[str, bool]:
+    """Report actual reconstructed components, using metadata only as support.
+
+    Older and test adapters may omit or incompletely populate evidence_metadata.
+    Classification must therefore inspect the evidence payload itself so valid
+    host-state reconstruction is never mislabeled as NONE.
+    """
     metadata = adapted.get("evidence_metadata")
     if not isinstance(metadata, Mapping):
         metadata = {}
+
+    portfolio_summary = adapted.get("portfolio_summary")
+    holdings = adapted.get("holdings")
+    payment_history = adapted.get("payment_history")
+    upcoming_payments = adapted.get("upcoming_payments")
+
     return {
-        "portfolio_summary": bool(metadata.get("portfolio_summary_available")),
-        "holdings": bool(metadata.get("holdings_available")),
-        "payment_history": bool(metadata.get("payment_history_available")),
-        "upcoming_payments": bool(metadata.get("upcoming_payments_available")),
+        "portfolio_summary": bool(portfolio_summary)
+        or bool(metadata.get("portfolio_summary_available")),
+        "holdings": bool(holdings) or bool(metadata.get("holdings_available")),
+        "payment_history": bool(payment_history)
+        or bool(metadata.get("payment_history_available")),
+        "upcoming_payments": bool(upcoming_payments)
+        or bool(metadata.get("upcoming_payments_available")),
     }
 
 
@@ -200,13 +215,13 @@ def _classify_investor_evidence(
             "available_components": availability,
         }
 
-    complete = availability["portfolio_summary"] and (
-        availability["holdings"] or availability["payment_history"]
-    )
+    # Host-state reconstruction is deliberately PARTIAL and non-authoritative,
+    # even when several components happen to be available. Only a published
+    # plugin artifact may be classified COMPLETE/authoritative.
     return {
         "source_type": "ADAPTER_RECONSTRUCTION",
         "source_id": "enterprise_dashboard_evidence_adapter",
-        "completeness": "COMPLETE" if complete else "PARTIAL",
+        "completeness": "PARTIAL",
         "authoritative": False,
         "reconstructed": True,
         "available_components": availability,
@@ -220,11 +235,8 @@ def _effective_investor_status(
     """Keep builder calculations intact while preventing false READY labels."""
     status = str(builder_status or "UNKNOWN").upper()
     source_type = str(provenance.get("source_type", "NONE"))
-    completeness = str(provenance.get("completeness", "NONE"))
 
-    if source_type == "NONE":
-        return "PARTIAL"
-    if source_type == "ADAPTER_RECONSTRUCTION" and completeness != "COMPLETE":
+    if source_type in {"NONE", "ADAPTER_RECONSTRUCTION"}:
         return "PARTIAL"
     return status
 
