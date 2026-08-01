@@ -1,185 +1,191 @@
-# Enterprise Investor Dashboard UI Specification v1.0
+# Enterprise Investor Dashboard UI Specification v1.1
 
 ## Purpose
 
-This document is the authoritative design specification for the Enterprise Investor Dashboard and its strategy-level KPI views.
+This document is the authoritative design specification for the Enterprise Investor Dashboard and its individual strategy KPI workspaces.
 
-It exists so the intended dashboard behavior can be verified during local development, testing, and DigitalOcean deployment. If a section is missing, empty, renamed, or rendered incorrectly in production, this document defines what was supposed to be implemented.
+It exists so the intended behavior can be verified during development, testing, and DigitalOcean deployment. If a required section is missing, empty, renamed, combined incorrectly, or rendered with the wrong scope, this document defines what was supposed to be implemented.
 
 The dashboard remains reporting-only and paper-only. It must not place trades, move capital, alter allocations, or override strategy decisions.
 
-## Architectural Scope
+## Current Implementation Scope
 
-The Investor Dashboard answers:
+The current implementation scope is limited to:
+
+- `DIVIDEND-001`
+- `SWING-001`
+
+Options, Futures, and other future strategies must eventually receive their own strategy KPI workspaces, but their detailed UI is deferred. The architecture must remain registry-driven so future strategies can be added without redesigning the enterprise summary.
+
+## Core Separation Rule
+
+The Investor Dashboard has two distinct layers that must never be mixed.
+
+### Layer 1 — Enterprise Summary
+
+The Enterprise Summary answers:
 
 > How is the complete investment enterprise performing across all registered strategies?
 
-It presents:
+It contains totals across all strategies and high-level counts. Each enterprise total includes a `More` or `Details` action that shows which strategies contributed to that total.
 
-1. Enterprise totals across all registered strategies.
-2. Contributor drill-downs showing how each strategy contributed to each total.
-3. Individual strategy KPI analytics.
-4. Enterprise and per-strategy watchlists.
-5. Portfolio holdings and positions with clickable decision rationale, committee scores, and supporting evidence.
+### Layer 2 — Individual Strategy KPI Workspace
 
-The Enterprise Registry is the source of truth for which strategies exist. The dashboard must not hardcode Dividend, Swing, Options, Futures, or any other strategy name.
+A strategy KPI workspace answers:
 
-## Strategy-Agnostic Design Rule
+> What is happening inside this one strategy?
 
-All enterprise metrics use generic labels. Strategy-specific labels appear only inside a strategy's own KPI workspace.
+Each KPI workspace shows only the selected strategy's own data:
 
-Examples:
+- watchlist
+- analytics
+- portfolio or positions
+- performance
+- income
+- realized and unrealized P&L
+- win rate
+- strategy health
+- decision evidence
 
-- Enterprise label: `Income`
-- Dividend strategy detail: `Dividend Income`
-- Options strategy detail: `Option Premium Income`
-- Fixed-income strategy detail: `Interest Income`
-
-At the enterprise level, all compatible income types contribute to the single `Income` total.
+A Dividend KPI workspace must not display Swing values. A Swing KPI workspace must not display Dividend values. Future Options or Futures KPI workspaces must likewise display only their own strategy data.
 
 ## Enterprise Summary KPI Cards
 
-The top row contains enterprise-level KPI cards. Each card displays the total across all registered strategies that reported the metric.
+The enterprise summary contains high-level totals across all registered strategies that reported compatible evidence.
 
-Every card must show:
+Every enterprise KPI card must show:
 
-- Dollar amount first when the metric has monetary value.
+- Dollar amount first when monetary.
 - Percentage second when applicable.
-- Reporting completeness, such as `3 of 4 strategies reported` when incomplete.
+- Reporting completeness when incomplete.
 - A `More` or `Details` action.
-- No silent conversion of missing strategy evidence to zero.
+- Missing evidence as `Not Reported`, never as an invented zero.
 
-### Required Enterprise KPI Cards
+### Income
 
-#### Portfolio Value
+`Income` is one enterprise total covering all compatible income categories reported by the strategies.
 
-Combined current portfolio value across all reporting strategies.
+For the present scope, this can include:
 
-`Details` opens the contributor view showing portfolio value by strategy.
+- Dividend strategy income
+- Swing strategy income, when the Swing strategy reports income
 
-#### Allocated Capital
+Future option premium, interest, fixed-income distributions, and other income types will contribute to this same enterprise Income total rather than requiring separate enterprise cards.
 
-Total paper capital currently allocated to registered strategies.
+`More` or `Details` shows each strategy's contribution:
 
-`Details` shows each strategy's allocated amount and percentage of enterprise allocated capital.
+| Strategy | Income Amount | Contribution % | Income Category | Reporting Period | Evidence Status |
+|---|---:|---:|---|---|---|
 
-#### Available Cash / Reserve
+### Performance
 
-Enterprise-level unassigned paper cash and reserve.
+`Performance` is the approved enterprise-level total or normalized result across all strategies that report compatible performance evidence.
 
-The contributor view must distinguish centrally held reserve from cash retained inside individual strategies when the evidence contract supports that distinction.
-
-#### Income
-
-Total income from all strategies.
-
-This includes, where reported:
-
-- Dividends
-- Option premium income
-- Interest income
-- Fixed-income distributions
-- Other strategy income classifications
-
-The top-level card remains labeled `Income`. Premium income must not require a separate enterprise card.
-
-`Details` shows:
-
-| Strategy | Strategy Type | Income Category | Income Amount | Contribution % | Evidence Status |
-|---|---|---|---:|---:|---|
-
-#### Performance
-
-Combined enterprise performance using the approved enterprise performance methodology.
-
-The contributor view shows each strategy's reported performance and contribution. It must clearly identify when strategies use different native measures and when normalization was required.
-
-`Details` shows:
+`More` or `Details` shows each strategy's own performance result and contribution:
 
 | Strategy | Native Performance Metric | Native Value | Normalized Contribution | Reporting Period | Evidence Status |
 |---|---|---:|---:|---|---|
 
-#### Realized P&L
+### Realized P&L
 
 Total realized profit and loss across all reporting strategies.
 
-`Details` shows realized P&L by strategy, including reporting period and evidence source.
+`More` or `Details` shows realized P&L by strategy.
 
-#### Unrealized P&L
+### Unrealized P&L
 
 Total unrealized profit and loss across all reporting strategies.
 
-`Details` shows unrealized P&L by strategy and current open-position contribution.
+`More` or `Details` shows unrealized P&L by strategy.
 
-#### Win Rate
+### Win Rate
 
-Enterprise win-rate presentation for all strategies that publish compatible closed-decision or closed-trade evidence.
+Enterprise win rate based on compatible completed-decision or closed-trade evidence.
 
-The total must use the approved weighted calculation based on wins and completed observations, not a simple average of strategy percentages unless that is the only supported evidence.
+It must use the approved weighted calculation based on wins and completed observations rather than a simple average of percentages whenever the required counts exist.
 
-`Details` shows:
+`More` or `Details` shows:
 
 | Strategy | Wins | Losses | Completed Observations | Win Rate | Evidence Status |
 |---|---:|---:|---:|---:|---|
 
-#### Yield
+### Yield
 
-Combined enterprise yield for strategies that publish yield-compatible evidence.
+Enterprise yield across strategies that publish compatible yield evidence.
 
-This includes fixed-income strategies but is not limited to a bot named `Fixed Income`.
+`More` or `Details` shows each contributing strategy's yield, invested value, calculation basis, and evidence completeness.
 
-`Details` shows each contributing strategy's yield, invested value, income basis, calculation method, and reporting completeness.
-
-#### Capital Appreciation
+### Capital Appreciation
 
 Total capital appreciation across all reporting strategies.
 
-`Details` shows the appreciation contribution from every strategy, including growth, swing, options, futures, dividend, and future registered strategies when they report compatible evidence.
+`More` or `Details` shows each strategy's capital-appreciation contribution.
 
-#### Enterprise Health
+### Portfolio Value
 
-Combined readiness, health, runtime, evidence freshness, and safety status across all registered strategies.
+Combined current portfolio value across all reporting strategies.
 
-`Details` shows health and readiness for every strategy and identifies missing or stale evidence.
+`More` or `Details` shows portfolio value by strategy.
 
-## More / Details Interaction Standard
+### Allocated Capital
 
-All enterprise KPI cards use the same interaction pattern.
+Total paper capital allocated to all registered strategies.
 
-1. The user selects `More` or `Details`.
-2. The One View Analysis workspace updates below the KPI cards.
-3. The workspace does not create a separate browser page for every metric.
-4. The selected metric remains visually highlighted.
-5. The analysis workspace contains:
-   - What is this?
-   - How is it calculated?
-   - Why does it matter?
-   - Is this estimated?
-   - Measurement period
-   - Contributor table
-   - Evidence completeness
-   - AI CIO commentary
-6. The contributor table lists every registered strategy, including strategies with missing evidence.
-7. Missing evidence is displayed as `Not Reported`, never as an invented zero.
+`More` or `Details` shows each strategy's allocated amount and percentage of enterprise allocated capital.
 
-## Individual Strategy KPI Workspace
+### Available Cash / Reserve
 
-Below the enterprise totals, the dashboard provides a strategy selector, table, or tabs generated dynamically from the Enterprise Registry.
+Enterprise-level unassigned paper cash and reserve.
 
-Each registered strategy receives its own KPI workspace.
+`More` or `Details` distinguishes centrally held reserve from strategy-retained cash when the evidence contract supports that distinction.
 
-### Common Strategy KPIs
+### Watchlist Summary
 
-Every strategy workspace should show these when evidence is available:
+The enterprise layer may show high-level watchlist counts only.
 
-- Strategy name
-- Strategy ID
+Examples:
+
+- Total Watchlist Count
+- Dividend Watchlist Count
+- Swing Watchlist Count
+
+`More` or `Details` opens a contributor view showing the count and list of symbols, pairs, or ecosystems grouped by strategy.
+
+The enterprise summary does not replace the strategy-specific watchlist tables.
+
+## Enterprise More / Details Standard
+
+Each enterprise KPI card uses the same One View Analysis pattern.
+
+The selected metric opens a workspace below the cards containing:
+
+- What is this?
+- How is it calculated?
+- Why does it matter?
+- Is this estimated?
+- Measurement period
+- Strategy contributor table
+- Evidence completeness
+- AI CIO commentary
+
+The contributor table lists every registered strategy, including strategies with missing evidence.
+
+## Individual Strategy KPI Workspaces
+
+Each registered strategy receives its own KPI workspace generated from Registry v2.
+
+A strategy KPI workspace displays only evidence owned by that strategy.
+
+### Common Strategy KPI Areas
+
+When available, each strategy workspace shows:
+
+- Strategy name and ID
 - Strategy type and class
 - Lifecycle status
 - Runtime status
-- Health
-- Readiness
-- Evidence status and freshness
+- Health and readiness
+- Evidence freshness
 - Allocated capital
 - Portfolio value
 - Realized P&L
@@ -189,110 +195,137 @@ Every strategy workspace should show these when evidence is available:
 - Win rate
 - Position count
 - Watchlist count
-- Opportunity quality or equivalent strategy score
+- Opportunity Quality or equivalent strategy score
 
-### Strategy-Specific KPIs
+### Dividend Strategy KPI Workspace
 
-Strategy plugins may declare additional KPIs through their Registry v2 capability and artifact contracts.
+The Dividend KPI displays only Dividend strategy evidence, including:
 
-Examples include:
+- Dividend watchlist
+- Dividend portfolio holdings
+- Dividend income
+- Current yield
+- Projected annual income
+- Payment reliability
+- Upcoming payments
+- Dividend strategy performance
+- Realized and unrealized P&L
+- Dividend decision evidence
 
-- Dividend payment reliability
-- Upcoming dividend payments
-- Option premium collected
-- Assignment exposure
-- Futures margin usage
-- Maximum drawdown
-- Average holding period
+### Swing Strategy KPI Workspace
+
+The Swing KPI displays only Swing strategy evidence, including:
+
+- Swing watchlist
+- Swing portfolio or open positions
 - Opportunity Quality
-- Entry Score
-- Market regime alignment
+- Entry or timing score, kept separate from Opportunity Quality
+- Watchlist promotions and demotions
+- Candidate ranking
+- Market regime context
+- Swing strategy performance
+- Realized and unrealized P&L
+- Win rate
+- Swing decision evidence
 
-The host dashboard renders declared KPIs generically. It must not require code changes for each new strategy.
+### Future Strategy KPI Workspaces
 
-## Watchlist Table
+Options, Futures, and future strategies will require their own KPI workspaces.
 
-The KPI area must include a watchlist table.
+Examples of future strategy-specific content include:
 
-The enterprise watchlist view combines watchlist records from every registered strategy while preserving strategy ownership.
+- Current option contracts
+- Premium and income contribution
+- Return and win/loss by option
+- Current futures contracts
+- Margin usage
+- Return and drawdown by contract
 
-### Required Columns
+These are deferred and must not delay the present Dividend and Swing implementation.
+
+## Strategy Watchlist Table
+
+Each strategy KPI workspace contains its own watchlist table.
+
+There is no combined watchlist table inside an individual strategy KPI.
+
+### Required Watchlist Columns
 
 | Field | Description |
 |---|---|
-| Strategy | Strategy that owns the candidate |
-| Symbol / Pair | Stock, ETF, option contract, futures contract, currency pair, or other instrument identifier |
-| Instrument Type | Equity, ETF, option, future, pair, fixed income, or other registered type |
-| Watchlist Status | Candidate, monitoring, promoted, demoted, rejected, pending, or strategy-defined normalized status |
-| Opportunity / Quality Score | Strategy's approved opportunity-quality measure |
-| Entry / Timing Score | Entry or timing measure when published; must remain separate from Opportunity Quality |
+| Symbol / Pair / Ecosystem | Strategy-owned candidate identifier |
+| Instrument Type | Equity, ETF, pair, option, future, or other type |
+| Watchlist Status | Candidate, monitoring, promoted, demoted, rejected, pending, or normalized strategy status |
+| Opportunity / Quality Score | Strategy's approved quality measure |
+| Entry / Timing Score | Separate timing measure when published |
 | Conviction | Strategy conviction score or classification |
-| Risk | Risk score, classification, or principal risk flag |
+| Risk | Risk score or principal risk flag |
 | Market Regime | Regime context used by the strategy |
-| Added Date | Date the candidate entered the watchlist |
+| Added Date | Date added to this strategy's watchlist |
 | Last Updated | Evidence freshness timestamp |
-| Decision Link | Opens the One View Decision Analysis workspace |
+| Details | Opens the strategy-specific decision analysis |
 
-### Watchlist Filters
+## Strategy Portfolio or Positions Table
 
-The table should support filtering by:
-
-- Strategy
-- Instrument type
-- Watchlist status
-- Score range
-- Risk
-- Market regime
-- Evidence freshness
-
-## Portfolio and Positions Table
-
-The portfolio section must display all enterprise holdings and open positions while preserving the strategy that owns each position.
+Each strategy KPI workspace contains only that strategy's holdings or positions.
 
 ### Required Columns
 
 | Field | Description |
 |---|---|
-| Strategy | Owning strategy |
-| Symbol / Pair | Clickable instrument identifier |
-| Instrument Type | Equity, ETF, option, future, pair, or other type |
+| Symbol / Pair / Contract | Clickable strategy-owned instrument |
+| Instrument Type | Equity, ETF, pair, option, future, or other type |
 | Quantity / Contracts | Position quantity or contract count |
 | Cost Basis | Reported cost basis |
 | Market Value | Current paper market value |
 | Allocation | Dollar amount first, percentage second |
-| Realized P&L | Realized result associated with the position when applicable |
+| Income Contribution | Amount this instrument contributes to the strategy's income and enterprise Income total |
+| Realized P&L | Realized result for this instrument |
 | Unrealized P&L | Current unrealized result |
-| Lifecycle Status | Active, monitoring, SGOV-protected, pending, replaced, closed, or normalized strategy state |
+| Win / Loss Status | Closed result or current strategy-defined status when available |
+| Lifecycle Status | Active, monitoring, protected, pending, replaced, closed, or normalized state |
 | Health / Risk | Position health and principal risk status |
 | Last Updated | Evidence timestamp |
+| Details | Opens the strategy-specific decision analysis |
 
-## Clickable Symbol / Pair Decision Analysis
+## Clickable Instrument Details
 
-Selecting a stock symbol, ETF, option contract, futures contract, or pair opens a One View Decision Analysis workspace.
+Selecting a stock, ETF, pair, option contract, futures contract, or other strategy instrument opens a One View Decision Analysis for that instrument.
 
-This workspace explains why the instrument was selected and shows the decision evidence that existed at the time.
+The detail belongs to the selected strategy only.
 
-### Required Decision Analysis Sections
+### Required Instrument Detail Sections
+
+#### Contribution Summary
+
+Show the instrument's contribution to:
+
+- Strategy portfolio value
+- Enterprise portfolio value, when calculable
+- Strategy income
+- Enterprise Income total
+- Strategy realized P&L
+- Strategy unrealized P&L
+- Strategy win/loss results
+- Strategy performance
 
 #### Decision Summary
 
 - Strategy name and ID
 - Instrument
-- Decision type: watchlist, enter, hold, add, reduce, protect, replace, reject, or close
+- Decision type
 - Decision timestamp
 - Current lifecycle status
-- Plain-language reason the instrument was selected
+- Plain-language reason the strategy selected the instrument
 
 #### Committee Scorecard
 
-Show the score or vote from every participating committee or engine.
+Show every participating committee or engine declared by that strategy.
 
-Example columns:
-
-| Committee / Engine | Score | Weight | Contribution | Decision / Vote | Confidence | Evidence Status |
+| Committee / Engine | Score | Weight | Weighted Contribution | Decision / Vote | Confidence | Evidence Status |
 |---|---:|---:|---:|---|---:|---|
 
-Possible contributors include, when declared by the strategy:
+For the current Dividend and Swing scope, possible contributors may include:
 
 - Fundamental Analysis
 - Market Intelligence
@@ -307,102 +340,92 @@ Possible contributors include, when declared by the strategy:
 - Decision Stability
 - Strategy-specific committees
 
-The dashboard must not invent a committee that the strategy did not declare.
+The UI must not invent a committee that the selected strategy did not declare.
 
-#### Evidence Used
+#### Committee Evidence
 
-Show the evidence supporting each committee's decision.
-
-Required fields when available:
+For each committee or engine, show the evidence supporting its score and decision:
 
 - Evidence source
 - Artifact or report ID
-- Evidence category
 - Observation or finding
 - Positive, negative, or neutral impact
 - Score impact
 - Confidence
 - Evidence timestamp
-- Source freshness
-- Link or path to the underlying report when safe and available
+- Freshness
+- Safe path or link to the underlying report when available
 
 #### Decision Calculation
 
-Show how committee scores were combined, including:
+Show:
 
 - Component score
 - Weight
 - Weighted contribution
 - Missing-evidence treatment
 - Final score
-- Threshold or gate applied
-- Any veto, safety, or risk rule
+- Threshold or gate
+- Veto, safety, or risk rule
 
-Opportunity Quality and Entry / Timing must remain separate when the strategy defines them separately.
+Opportunity Quality and Entry / Timing remain separate whenever the strategy defines them separately.
 
 #### Alternatives and Rejections
 
-When evidence is available, show:
+When available, show:
 
 - Other candidates considered
 - Challenger instrument
-- Why this instrument ranked higher
+- Why the selected instrument ranked higher
 - Why alternatives were rejected or deferred
-- Replacement relationship, if any
+- Replacement relationship
 
 #### AI CIO Commentary
 
-Provide a concise explanation derived from the recorded evidence. Commentary must distinguish recorded facts from interpretation and must not claim evidence that was not supplied.
+Provide a concise explanation derived only from recorded evidence. It must distinguish recorded facts from interpretation.
 
-## Data Contract Requirements
+## Registry and Artifact Requirements
 
-Each strategy should be able to declare the following artifact roles through Registry v2:
+For the current Dividend and Swing strategies, Registry v2 should declare the relevant artifact roles for:
 
-- Portfolio / positions
-- Watchlist
-- Performance
-- Income
-- Health and readiness
+- Strategy portfolio or positions
+- Strategy watchlist
+- Strategy performance
+- Strategy income
+- Strategy health and readiness
 - Decision journal
 - Committee scores
-- Decision evidence
-- Opportunity quality
-- Entry / timing
+- Committee evidence
+- Opportunity Quality
+- Entry or timing
 - Lifecycle
 
-The dashboard must discover these artifacts from the registry rather than rely on strategy-specific hardcoded filenames.
-
-## Completeness and Evidence Rules
-
-- Enterprise totals include only reported numeric evidence.
-- Every total reports the number of contributing strategies and the total number registered.
-- Partial totals are labeled `Partial` or `Incomplete`.
-- Missing evidence is displayed as `Not Reported`.
-- Stale evidence is visibly identified.
-- Reconstructed evidence must be labeled as reconstructed and must not be presented as authoritative strategy evidence.
-- Registry-only strategies remain visible even when detailed KPI evidence is unavailable.
+The host dashboard must discover these artifacts from the registry rather than hardcode strategy-specific filenames.
 
 ## Navigation and Layout
 
-The final portal layout uses:
+The final portal uses:
 
-- Left navigation panel
-- Horizontal enterprise KPI cards at the top
-- Strategy selector or strategy KPI table
-- One View Analysis workspace below summary cards
-- Contributor tables
-- Watchlist table
-- Portfolio and positions table
-- AI CIO Commentary panel
-- Metric definition and help links
+- Left navigation
+- Horizontal enterprise KPI cards
+- Enterprise One View Analysis workspace
+- Strategy selector or strategy cards
+- One strategy KPI workspace at a time
+- Strategy-owned watchlist table
+- Strategy-owned portfolio or positions table
+- Clickable instrument details
+- AI CIO commentary
+- Metric definitions and help links
 
-Suggested left navigation entries:
+Suggested left navigation:
 
 - Enterprise Overview
 - Investor Dashboard
 - Executive Dashboard
 - Strategy Allocation
 - Strategies
+- Dividend KPI
+- Swing KPI
 - Portfolio & Positions
 - Watchlists
 - Income
@@ -415,29 +438,33 @@ Suggested left navigation entries:
 
 ## Acceptance Criteria
 
-This design is implemented only when all of the following are true:
+This design is implemented only when:
 
-1. Enterprise KPI cards show totals across all registered strategies.
-2. Every enterprise KPI card has a working `More` or `Details` drill-down.
-3. Contributor tables identify each strategy's contribution and missing evidence.
-4. Income includes all income categories under one enterprise total.
-5. Performance, Realized P&L, Unrealized P&L, Win Rate, Yield, and Capital Appreciation support per-strategy drill-downs.
-6. Individual strategy KPI views are generated dynamically from Registry v2.
-7. A watchlist table is present and combines all strategy watchlists while preserving ownership.
-8. Portfolio symbols and pairs are clickable.
-9. The symbol / pair detail view explains why the instrument was selected.
-10. The decision view displays committee scores and the evidence used by each committee.
-11. Missing and partial evidence are clearly labeled.
-12. No dashboard component changes trading, allocation, governance, or broker behavior.
+1. Enterprise Income has a working contributor drill-down.
+2. Enterprise Performance has a working contributor drill-down.
+3. Enterprise Realized P&L has a working contributor drill-down.
+4. Enterprise Unrealized P&L has a working contributor drill-down.
+5. Enterprise Win Rate has a working contributor drill-down.
+6. Enterprise Yield has a working contributor drill-down.
+7. Enterprise Capital Appreciation has a working contributor drill-down.
+8. Enterprise watchlist counts can drill into strategy-grouped symbol lists.
+9. Dividend KPI shows only Dividend data.
+10. Swing KPI shows only Swing data.
+11. Each strategy KPI has its own watchlist table.
+12. Each strategy KPI has its own portfolio or positions table.
+13. Clicking an instrument shows its contribution, win/loss and P&L evidence, committee scores, and committee evidence.
+14. Missing evidence is clearly labeled.
+15. No component changes trading, allocation, governance, or broker behavior.
 
 ## Deployment Verification
 
-After DigitalOcean deployment, verify that:
+After DigitalOcean deployment, verify:
 
-- Both `DIVIDEND-001` and `SWING-001` appear without hardcoded UI entries.
-- Any future registered strategy appears automatically.
-- Enterprise totals match the sum of reported strategy evidence.
-- `More` / `Details` views show contributors.
-- Watchlist and portfolio tables populate from registry-declared artifacts.
-- Clicking a symbol or pair opens its decision rationale, committee scorecard, and evidence view.
-- Missing sections are treated as deployment defects and checked against this specification.
+- `DIVIDEND-001` and `SWING-001` appear as separate KPI workspaces.
+- Dividend KPI contains no Swing rows or values.
+- Swing KPI contains no Dividend rows or values.
+- Enterprise KPI cards show totals across reporting strategies.
+- Every required enterprise total has a working `More` or `Details` contributor view.
+- Each strategy's watchlist and portfolio populate from its own registry-declared artifacts.
+- Clicking a Dividend or Swing instrument opens its strategy-specific rationale, committee scorecard, evidence, and contribution details.
+- Missing sections or mixed strategy data are treated as deployment defects against this specification.
