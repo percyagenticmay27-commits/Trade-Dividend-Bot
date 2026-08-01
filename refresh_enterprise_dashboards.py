@@ -144,12 +144,16 @@ def refresh_enterprise_dashboards(
 ) -> dict[str, Any]:
     """Publish existing dashboards plus registry-driven per-strategy evidence."""
     root = Path(root_dir)
-    directory = Path(results_dir)
+    requested_results = Path(results_dir)
+    directory = requested_results
     if not directory.is_absolute():
         directory = root / directory
     state = Path(state_dir)
     if not state.is_absolute():
-        state = root / state
+        if requested_results.is_absolute() and Path(root_dir) == Path("."):
+            state = directory.parent / state
+        else:
+            state = root / state
     directory.mkdir(parents=True, exist_ok=True)
 
     evidence = build_dashboard_evidence(root_dir=root, results_dir=directory, state_dir=state)
