@@ -110,6 +110,7 @@ def build_dashboard_refresh_consumer_payloads(
     kpi_document = {
         "scope": "ALL_REGISTERED_STRATEGIES",
         "strategy_count": len(normalized_kpis),
+        "strategy_discovery": dict(discovery),
         "strategy_discovery_summary": normalized_summary,
         "strategies": normalized_kpis,
         "warnings": [str(item) for item in kpi_warnings if item],
