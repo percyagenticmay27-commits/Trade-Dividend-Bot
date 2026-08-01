@@ -159,6 +159,13 @@ def build_enterprise_dashboard_intelligence(
         "reporting_only": True,
         "read_only": True,
     }
+
+    if document["registered_strategy_count"] == 0 and not warnings:
+        warnings.append(
+            "No registered strategies were available. "
+            "Safe empty enterprise intelligence document published."
+        )
+
     return document, warnings
 
 
