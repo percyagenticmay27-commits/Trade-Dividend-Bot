@@ -8,7 +8,9 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
-from src.dividend_bot.enterprise_dashboard_evidence_adapter import build_dashboard_evidence
+from src.dividend_bot.registry_dashboard_evidence_adapter_v2 import (
+    build_registry_dashboard_evidence_v2,
+)
 from src.dividend_bot.enterprise_strategy_kpi_adapter import build_strategy_kpis
 from src.dividend_bot.enterprise_executive_dashboard import (
     build_executive_dashboard,
@@ -29,6 +31,7 @@ DEFAULT_EXECUTIVE_JSON = "ai_cio_executive_dashboard.json"
 DEFAULT_EXECUTIVE_MARKDOWN = "ai_cio_executive_dashboard.md"
 DEFAULT_INVESTOR_JSON = "enterprise_investor_dashboard.json"
 DEFAULT_INVESTOR_MARKDOWN = "enterprise_investor_dashboard.md"
+DEFAULT_REGISTRY_EVIDENCE_JSON = "enterprise_registry_strategy_evidence.json"
 DEFAULT_INVESTOR_SOURCE_CANDIDATES = (
     "enterprise_dividend_investor_dashboard.json",
     "dividend_investor_dashboard.json",
@@ -175,13 +178,7 @@ def _classify_investor_evidence(
     source_path: Path | None,
     adapted: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Classify provenance independently from dashboard calculations.
-
-    A published artifact is authoritative for presentation. Adapter evidence is a
-    read-only reconstruction from host state and reports. An empty generated
-    summary is never treated as evidence merely because a builder returned a
-    dictionary containing zero values.
-    """
+    """Classify provenance independently from dashboard calculations."""
     if source_path is not None:
         return {
             "source_type": "PUBLISHED_ARTIFACT",
@@ -232,6 +229,35 @@ def _effective_investor_status(
     return status
 
 
+def _registry_evidence_document(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    strategies = evidence.get("registry_declared_strategy_evidence")
+    if not isinstance(strategies, list):
+        strategies = []
+    summary = evidence.get("registry_declared_evidence_summary")
+    if not isinstance(summary, Mapping):
+        summary = {}
+    policy = evidence.get("evidence_policy")
+    if not isinstance(policy, Mapping):
+        policy = {}
+    return {
+        "schema_version": "1.0",
+        "dashboard_evidence_contract_version": str(
+            evidence.get("dashboard_evidence_contract_version", "2.0")
+        ),
+        "dashboard_scope": "ENTERPRISE_ALL_REGISTERED_STRATEGIES",
+        "plugin_evidence_source": str(evidence.get("plugin_evidence_source", "NONE")),
+        "registry_path": evidence.get("registry_path"),
+        "summary": dict(summary),
+        "strategies": strategies,
+        "required_plugin_evidence_failures": list(
+            evidence.get("required_plugin_evidence_failures", [])
+        ),
+        "evidence_policy": dict(policy),
+        "paper_trade_mode": True,
+        "read_only": True,
+    }
+
+
 def refresh_enterprise_dashboards(
     *,
     results_dir: str | Path = DEFAULT_RESULTS_DIR,
@@ -239,7 +265,7 @@ def refresh_enterprise_dashboards(
     state_dir: str | Path = "state",
     investor_source_candidates: Sequence[str | Path] = DEFAULT_INVESTOR_SOURCE_CANDIDATES,
 ) -> dict[str, Any]:
-    """Publish existing dashboards plus registry-driven per-strategy evidence."""
+    """Publish existing dashboards plus Registry v2 per-strategy evidence."""
     root = Path(root_dir)
     requested_results = Path(results_dir)
     directory = requested_results
@@ -254,7 +280,7 @@ def refresh_enterprise_dashboards(
             state = root / state
     directory.mkdir(parents=True, exist_ok=True)
 
-    evidence = build_dashboard_evidence(
+    evidence = build_registry_dashboard_evidence_v2(
         root_dir=root,
         results_dir=directory,
         state_dir=state,
@@ -283,6 +309,12 @@ def refresh_enterprise_dashboards(
             registry=registry,
         )
 
+    registry_evidence = _registry_evidence_document(evidence)
+    registry_evidence_json = _atomic_write_json(
+        directory / DEFAULT_REGISTRY_EVIDENCE_JSON,
+        registry_evidence,
+    )
+
     cash_state, cash_warning = _read_mapping(state / "paper_cash_account.json")
     strategy_kpis, kpi_warnings = build_strategy_kpis(
         registry=registry,
@@ -301,6 +333,10 @@ def refresh_enterprise_dashboards(
 
     executive = build_executive_dashboard(input_dir=directory)
     executive["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
+    executive["dashboard_evidence_contract_version"] = "2.0"
+    executive["plugin_evidence_source"] = registry_evidence["plugin_evidence_source"]
+    executive["registry_declared_evidence_summary"] = registry_evidence["summary"]
+    executive["registry_declared_strategy_evidence"] = registry_evidence["strategies"]
     executive["strategy_kpis"] = strategy_kpis
     executive_json = _atomic_write_json(
         directory / DEFAULT_EXECUTIVE_JSON,
@@ -358,6 +394,10 @@ def refresh_enterprise_dashboards(
     investor["dashboard_status"] = effective_investor_status
     investor["evidence_provenance"] = provenance
     investor["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
+    investor["dashboard_evidence_contract_version"] = "2.0"
+    investor["plugin_evidence_source"] = registry_evidence["plugin_evidence_source"]
+    investor["registry_declared_evidence_summary"] = registry_evidence["summary"]
+    investor["registry_declared_strategy_evidence"] = registry_evidence["strategies"]
     investor["strategy_kpis"] = strategy_kpis
     investor_json = _atomic_write_json(
         directory / DEFAULT_INVESTOR_JSON,
@@ -378,6 +418,7 @@ def refresh_enterprise_dashboards(
     warnings.extend(str(item) for item in investor.get("warnings", []) if item)
     errors = [str(item) for item in executive.get("errors", []) if item]
 
+    registry_summary = registry_evidence["summary"]
     return {
         "paper_trade_mode": True,
         "live_trading_enabled": False,
@@ -385,6 +426,9 @@ def refresh_enterprise_dashboards(
         "capital_movement_enabled": False,
         "reporting_only": True,
         "dashboard_scope": "ENTERPRISE_ALL_REGISTERED_STRATEGIES",
+        "dashboard_evidence_contract_version": "2.0",
+        "plugin_evidence_source": registry_evidence["plugin_evidence_source"],
+        "registry_declared_evidence_summary": registry_summary,
         "executive_dashboard_status": executive.get(
             "enterprise_summary", {}
         ).get("enterprise_status", "UNKNOWN"),
@@ -401,6 +445,7 @@ def refresh_enterprise_dashboards(
         "paths": {
             "strategy_inventory": str(directory / "strategy_inventory.json"),
             "enterprise_health": str(directory / "enterprise_health.json"),
+            "registry_strategy_evidence": str(registry_evidence_json),
             "strategy_kpis": str(directory / "enterprise_strategy_kpis.json"),
             "executive_json": str(executive_json),
             "executive_markdown": str(executive_markdown),
@@ -431,10 +476,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 1
 
     print(f"Dashboard scope: {summary['dashboard_scope']}")
+    print(f"Evidence contract: {summary['dashboard_evidence_contract_version']}")
+    print(f"Plugin evidence: {summary['plugin_evidence_source']}")
     print(f"Executive dashboard: {summary['paths']['executive_json']}")
     print(f"Investor dashboard: {summary['paths']['investor_json']}")
+    print(f"Registry strategy evidence: {summary['paths']['registry_strategy_evidence']}")
     print(f"Strategy KPIs: {summary['paths']['strategy_kpis']}")
     print(f"Registered strategies: {summary['registered_strategy_count']}")
+    evidence_summary = summary["registry_declared_evidence_summary"]
+    print(f"Declared strategy evidence: {evidence_summary.get('strategy_count', 0)}")
+    print(f"Available strategy evidence: {evidence_summary.get('available_count', 0)}")
+    print(f"Registry-only strategies: {evidence_summary.get('registry_only_count', 0)}")
     print(f"Executive status: {summary['executive_dashboard_status']}")
     print(f"Investor status: {summary['investor_dashboard_status']}")
     provenance = summary["investor_evidence_provenance"]
