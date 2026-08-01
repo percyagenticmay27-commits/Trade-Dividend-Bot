@@ -1,4 +1,4 @@
-"""Build read-only per-strategy KPI evidence from the Enterprise registry.
+"""Build read-only per-strategy KPI evidence from Enterprise discovery.
 
 The host consumes declared JSON/CSV artifacts only. It does not import strategy code,
 change allocations, move capital, or execute broker actions.
@@ -9,6 +9,10 @@ import csv
 import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
+
+from src.dividend_bot.enterprise_strategy_discovery import (
+    discover_registered_strategies,
+)
 
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -152,24 +156,33 @@ def build_strategy_kpis(
     strategy_allocations: Mapping[str, Any] | None = None,
     root_dir: str | Path = ".",
 ) -> tuple[list[dict[str, Any]], list[str]]:
-    """Return deterministic KPI rows for every registered strategy plugin."""
+    """Return KPI rows for every strategy discovered from the registry.
+
+    Discovery owns strategy enumeration, identity normalization, duplicate handling,
+    and deterministic ordering. This adapter only reads each discovered plugin's
+    declared evidence and derives presentation KPIs.
+    """
     root = Path(root_dir)
     allocations = dict(strategy_allocations or {})
-    plugins = registry.get("strategy_plugins")
+    discovered, discovery_warnings = discover_registered_strategies(registry)
     rows: list[dict[str, Any]] = []
-    warnings: list[str] = []
-    if not isinstance(plugins, list):
-        return rows, ["Enterprise registry does not contain strategy_plugins."]
+    warnings: list[str] = list(discovery_warnings)
 
-    for plugin in plugins:
+    for strategy in discovered:
+        plugin = strategy.get("plugin")
         if not isinstance(plugin, Mapping):
+            warnings.append(
+                f"{strategy.get('strategy_id', 'UNKNOWN')}: discovered plugin metadata is unavailable."
+            )
             continue
-        strategy_id = str(_first(plugin, ("strategy_id", "plugin_id", "service_id"), "UNKNOWN"))
-        display_name = str(_first(plugin, ("display_name", "strategy_name", "name"), strategy_id))
+
+        strategy_id = str(strategy["strategy_id"])
+        display_name = str(strategy["display_name"])
         capability_names = _capability_names(plugin)
         artifact_declarations = _artifact_declarations(plugin)
         payloads: list[Any] = []
         accepted_paths: list[str] = []
+
         for raw_path in _declared_paths(plugin):
             path = _safe_path(raw_path, root)
             if path is None:
@@ -186,24 +199,53 @@ def build_strategy_kpis(
 
         allocated = _number(allocations.get(strategy_id))
         if allocated is None:
-            allocated = _metric(payloads, ("allocated_cash", "allocated_capital", "paper_value", "allocation_value")) or 0.0
-        portfolio_value = _metric(payloads, ("portfolio_value", "market_value", "current_value", "total_value"))
-        realized = _metric(payloads, ("realized_gain", "realized_profit", "realized_pnl", "net_profit"))
-        unrealized = _metric(payloads, ("unrealized_gain", "unrealized_profit", "unrealized_pnl"))
-        income = _metric(payloads, ("dividend_income", "income_received", "total_income", "projected_annual_income"))
-        watchlist = _count(payloads, ("watchlist", "watchlist_count", "candidate_count", "candidates"))
-        positions = _count(payloads, ("positions", "holdings", "open_positions", "position_count", "holding_count"))
-        opportunity = _metric(payloads, ("opportunity_quality", "opportunity_quality_score", "average_opportunity_score"))
+            allocated = _metric(
+                payloads,
+                ("allocated_cash", "allocated_capital", "paper_value", "allocation_value"),
+            ) or 0.0
+        portfolio_value = _metric(
+            payloads,
+            ("portfolio_value", "market_value", "current_value", "total_value"),
+        )
+        realized = _metric(
+            payloads,
+            ("realized_gain", "realized_profit", "realized_pnl", "net_profit"),
+        )
+        unrealized = _metric(
+            payloads,
+            ("unrealized_gain", "unrealized_profit", "unrealized_pnl"),
+        )
+        income = _metric(
+            payloads,
+            ("dividend_income", "income_received", "total_income", "projected_annual_income"),
+        )
+        watchlist = _count(
+            payloads,
+            ("watchlist", "watchlist_count", "candidate_count", "candidates"),
+        )
+        positions = _count(
+            payloads,
+            ("positions", "holdings", "open_positions", "position_count", "holding_count"),
+        )
+        opportunity = _metric(
+            payloads,
+            ("opportunity_quality", "opportunity_quality_score", "average_opportunity_score"),
+        )
         win_rate = _metric(payloads, ("win_rate", "win_rate_percent"))
 
         rows.append({
             "strategy_id": strategy_id,
             "display_name": display_name,
-            "strategy_type": str(_first(plugin, ("strategy_type", "plugin_type", "bot_type"), "STRATEGY")),
-            "lifecycle_status": str(_first(plugin, ("lifecycle_status", "service_lifecycle", "status"), "UNKNOWN")),
-            "runtime_status": str(_first(plugin, ("runtime_status", "status"), "UNKNOWN")),
-            "health_status": str(_first(plugin, ("health_status", "health"), "UNKNOWN")),
-            "readiness": str(_first(plugin, ("readiness", "readiness_status", "status"), "UNKNOWN")),
+            "strategy_type": strategy["strategy_type"],
+            "lifecycle_status": strategy["lifecycle_status"],
+            "runtime_status": strategy["runtime_status"],
+            "health_status": strategy["health_status"],
+            "readiness": strategy["readiness"],
+            "enabled": bool(strategy["enabled"]),
+            "paper_trade_mode": bool(strategy["paper_trade_mode"]),
+            "paper_compatible": bool(strategy["paper_compatible"]),
+            "advisory_only": bool(strategy["advisory_only"]),
+            "reporting_only": bool(strategy["reporting_only"]),
             "capability_count": len(capability_names),
             "capabilities": capability_names,
             "published_artifact_count": len(artifact_declarations),
@@ -221,5 +263,4 @@ def build_strategy_kpis(
             "evidence_status": "AVAILABLE" if accepted_paths else "REGISTRY_ONLY",
         })
 
-    rows.sort(key=lambda item: item["strategy_id"])
     return rows, sorted(set(warnings))
