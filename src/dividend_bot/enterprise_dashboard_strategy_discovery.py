@@ -128,6 +128,7 @@ def build_dashboard_refresh_consumer_payloads(
     }
 
     return {
+        "strategy_discovery": discovery,
         "discovery": discovery,
         "executive_dashboard": executive,
         "investor_dashboard": investor,
