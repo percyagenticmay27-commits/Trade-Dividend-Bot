@@ -185,6 +185,30 @@ def test_adapter_reconstruction_is_labeled_and_not_claimed_authoritative(
     )
 
 
+def test_reconstruction_payload_is_detected_without_metadata_flags() -> None:
+    adapted = {
+        "portfolio_summary": {
+            "portfolio_value": 10000,
+            "cash_value": 500,
+        },
+        "holdings": [],
+        "payment_history": [],
+        "upcoming_payments": [],
+        "evidence_metadata": {},
+    }
+
+    provenance = launcher._classify_investor_evidence(
+        source_path=None,
+        adapted=adapted,
+    )
+
+    assert provenance["source_type"] == "ADAPTER_RECONSTRUCTION"
+    assert provenance["completeness"] == "PARTIAL"
+    assert provenance["authoritative"] is False
+    assert provenance["reconstructed"] is True
+    assert provenance["available_components"]["portfolio_summary"] is True
+
+
 def test_refresh_does_not_touch_cash_or_governance_files(tmp_path: Path) -> None:
     results = tmp_path / "results"
     state = tmp_path / "state"
