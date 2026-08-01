@@ -296,6 +296,176 @@ The AI CIO must be able to explain, using supplied evidence, which currently reg
 
 ---
 
+## DEC-2026-08-01-008 — AI CIO Portfolio Constitution Governs Future Modules
+
+**Date:** 2026-08-01  
+**Phase:** Architecture Recovery / Governance  
+**Category:** Constitution / AI CIO / Shared Strategy Policy  
+**Status:** Recovered from prior approved design discussion and documented
+
+### Decision
+
+The AI CIO Portfolio Constitution is the highest-level governing policy for the Enterprise AI CIO and all strategy integrations. Future modules must remain aligned with these principles:
+
+- Primary objective: maximize long-term Total Wealth, defined as Growth plus Income.
+- Paper-only operation with no live brokerage execution.
+- Opportunity-driven capital use rather than predetermined sector or asset-class quotas.
+- No built-in stock, ETF, pair, sector, growth, or dividend bias.
+- Evidence first: recommendations and explanations must trace to objective evidence.
+- Protection before performance: mandatory protection rules override higher scores.
+- Decision stability: avoid unnecessary turnover; replacements require meaningful improvement.
+- Explainability: every recommendation or lifecycle decision includes natural-language reasoning.
+- Auditability: every decision is recorded and traceable.
+- Human oversight: the investor may review, defer, override, revert, or inspect decisions within the approved paper-only workflow.
+
+### Shared Strategy Requirement
+
+Every current or future strategy plugin must publish evidence and lifecycle data in a way that allows the host AI CIO to enforce these constitutional principles without importing strategy production code.
+
+### Deployment Verification
+
+No deployed dashboard or engine may imply live execution, hidden evidence, forced sector allocation, or unexplained replacement behavior.
+
+---
+
+## DEC-2026-08-01-009 — Portfolio Lifecycle Is Authoritative Current Allocation State
+
+**Date:** 2026-08-01  
+**Phase:** Architecture Recovery / Lifecycle  
+**Category:** Portfolio Lifecycle / Reporting / Shared Strategy State  
+**Status:** Recovered from prior implemented design; host integration pending verification
+
+### Decision
+
+The Portfolio Lifecycle Manager is the authoritative current-state view for every allocation. Consumers must query lifecycle state rather than replaying the complete decision history to determine the current allocation status.
+
+Supported normalized states include:
+
+- Candidate
+- Active
+- Monitoring
+- Protected / SGOV-protected
+- Reenter Pending
+- Replacement Pending
+- Replaced
+- Closed
+
+The lifecycle view must preserve, when available:
+
+- allocation rank
+- dollar amount and percentage
+- paper value
+- days held
+- allocation maturity: New, Developing, Established, Long-Term Leader
+- CES or equivalent capital-efficiency score
+- Decision Stability score
+- evidence confidence
+- market regime
+- challenger
+- latest Decision Journal link
+- SGOV reason, release condition, authorization, and re-entry status
+- replacement relationship
+- preserved event history
+
+### Outputs
+
+Expected lifecycle reporting roles include JSON, Markdown, and HTML outputs. Exact strategy-declared artifact paths must be discovered through Registry v2 when integrated into the host.
+
+### Deployment Verification
+
+Strategy KPI and instrument details must show current lifecycle state and must not contradict the authoritative lifecycle artifact.
+
+---
+
+## DEC-2026-08-01-010 — No Action Means Continue Current Allocation
+
+**Date:** 2026-08-01  
+**Phase:** Architecture Recovery / Lifecycle UX  
+**Category:** Decision Stability / Human Oversight / Replacement  
+**Status:** Approved behavior recovered; automatic replacement threshold remains separately unresolved
+
+### Decision
+
+A routine review must not force the investor to authorize continuation of the current allocation. When no user action is taken, the current allocation continues under the existing paper-only lifecycle rules.
+
+User-facing actions should be expressed as an actual exception to the default continuation behavior, such as:
+
+- Override
+- Revert
+- Defer
+- Inspect
+
+The label `Must authorize change` must not be used when the system is merely explaining that the current allocation remains in place unless the investor chooses an exception.
+
+### Open Threshold Question
+
+The recovered discussion did not finally resolve the exact score threshold, gate combination, or authorization policy under which a replacement could advance automatically in paper mode. That threshold must be frozen in a later dated decision before implementation. Until then, the UI must distinguish:
+
+- default continuation
+- recommendation for review
+- pending replacement
+- user override or revert
+- any future explicitly authorized automatic transition
+
+### Deployment Verification
+
+A normal review must not present continuation as a required manual approval task.
+
+---
+
+## DEC-2026-08-01-011 — Replacement Gates Require Definitions and Help Links
+
+**Date:** 2026-08-01  
+**Phase:** UI Recovery / Lifecycle Reporting  
+**Category:** Replacement Gates / Explainability / Help  
+**Status:** Approved and documented; implementation pending
+
+### Decision
+
+Every Replacement Gate label and material lifecycle score must have a concise description or a `Details`, `More`, or help link explaining:
+
+- what the label means
+- how it is calculated
+- why it matters
+- whether it is a hard gate, warning, or context-only measure
+- what evidence supports it
+- what action, if any, is expected from the investor
+
+This applies to Decision Stability, challenger comparison, protection gates, SGOV release conditions, replacement readiness, and related labels.
+
+### Deployment Verification
+
+No unexplained gate label may appear in the lifecycle or comparison UI.
+
+---
+
+## DEC-2026-08-01-012 — Preserve Original Page Layout; Dollar First and More Link
+
+**Date:** 2026-08-01  
+**Phase:** UI Recovery / Final Modernization Direction  
+**Category:** Layout / Display / One View Analysis  
+**Status:** Approved and documented
+
+### Decision
+
+The approved dashboard direction preserves the original page layout rather than converting the main report sections into overlapping tabs.
+
+Required display rules:
+
+- Horizontal executive summary cards remain at the top.
+- Monetary values display dollar amount first and percentage second.
+- Each summary card includes a `More` or `Details` link.
+- The link updates the shared analysis workspace below the cards rather than expanding every card or opening a separate page.
+- The detailed contributor or comparison table appears in that analysis workspace.
+- Metric definitions and help links remain available.
+- Final HTML/CSS modernization must apply consistently across reports after the intelligence and evidence architecture is complete.
+
+### Deployment Verification
+
+The deployed page must not lose the horizontal summary cards, dollar-first presentation, shared analysis workspace, or `More/Details` behavior.
+
+---
+
 ## Image and Screenshot Record
 
 Screenshots discussed during this development session were provided in the ChatGPT project conversation and used to validate:
@@ -305,6 +475,7 @@ Screenshots discussed during this development session were provided in the ChatG
 - Phase 2 focused test results
 - Phase 3 interpretation test results
 - Investor and strategy KPI design boundaries
+- Recovered lifecycle report layout and replacement-gate discussion
 
 Repository image copies have not yet been committed. When screenshots are exported into the repository, place them under:
 
@@ -333,6 +504,11 @@ and add their exact filenames and related Decision IDs to this section.
 - Strategy-owned watchlists
 - Clickable instrument committee evidence and decision analysis
 - Current focus on Dividend and Swing
+- Portfolio Constitution principles
+- Authoritative portfolio lifecycle state
+- Default continuation when no user action is taken
+- Replacement-gate definitions and help links
+- Original non-tabbed page layout with dollar-first values and shared `More/Details` analysis workspace
 
 ### Next Development Units
 
@@ -342,3 +518,4 @@ and add their exact filenames and related Decision IDs to this section.
 4. Build Dividend and Swing strategy KPI provider contracts.
 5. Implement strategy-owned watchlist and portfolio evidence adapters.
 6. Implement One View Decision Analysis after the evidence contracts are complete.
+7. Freeze the unresolved automatic replacement threshold and authorization policy before implementing autonomous paper-mode replacement transitions.
