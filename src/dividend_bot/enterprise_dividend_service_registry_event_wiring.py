@@ -12,14 +12,16 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping, Optional, Sequence
 
+from .enterprise_strategy_plugin_contract import build_plugin_contract_metadata
 from .external_strategy_registration import (
     load_external_strategy_plugins,
     required_registration_failures,
 )
 
 MODULE_NAME = "enterprise_dividend_service_registry_event_wiring"
-MODULE_VERSION = "1.1.0"
+MODULE_VERSION = "1.2.0"
 SCHEMA_VERSION = "1.0"
+REGISTRY_CONTRACT_VERSION = "2.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -93,7 +95,7 @@ def _normalize_service(service: Mapping[str, Any]) -> dict[str, Any]:
 
 def default_dividend_strategy_plugins() -> list[dict[str, Any]]:
     """Return the canonical paper-only Dividend strategy plugin registration."""
-    return [{
+    plugin: dict[str, Any] = {
         "strategy_id": "dividend",
         "display_name": "Dividend Income Strategy",
         "plugin_type": "STRATEGY",
@@ -103,10 +105,67 @@ def default_dividend_strategy_plugins() -> list[dict[str, Any]]:
         "version": "1.0.0",
         "health": "HEALTHY",
         "paper_trade_mode": True,
+        "paper_compatible": True,
+        "advisory_only": True,
+        "reporting_only": True,
         "live_trading_enabled": False,
         "broker_execution_enabled": False,
         "capital_movement_enabled": False,
-    }]
+        "automatic_activation_allowed": False,
+        "governance_review_required": True,
+        "direct_database_writes": False,
+        "source_registration": "canonical-host-plugin",
+    }
+    plugin.update(build_plugin_contract_metadata({
+        "capabilities": [
+            "executive_dashboard",
+            "income_reporting",
+            "investor_dashboard",
+            "portfolio",
+            "portfolio_lifecycle",
+            "strategy_health",
+            "wealth_attribution",
+        ],
+        "dashboard_artifacts": [
+            {
+                "artifact_id": "ai_cio_executive_dashboard",
+                "artifact_type": "executive_dashboard",
+                "path": "results/ai_cio_executive_dashboard.json",
+                "format": "JSON",
+                "scope": "ENTERPRISE",
+                "authoritative": True,
+                "required": False,
+            },
+            {
+                "artifact_id": "enterprise_investor_dashboard",
+                "artifact_type": "investor_dashboard",
+                "path": "results/enterprise_investor_dashboard.json",
+                "format": "JSON",
+                "scope": "ENTERPRISE",
+                "authoritative": True,
+                "required": False,
+            },
+            {
+                "artifact_id": "portfolio_snapshot",
+                "artifact_type": "portfolio",
+                "path": "portfolio_snapshot.csv",
+                "format": "CSV",
+                "scope": "STRATEGY",
+                "authoritative": True,
+                "required": False,
+            },
+            {
+                "artifact_id": "strategy_health_report",
+                "artifact_type": "strategy_health",
+                "path": "strategy_health_report.md",
+                "format": "MARKDOWN",
+                "scope": "STRATEGY",
+                "authoritative": True,
+                "required": False,
+            },
+        ],
+    }))
+    return [plugin]
 
 
 def default_dividend_services() -> list[dict[str, Any]]:
@@ -139,6 +198,57 @@ def default_dividend_services() -> list[dict[str, Any]]:
         previous = name
         previous_event = event_names[name]
     return services
+
+
+def _build_strategy_contract_indexes(strategy_plugins: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
+    """Build deterministic Registry v2 capability and artifact discovery indexes."""
+    capabilities_by_strategy: dict[str, list[dict[str, Any]]] = {}
+    artifacts_by_strategy: dict[str, list[dict[str, Any]]] = {}
+    capability_index: dict[str, list[str]] = {}
+    artifact_type_index: dict[str, list[dict[str, str]]] = {}
+    contract_warnings: list[dict[str, str]] = []
+
+    for plugin in strategy_plugins:
+        strategy_id = str(plugin.get("strategy_id") or "").strip()
+        capabilities = [dict(item) for item in plugin.get("capabilities", []) if isinstance(item, Mapping)]
+        artifacts = [dict(item) for item in plugin.get("dashboard_artifacts", []) if isinstance(item, Mapping)]
+        capabilities.sort(key=lambda item: str(item.get("capability_id") or ""))
+        artifacts.sort(key=lambda item: str(item.get("artifact_id") or ""))
+        capabilities_by_strategy[strategy_id] = capabilities
+        artifacts_by_strategy[strategy_id] = artifacts
+
+        for capability in capabilities:
+            if capability.get("enabled") is not True:
+                continue
+            capability_id = str(capability.get("capability_id") or "").strip()
+            if capability_id:
+                capability_index.setdefault(capability_id, []).append(strategy_id)
+        for artifact in artifacts:
+            artifact_type = str(artifact.get("artifact_type") or "").strip().lower()
+            artifact_id = str(artifact.get("artifact_id") or "").strip()
+            if artifact_type and artifact_id:
+                artifact_type_index.setdefault(artifact_type, []).append({
+                    "strategy_id": strategy_id,
+                    "artifact_id": artifact_id,
+                })
+        for message in plugin.get("contract_warnings", []) or []:
+            contract_warnings.append({"strategy_id": strategy_id, "message": str(message)})
+
+    return {
+        "capabilities_by_strategy": dict(sorted(capabilities_by_strategy.items())),
+        "artifacts_by_strategy": dict(sorted(artifacts_by_strategy.items())),
+        "capability_index": {
+            key: sorted(set(value)) for key, value in sorted(capability_index.items())
+        },
+        "artifact_type_index": {
+            key: sorted(value, key=lambda item: (item["strategy_id"], item["artifact_id"]))
+            for key, value in sorted(artifact_type_index.items())
+        },
+        "contract_warnings": sorted(
+            contract_warnings,
+            key=lambda item: (item["strategy_id"], item["message"]),
+        ),
+    }
 
 
 def build_service_registry(
@@ -186,11 +296,33 @@ def build_service_registry(
         accepted_external_count = len(external_plugins)
         warnings.extend(str(item.get("message")) for item in external_warnings)
     strategy_plugins.sort(key=lambda item: (item["strategy_id"] != "dividend", item["strategy_id"]))
-    registry_hash = hashlib.sha256(json.dumps(normalized, sort_keys=True).encode("utf-8")).hexdigest()
+
+    contract_indexes = _build_strategy_contract_indexes(strategy_plugins)
+    capability_count = sum(
+        1
+        for plugin in strategy_plugins
+        for capability in plugin.get("capabilities", [])
+        if isinstance(capability, Mapping) and capability.get("enabled") is True
+    )
+    published_artifact_count = sum(
+        len([item for item in plugin.get("dashboard_artifacts", []) if isinstance(item, Mapping)])
+        for plugin in strategy_plugins
+    )
+    warnings.extend(item["message"] for item in contract_indexes["contract_warnings"])
+
+    registry_hash_payload = {
+        "services": normalized,
+        "strategy_plugins": strategy_plugins,
+        "registry_contract_version": REGISTRY_CONTRACT_VERSION,
+    }
+    registry_hash = hashlib.sha256(
+        json.dumps(registry_hash_payload, sort_keys=True).encode("utf-8")
+    ).hexdigest()
     return {
         "module_name": MODULE_NAME,
         "module_version": MODULE_VERSION,
         "schema_version": SCHEMA_VERSION,
+        "registry_contract_version": REGISTRY_CONTRACT_VERSION,
         "generated_at_utc": generated_at,
         "paper_trade_mode": True,
         "live_trading_enabled": False,
@@ -207,9 +339,18 @@ def build_service_registry(
             "warning_count": len(warnings),
             "strategy_plugin_count": len(strategy_plugins),
             "accepted_external_strategy_count": accepted_external_count,
+            "capability_count": capability_count,
+            "published_artifact_count": published_artifact_count,
+            "strategy_with_capabilities_count": sum(
+                1 for items in contract_indexes["capabilities_by_strategy"].values() if items
+            ),
+            "strategy_with_artifacts_count": sum(
+                1 for items in contract_indexes["artifacts_by_strategy"].values() if items
+            ),
         },
         "services": normalized,
         "strategy_plugins": strategy_plugins,
+        "strategy_contracts": contract_indexes,
         "publishers": {key: sorted(value, key=SERVICE_ORDER.index) for key, value in sorted(publishers.items())},
         "subscribers": {key: sorted(value, key=SERVICE_ORDER.index) for key, value in sorted(subscribers.items())},
         "warnings": warnings,
@@ -266,11 +407,15 @@ def route_dividend_event(
 
 
 def render_service_registry_markdown(registry: Mapping[str, Any]) -> str:
+    summary = registry.get("summary", {})
     lines = [
         "# Enterprise Dividend Service Registry and Event Wiring", "",
         f"- Registry hash: `{registry.get('registry_hash', '')}`",
-        f"- Services: **{registry.get('summary', {}).get('service_count', 0)}**",
-        f"- Strategy plugins: **{registry.get('summary', {}).get('strategy_plugin_count', 0)}**",
+        f"- Registry contract: **{registry.get('registry_contract_version', '1.0')}**",
+        f"- Services: **{summary.get('service_count', 0)}**",
+        f"- Strategy plugins: **{summary.get('strategy_plugin_count', 0)}**",
+        f"- Capabilities: **{summary.get('capability_count', 0)}**",
+        f"- Published artifacts: **{summary.get('published_artifact_count', 0)}**",
         f"- Paper trade mode: `{registry.get('paper_trade_mode')}`", "",
         "## Registered Services", "",
         "| # | Service | Status | Enabled | Subscriptions | Publications |",
@@ -284,11 +429,26 @@ def render_service_registry_markdown(registry: Mapping[str, Any]) -> str:
         )
     lines.extend(["", "## Strategy Plugins", ""])
     for plugin in registry.get("strategy_plugins", []):
-        lines.append(
-            f"- **{plugin.get('display_name')}** (`{plugin.get('strategy_id')}`): "
-            f"{plugin.get('status')} / {plugin.get('health')} / paper-only"
-        )
-    lines.extend(["", "## Warnings", ""])
+        capabilities = [
+            str(item.get("capability_id"))
+            for item in plugin.get("capabilities", [])
+            if isinstance(item, Mapping) and item.get("enabled") is True
+        ]
+        artifacts = [
+            str(item.get("artifact_id"))
+            for item in plugin.get("dashboard_artifacts", [])
+            if isinstance(item, Mapping)
+        ]
+        lines.extend([
+            f"### {plugin.get('display_name')} (`{plugin.get('strategy_id')}`)", "",
+            f"- Status: **{plugin.get('status')}**",
+            f"- Health: **{plugin.get('health')}**",
+            f"- Contract: **{plugin.get('plugin_contract_version', 'legacy')}**",
+            f"- Capabilities: {', '.join(capabilities) or 'None declared'}",
+            f"- Published artifacts: {', '.join(artifacts) or 'None declared'}",
+            "- Safety: paper-only / advisory-only / reporting-only", "",
+        ])
+    lines.extend(["## Warnings", ""])
     warnings = list(registry.get("warnings") or [])
     lines.extend([f"- {item}" for item in warnings] if warnings else ["- None"])
     lines.extend([
