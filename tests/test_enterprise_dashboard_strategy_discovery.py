@@ -147,11 +147,15 @@ def test_refresh_consumer_builds_one_identical_discovery_view() -> None:
     )
 
     assert warnings == []
+    canonical_discovery = payloads["strategy_discovery"]
+    assert payloads["discovery"] == canonical_discovery
+
     executive_discovery = payloads["executive_dashboard"]["strategy_discovery"]
     investor_discovery = payloads["investor_dashboard"]["strategy_discovery"]
     refresh_discovery = payloads["refresh_summary"]
     kpi_summary = payloads["strategy_kpi_document"]["strategy_discovery_summary"]
 
+    assert canonical_discovery["summary"] == executive_discovery["summary"]
     assert executive_discovery == investor_discovery
     assert executive_discovery["summary"] == refresh_discovery["summary"]
     assert executive_discovery["summary"] == kpi_summary
