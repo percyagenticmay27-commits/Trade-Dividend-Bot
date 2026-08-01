@@ -16,6 +16,9 @@ from src.dividend_bot.enterprise_ai_cio_strategy_interpretation import (
 from src.dividend_bot.enterprise_contributor_engine import (
     build_all_enterprise_contributor_details,
 )
+from src.dividend_bot.enterprise_kpi_contract import (
+    normalize_strategy_kpi_contract,
+)
 from src.dividend_bot.enterprise_strategy_comparison_engine import (
     build_enterprise_strategy_comparison,
 )
@@ -52,14 +55,18 @@ def _mapping(value: Any) -> dict[str, Any]:
 def _kpi_rows(value: Any) -> list[dict[str, Any]]:
     if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
         return []
-    return [dict(item) for item in value if isinstance(item, Mapping)]
+    return [
+        normalize_strategy_kpi_contract(item)
+        for item in value
+        if isinstance(item, Mapping)
+    ]
 
 
 def _preserve_contributor_evidence(
     interpretation: Mapping[str, Any],
     strategy_kpis: Sequence[Mapping[str, Any]],
 ) -> dict[str, Any]:
-    """Copy only reported contributor fields into matching interpreted rows."""
+    """Copy reported contributor fields and KPI status envelopes downstream."""
     enriched = dict(interpretation)
     raw_strategies = interpretation.get("strategies")
     strategies = (
@@ -80,6 +87,16 @@ def _preserve_contributor_evidence(
         for field in _CONTRIBUTOR_EVIDENCE_FIELDS:
             if field in source:
                 strategy[field] = source[field]
+        metrics = source.get("metrics")
+        if isinstance(metrics, Mapping):
+            strategy["metrics"] = {
+                str(key): dict(value)
+                for key, value in metrics.items()
+                if isinstance(value, Mapping)
+            }
+        strategy["enterprise_kpi_contract_version"] = str(
+            source.get("enterprise_kpi_contract_version") or "1.0"
+        )
     enriched["strategies"] = strategies
     return enriched
 
@@ -115,6 +132,7 @@ def build_enterprise_dashboard_intelligence(
     )
     document = {
         "schema_version": "1.0",
+        "enterprise_kpi_contract_version": "1.0",
         "source": "ENTERPRISE_DASHBOARD_INTELLIGENCE_PUBLISHER",
         "scope": "ALL_REGISTERED_STRATEGIES",
         "ai_cio_strategy_interpretation": interpretation,
@@ -132,6 +150,7 @@ def build_enterprise_dashboard_intelligence(
             "recommendations_generated": False,
             "allocation_changes_generated": False,
             "missing_evidence_invented": False,
+            "not_applicable_is_zero": False,
         },
         "paper_trade_mode": True,
         "live_trading_enabled": False,
@@ -157,8 +176,6 @@ def attach_enterprise_dashboard_intelligence(
     executive["enterprise_dashboard_intelligence"] = canonical
     investor["enterprise_dashboard_intelligence"] = canonical
 
-    # Named aliases make current UI consumers explicit while preserving one
-    # canonical parent document for equality and deployment validation.
     for dashboard in (executive, investor):
         dashboard["ai_cio_strategy_interpretation"] = canonical.get(
             "ai_cio_strategy_interpretation", {}
