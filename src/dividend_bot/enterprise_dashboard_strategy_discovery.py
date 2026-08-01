@@ -61,21 +61,14 @@ def attach_dashboard_strategy_discovery(
     dashboard: Mapping[str, Any],
     discovery: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return a copied dashboard payload with discovery metadata attached.
+    """Return a copied dashboard with the canonical discovery document attached.
 
     The existing dashboard object is not mutated. Existing builder fields and
-    calculations remain authoritative and unchanged.
+    calculations remain authoritative and unchanged. Every consumer receives
+    the same complete discovery contract rather than a reconstructed subset.
     """
     enriched = dict(dashboard)
-    summary = discovery.get("summary")
-    strategies = discovery.get("strategies")
-    enriched["strategy_discovery"] = {
-        "source": str(discovery.get("source", "ENTERPRISE_STRATEGY_DISCOVERY")),
-        "scope": str(discovery.get("scope", "ALL_REGISTERED_STRATEGIES")),
-        "summary": dict(summary) if isinstance(summary, Mapping) else {},
-        "strategies": list(strategies) if isinstance(strategies, list) else [],
-        "read_only": True,
-    }
+    enriched["strategy_discovery"] = dict(discovery)
     return enriched
 
 
