@@ -96,9 +96,16 @@ def test_refresh_writes_exact_portal_artifact_names(tmp_path: Path) -> None:
     assert executive["enterprise_summary"]["registered_strategy_count"] == 1
     assert investor["investor_summary"]["portfolio_value"] == 5000.0
     assert investor["evidence_provenance"] == provenance
+    assert executive["paper_trade_mode"] is True
+    assert executive["live_trading_enabled"] is False
+    assert executive["broker_execution_enabled"] is False
+    assert executive["capital_movement_enabled"] is False
+    assert executive["read_only"] is True
     assert investor["paper_trade_mode"] is True
     assert investor["live_trading_enabled"] is False
     assert investor["broker_execution_enabled"] is False
+    assert investor["capital_movement_enabled"] is False
+    assert investor["read_only"] is True
 
 
 def test_missing_sources_produce_explicit_partial_artifacts_without_failure(
