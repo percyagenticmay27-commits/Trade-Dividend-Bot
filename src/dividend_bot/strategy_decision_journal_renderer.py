@@ -22,19 +22,47 @@ def _text(value: Any, fallback: str = "Not reported") -> str:
     return str(value)
 
 
-def _render_images(images: Sequence[Mapping[str, Any]]) -> str:
+def _safe_image_path(value: Any) -> str:
+    path = _text(value, "").strip()
+    lowered = path.lower()
+    if lowered.startswith(("javascript:", "vbscript:", "data:text/html")):
+        return ""
+    return path
+
+
+def _render_images(
+    images: Sequence[Mapping[str, Any]],
+    *,
+    decision_id: str,
+) -> str:
     if not images:
         return '<p class="empty">No images reported for this decision.</p>'
     cards: list[str] = []
-    for image in images:
-        path = escape(_text(image.get("path"), ""))
+    for index, image in enumerate(images):
+        raw_path = _safe_image_path(image.get("path"))
         caption = escape(_text(image.get("caption"), "Evidence image"))
         image_type = escape(_text(image.get("image_type"), "EVIDENCE"))
+        if not raw_path:
+            cards.append(
+                '<article class="evidence-image unavailable">'
+                f'<div class="image-unavailable">Image unavailable</div>'
+                f'<p><strong>{image_type}</strong><br>{caption}</p></article>'
+            )
+            continue
+        path = escape(raw_path, quote=True)
         cards.append(
-            f'<figure class="evidence-image"><img src="{path}" alt="{caption}">'
-            f'<figcaption><strong>{image_type}</strong><br>{caption}</figcaption></figure>'
+            f'<button type="button" class="evidence-image journal-gallery-thumb" '
+            f'data-gallery-decision="{escape(decision_id, quote=True)}" '
+            f'data-gallery-index="{index}" data-gallery-src="{path}" '
+            f'data-gallery-caption="{caption}">'
+            f'<img src="{path}" alt="{caption}" loading="lazy">'
+            f'<span><strong>{image_type}</strong><br>{caption}</span></button>'
         )
-    return '<div class="image-grid">' + "".join(cards) + "</div>"
+    return (
+        f'<div class="image-grid" data-decision-gallery="{escape(decision_id, quote=True)}">'
+        + "".join(cards)
+        + "</div>"
+    )
 
 
 def _render_committee_rows(rows: Sequence[Mapping[str, Any]]) -> str:
@@ -115,7 +143,11 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
         alternatives = entry.get("alternatives") or []
         alternatives_text = ", ".join(escape(_text(item)) for item in alternatives) or "None reported"
         committee_rows = _render_committee_rows(entry.get("committee_evidence") or [])
-        images = _render_images(entry.get("images") or [])
+        decision_id = _text(entry.get("decision_id"), f"decision-{index}")
+        images = _render_images(
+            entry.get("images") or [],
+            decision_id=decision_id,
+        )
 
         cards.append(
             f'<article class="decision-card" data-order="{index}" data-timestamp="{timestamp}">'
@@ -147,7 +179,37 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
 <div class="journal-filters"><button data-filter="ALL">All</button><button data-filter="BUY">Buy</button>
 <button data-filter="SELL">Sell</button><button data-filter="REPLACE">Replace</button>
 <button data-filter="WATCHLIST">Watchlist</button></div>
-<div class="decision-timeline">{''.join(cards)}{empty}</div></section>'''
+<div class="decision-timeline">{''.join(cards)}{empty}</div>
+<dialog class="journal-gallery-dialog" aria-label="Decision evidence image viewer">
+  <button type="button" class="journal-gallery-close" aria-label="Close image viewer">Close</button>
+  <img class="journal-gallery-full" alt="">
+  <p class="journal-gallery-caption"></p>
+</dialog>
+<script>
+(function(){{
+ document.querySelectorAll('.strategy-decision-journal').forEach(function(journal){{
+  if(journal.dataset.galleryBound==='true') return;
+  journal.dataset.galleryBound='true';
+  const dialog=journal.querySelector('.journal-gallery-dialog');
+  const full=journal.querySelector('.journal-gallery-full');
+  const caption=journal.querySelector('.journal-gallery-caption');
+  const close=journal.querySelector('.journal-gallery-close');
+  journal.querySelectorAll('.journal-gallery-thumb').forEach(function(button){{
+   button.addEventListener('click',function(){{
+    full.src=button.dataset.gallerySrc||'';
+    full.alt=button.dataset.galleryCaption||'Evidence image';
+    caption.textContent=button.dataset.galleryCaption||'';
+    if(typeof dialog.showModal==='function') dialog.showModal();
+    else dialog.setAttribute('open','open');
+   }});
+  }});
+  close.addEventListener('click',function(){{
+   if(typeof dialog.close==='function') dialog.close();
+   else dialog.removeAttribute('open');
+  }});
+ }});
+}})();
+</script></section>'''
 
 
 def render_strategy_decision_journal_document(journal: Mapping[str, Any]) -> str:
@@ -162,5 +224,5 @@ body{{font-family:Arial,sans-serif;background:#f5f7fb;color:#101828;margin:0;pad
 .journal-filters{{display:flex;gap:8px;margin:16px 0}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
 .decision-card header{{display:flex;justify-content:space-between}}.pair{{display:flex;align-items:center;gap:16px;margin:12px 0}}.pair span:not(.plus){{background:#f8fafc;border:1px solid #dbe3ef;padding:12px 18px;border-radius:12px}}.pair b{{display:block;font-size:11px;color:#64748b}}
 table{{width:100%;border-collapse:collapse;margin-top:12px}}th,td{{border-bottom:1px solid #e5e7eb;padding:10px;text-align:left}}details{{margin-top:14px}}summary{{font-weight:700;cursor:pointer}}
-.image-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}}.evidence-image{{margin:0;background:#f8fafc;border-radius:12px;overflow:hidden}}.evidence-image img{{width:100%;height:160px;object-fit:cover}}figcaption{{padding:10px}}.empty,.empty-state{{color:#64748b;padding:18px}}
+.image-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}}.evidence-image{{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0}}button.evidence-image{{cursor:pointer}}.evidence-image img{{width:100%;height:160px;object-fit:cover;display:block}}.evidence-image span,.evidence-image p{{display:block;padding:10px;margin:0}}.image-unavailable{{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}}.journal-gallery-dialog{{border:0;border-radius:16px;padding:18px;max-width:min(1000px,90vw);box-shadow:0 24px 80px #0006}}.journal-gallery-dialog::backdrop{{background:#0f172acc}}.journal-gallery-full{{display:block;max-width:100%;max-height:75vh;margin:auto}}.journal-gallery-close{{float:right;margin-bottom:10px}}.journal-gallery-caption{{clear:both;font-weight:700}}.empty,.empty-state{{color:#64748b;padding:18px}}
 </style></head><body>{body}</body></html>'''
