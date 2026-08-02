@@ -116,6 +116,21 @@ def test_canonical_entries_replace_stale_versions(tmp_path: Path) -> None:
     assert dividend["live_trading_enabled"] is False
 
 
+
+def test_legacy_dividend_alias_is_replaced_not_preserved(tmp_path: Path) -> None:
+    source = _source(tmp_path)
+    target = tmp_path / "results" / "registry.json"
+    target.parent.mkdir()
+    target.write_text(
+        json.dumps({"strategy_plugins": [_plugin("dividend")]}),
+        encoding="utf-8",
+    )
+    report = publish_enterprise_strategy_registry(
+        root_dir=tmp_path, source_path=source, target_path=target
+    )
+    assert report["strategy_ids"] == ["DIVIDEND-001", "SWING-001"]
+    assert "DIVIDEND" not in report["preserved_strategy_ids"]
+
 def test_launcher_exit_codes(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         launcher,
