@@ -94,6 +94,20 @@ def render_cash_account_html(account: Mapping[str, Any]) -> str:
     return _layout("Enterprise Paper Cash Account", body, "Cash Account")
 
 
+
+def allocation_for_strategy(strategy_allocations: Mapping[str, Any], strategy_id: str) -> float:
+    """Resolve canonical and legacy strategy IDs without mutating stored state."""
+    raw_id = str(strategy_id).strip()
+    candidates = [raw_id]
+    normalized = raw_id.upper().replace("_", "-")
+    if normalized in {"DIVIDEND", "DIVIDEND-001"}:
+        candidates.extend(("DIVIDEND-001", "DIVIDEND", "dividend"))
+    for candidate in candidates:
+        value = strategy_allocations.get(candidate)
+        if isinstance(value, (int, float)):
+            return float(value)
+    return 0.0
+
 def render_allocation_page(cash: float, plugins: list[dict[str, Any]], strategy_allocations: Optional[Mapping[str, Any]] = None) -> str:
     cards: list[str] = []
     existing = dict(strategy_allocations or {})
@@ -103,7 +117,7 @@ def render_allocation_page(cash: float, plugins: list[dict[str, Any]], strategy_
         name = html.escape(str(item.get("display_name") or sid))
         status = html.escape(str(item.get("status") or "UNKNOWN"))
         health = html.escape(str(item.get("health") or "UNKNOWN"))
-        current = float(existing.get(raw_sid, 0) or 0)
+        current = allocation_for_strategy(existing, raw_sid)
         cards.append(
             f'<label class="strategy" data-strategy-row>'
             f'<input type="checkbox" name="strategy" value="{sid}" data-strategy-checkbox>'
