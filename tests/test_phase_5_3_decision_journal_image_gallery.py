@@ -71,17 +71,17 @@ def test_gallery_preserves_multiple_image_order() -> None:
     assert 'data-gallery-index="1"' in value
 
 
-def test_gallery_includes_full_size_dialog_and_close_control() -> None:
+def test_gallery_links_to_full_size_image_without_script() -> None:
     value = render_strategy_decision_journal(
         _journal(
             [{"path": "images/chart.png", "caption": "Chart", "image_type": "CHART"}]
         )
     )
 
-    assert "journal-gallery-dialog" in value
-    assert "journal-gallery-full" in value
-    assert "journal-gallery-close" in value
-    assert "showModal" in value
+    assert 'href="images/chart.png"' in value
+    assert 'target="_blank"' in value
+    assert 'rel="noopener noreferrer"' in value
+    assert "<script>" not in value
 
 
 def test_gallery_escapes_untrusted_caption() -> None:
@@ -131,6 +131,6 @@ def test_standalone_document_contains_gallery_styles() -> None:
         )
     )
 
-    assert ".journal-gallery-dialog" in value
-    assert ".journal-gallery-full" in value
-    assert ".journal-gallery-thumb" in value or "journal-gallery-thumb" in value
+    assert "journal-gallery-thumb" in value
+    assert 'target="_blank"' in value
+    assert "<script>" not in value
