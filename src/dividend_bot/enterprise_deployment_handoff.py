@@ -115,13 +115,22 @@ def build_deployment_handoff(
     if production_ready:
         next_actions.append("Preserve the frozen evidence package and release validation")
 
+    if production_ready:
+        handoff_status = "READY"
+    elif environment == "DIGITALOCEAN" and blockers:
+        handoff_status = "BLOCKED"
+    elif local_ready:
+        handoff_status = "LOCAL_READY"
+    else:
+        handoff_status = "BLOCKED"
+
     return {
         "schema_version": SCHEMA_VERSION,
         "module_name": MODULE_NAME,
         "module_version": MODULE_VERSION,
         "generated_at_utc": _utc_now(),
         "environment": environment,
-        "handoff_status": (\n            "READY"\n            if production_ready\n            else "BLOCKED"\n            if environment == "DIGITALOCEAN" and blockers\n            else "LOCAL_READY"\n            if local_ready\n            else "BLOCKED"\n        ),
+        "handoff_status": handoff_status,
         "local_validation_ready": local_ready,
         "production_validation_ready": production_ready,
         "reports": reports,
