@@ -121,7 +121,7 @@ def build_deployment_handoff(
         "module_version": MODULE_VERSION,
         "generated_at_utc": _utc_now(),
         "environment": environment,
-        "handoff_status": "READY" if production_ready else "LOCAL_READY" if local_ready else "BLOCKED",
+        "handoff_status": (\n            "READY"\n            if production_ready\n            else "BLOCKED"\n            if environment == "DIGITALOCEAN" and blockers\n            else "LOCAL_READY"\n            if local_ready\n            else "BLOCKED"\n        ),
         "local_validation_ready": local_ready,
         "production_validation_ready": production_ready,
         "reports": reports,
