@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 from typing import Any, Mapping
+from urllib.parse import quote
 
 from .strategy_decision_journal_renderer import render_strategy_decision_journal
 
@@ -168,7 +169,8 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
         if not isinstance(row, Mapping):
             continue
         raw_sid = str(row.get("strategy_id") or f"strategy-{index}")
-        sid = html.escape(raw_sid)
+        sid = html.escape(raw_sid, quote=True)
+        encoded_sid = quote(raw_sid, safe="")
         name = html.escape(str(row.get("display_name") or raw_sid))
         active = " active" if index == 0 else ""
         hidden = "" if index == 0 else " hidden"
@@ -292,9 +294,15 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
             f"and evidence status is {html.escape(str(row.get('evidence_status') or 'REGISTRY_ONLY'))}."
         )
         panels.append(f"""
-<section class='strategy-analysis panel'{hidden} data-strategy-panel='{sid}'>
+<section id='strategy-{sid}' class='strategy-analysis panel'{hidden} data-strategy-panel='{sid}'>
   <h2>{name} — One View Analysis KPI Workspace</h2>
   <p class='scope-note'>This workspace contains only this registered strategy's evidence. Enterprise totals remain above.</p>
+  <nav class='strategy-cross-links' aria-label='{name} Enterprise links'>
+    <a href='/executive-dashboard?strategy={encoded_sid}#strategy-{sid}'>Executive Dashboard</a>
+    <a href='/investor-dashboard?strategy={encoded_sid}#strategy-{sid}'>Investor Dashboard</a>
+    <a href='?strategy={encoded_sid}#strategy-{sid}'>Strategy Workspace</a>
+    <a href='?strategy={encoded_sid}&amp;tab=decisions#strategy-{sid}'>Decision Journal</a>
+  </nav>
   <nav class='workspace-tabs' aria-label='{name} KPI workspace tabs'>{''.join(tab_buttons)}</nav>
   <div class='workspace-tab-content'>{''.join(tab_panels)}</div>
   <details class='readable-evidence'><summary>Currently Readable Evidence</summary>{loaded_evidence}</details>
@@ -314,14 +322,20 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
  function select(id){{cards.forEach(c=>c.classList.toggle('active',c.dataset.strategyTarget===id));panels.forEach(p=>p.hidden=p.dataset.strategyPanel!==id);}}
  cards.forEach(c=>c.addEventListener('click',()=>select(c.dataset.strategyTarget)));
  const tabButtons=[...document.querySelectorAll('[data-workspace-tab-target]')];
- tabButtons.forEach(button=>button.addEventListener('click',()=>{{
-   const strategy=button.dataset.workspaceStrategy;
-   const tab=button.dataset.workspaceTabTarget;
-   document.querySelectorAll('[data-workspace-tab-target][data-workspace-strategy="'+strategy+'"]').forEach(item=>item.classList.toggle('active',item===button));
+ function selectTab(strategy,tab){{
+   document.querySelectorAll('[data-workspace-tab-target][data-workspace-strategy="'+strategy+'"]').forEach(item=>item.classList.toggle('active',item.dataset.workspaceTabTarget===tab));
    document.querySelectorAll('[data-workspace-tab-panel][data-workspace-strategy-panel="'+strategy+'"]').forEach(item=>item.hidden=item.dataset.workspaceTabPanel!==tab);
- }}));
+ }}
+ tabButtons.forEach(button=>button.addEventListener('click',()=>selectTab(button.dataset.workspaceStrategy,button.dataset.workspaceTabTarget)));
  const target=document.getElementById('registered-strategy-links');
  if(target){{cards.forEach(c=>{{const a=document.createElement('button');a.type='button';a.className='side-strategy';a.textContent=c.querySelector('strong').textContent;a.onclick=()=>{{select(c.dataset.strategyTarget);document.querySelector('[data-strategy-panel="'+c.dataset.strategyTarget+'"]').scrollIntoView({{behavior:'smooth'}});}};target.appendChild(a);}});}}
+ const params=new URLSearchParams(window.location.search);
+ const requestedStrategy=params.get('strategy');
+ const requestedTab=params.get('tab')||'executive-summary';
+ if(requestedStrategy && cards.some(c=>c.dataset.strategyTarget===requestedStrategy)){{
+   select(requestedStrategy);
+   selectTab(requestedStrategy,requestedTab);
+ }}
 }})();
 </script>
 """
@@ -332,6 +346,6 @@ def strategy_ui_css() -> str:
 .portal-frame{display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px;align-items:start}
 .enterprise-sidebar{position:sticky;top:16px;background:#0b1d3a;color:#fff;border-radius:14px;padding:18px;min-height:520px}
 .side-title{font-size:20px;font-weight:800;margin-bottom:18px}.side-link,.side-strategy{display:block;width:100%;text-align:left;color:#d9e2f2;background:transparent;border:0;text-decoration:none;padding:10px 8px;border-radius:8px;font-weight:700}.side-link.active,.side-link:hover,.side-strategy:hover{background:#5d18d6;color:#fff}.side-group{margin:24px 8px 8px;color:#9fb0c8;font-size:12px;font-weight:800;text-transform:uppercase}.side-strategy{cursor:pointer}
-.enterprise-content{min-width:0}.scope-note{padding:10px 12px;background:#eef4ff;border-left:4px solid #5d18d6}.workspace-tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 0 14px;margin:14px 0;border-bottom:1px solid #dfe3ec}.workspace-tab{white-space:nowrap;padding:9px 13px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;cursor:pointer;font-weight:700;color:#344054}.workspace-tab.active{background:#5d18d6;color:#fff;border-color:#5d18d6}.workspace-tab-panel{min-height:180px}.readable-evidence{margin-top:18px}.readable-evidence summary{font-weight:800;cursor:pointer}.strategy-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-kpi-card{background:#fff;border:1px solid #dfe3ec;border-radius:14px;padding:18px;text-align:left;color:#101828;cursor:pointer}.strategy-kpi-card.active{outline:3px solid #8b5cf6}.strategy-kpi-card span,.strategy-kpi-card small,.strategy-kpi-card em{display:block;margin-top:8px}.strategy-kpi-card em{color:#5d18d6;font-style:normal;font-weight:800}.strategy-analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.registry-detail-grid{margin-top:18px}.metric-table{width:100%;border-collapse:collapse}.metric-table th{text-align:left}.metric-table td{text-align:right}.strategy-decision-panel{margin-top:18px;border-top:1px solid #dfe3ec;padding-top:18px}.strategy-decision-panel .strategy-decision-journal{max-width:none}.strategy-decision-panel .journal-heading,.strategy-decision-panel .decision-card{background:#fff;border:1px solid #dbe3ef;border-radius:14px;padding:18px;margin-bottom:14px}.strategy-decision-panel .journal-heading{display:flex;justify-content:space-between;gap:18px}.strategy-decision-panel .journal-meta span,.strategy-decision-panel .status,.strategy-decision-panel .decision-type{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}.strategy-decision-panel table{width:100%;border-collapse:collapse}.strategy-decision-panel th,.strategy-decision-panel td{border-bottom:1px solid #e5e7eb;padding:9px;text-align:left}.strategy-decision-panel .committee-evidence-timeline{margin-top:18px}.strategy-decision-panel .committee-timeline{list-style:none;margin:12px 0 0;padding:0 0 0 18px;border-left:3px solid #c4b5fd}.strategy-decision-panel .committee-step{position:relative;display:grid;grid-template-columns:34px 1fr;gap:10px;margin:0 0 16px -36px}.strategy-decision-panel .committee-sequence{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#5b21b6;color:#fff;font-weight:800}.strategy-decision-panel .committee-step-content{background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:12px}.strategy-decision-panel .committee-step-content header{display:flex;justify-content:space-between;gap:12px}.strategy-decision-panel .committee-vote{font-size:12px;font-weight:800;color:#5b21b6}.strategy-decision-panel .committee-step-content dl{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}.strategy-decision-panel .committee-step-content dl div{display:flex;gap:5px}.strategy-decision-panel .committee-step-content dt{color:#64748b}.strategy-decision-panel .committee-step-content dd{margin:0;font-weight:700}.strategy-decision-panel .image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-decision-panel .evidence-image{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0;text-decoration:none}.strategy-decision-panel a.evidence-image{cursor:pointer}.strategy-decision-panel .evidence-image img{width:100%;height:160px;object-fit:cover;display:block}.strategy-decision-panel .evidence-image span,.strategy-decision-panel .evidence-image p{display:block;padding:10px;margin:0}.strategy-decision-panel .image-unavailable{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}.ai-commentary{margin-top:18px;background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px}.ai-commentary strong{color:#e66b00}
+.enterprise-content{min-width:0}.scope-note{padding:10px 12px;background:#eef4ff;border-left:4px solid #5d18d6}.strategy-cross-links{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.strategy-cross-links a{display:inline-block;padding:8px 11px;border:1px solid #cbd5e1;border-radius:9px;color:#5d18d6;background:#fff;text-decoration:none;font-weight:700}.strategy-cross-links a:hover{background:#f3efff}.workspace-tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 0 14px;margin:14px 0;border-bottom:1px solid #dfe3ec}.workspace-tab{white-space:nowrap;padding:9px 13px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;cursor:pointer;font-weight:700;color:#344054}.workspace-tab.active{background:#5d18d6;color:#fff;border-color:#5d18d6}.workspace-tab-panel{min-height:180px}.readable-evidence{margin-top:18px}.readable-evidence summary{font-weight:800;cursor:pointer}.strategy-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-kpi-card{background:#fff;border:1px solid #dfe3ec;border-radius:14px;padding:18px;text-align:left;color:#101828;cursor:pointer}.strategy-kpi-card.active{outline:3px solid #8b5cf6}.strategy-kpi-card span,.strategy-kpi-card small,.strategy-kpi-card em{display:block;margin-top:8px}.strategy-kpi-card em{color:#5d18d6;font-style:normal;font-weight:800}.strategy-analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.registry-detail-grid{margin-top:18px}.metric-table{width:100%;border-collapse:collapse}.metric-table th{text-align:left}.metric-table td{text-align:right}.strategy-decision-panel{margin-top:18px;border-top:1px solid #dfe3ec;padding-top:18px}.strategy-decision-panel .strategy-decision-journal{max-width:none}.strategy-decision-panel .journal-heading,.strategy-decision-panel .decision-card{background:#fff;border:1px solid #dbe3ef;border-radius:14px;padding:18px;margin-bottom:14px}.strategy-decision-panel .journal-heading{display:flex;justify-content:space-between;gap:18px}.strategy-decision-panel .journal-meta span,.strategy-decision-panel .status,.strategy-decision-panel .decision-type{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}.strategy-decision-panel table{width:100%;border-collapse:collapse}.strategy-decision-panel th,.strategy-decision-panel td{border-bottom:1px solid #e5e7eb;padding:9px;text-align:left}.strategy-decision-panel .committee-evidence-timeline{margin-top:18px}.strategy-decision-panel .committee-timeline{list-style:none;margin:12px 0 0;padding:0 0 0 18px;border-left:3px solid #c4b5fd}.strategy-decision-panel .committee-step{position:relative;display:grid;grid-template-columns:34px 1fr;gap:10px;margin:0 0 16px -36px}.strategy-decision-panel .committee-sequence{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#5b21b6;color:#fff;font-weight:800}.strategy-decision-panel .committee-step-content{background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:12px}.strategy-decision-panel .committee-step-content header{display:flex;justify-content:space-between;gap:12px}.strategy-decision-panel .committee-vote{font-size:12px;font-weight:800;color:#5b21b6}.strategy-decision-panel .committee-step-content dl{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}.strategy-decision-panel .committee-step-content dl div{display:flex;gap:5px}.strategy-decision-panel .committee-step-content dt{color:#64748b}.strategy-decision-panel .committee-step-content dd{margin:0;font-weight:700}.strategy-decision-panel .image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-decision-panel .evidence-image{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0;text-decoration:none}.strategy-decision-panel a.evidence-image{cursor:pointer}.strategy-decision-panel .evidence-image img{width:100%;height:160px;object-fit:cover;display:block}.strategy-decision-panel .evidence-image span,.strategy-decision-panel .evidence-image p{display:block;padding:10px;margin:0}.strategy-decision-panel .image-unavailable{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}.ai-commentary{margin-top:18px;background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px}.ai-commentary strong{color:#e66b00}
 @media(max-width:900px){.portal-frame{grid-template-columns:1fr}.enterprise-sidebar{position:static;min-height:0}.strategy-analysis-grid{grid-template-columns:1fr}}
 </style>"""
