@@ -113,6 +113,53 @@ def _strategy_allocations(cash_state: Mapping[str, Any]) -> dict[str, Any]:
     return {}
 
 
+def _reported_number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _apply_paper_cash_summary(
+    report: dict[str, Any],
+    cash_state: Mapping[str, Any],
+    *,
+    summary_key: str,
+) -> None:
+    """Expose verified paper-account totals without fabricating strategy KPIs."""
+    allocations = _strategy_allocations(cash_state)
+    available = _reported_number(cash_state.get("available_cash"))
+    allocated = _reported_number(cash_state.get("allocated_cash"))
+    if allocated is None and allocations:
+        values = [_reported_number(value) for value in allocations.values()]
+        allocated = sum(value for value in values if value is not None)
+    total = (
+        available + allocated
+        if available is not None and allocated is not None
+        else None
+    )
+
+    current = report.get(summary_key)
+    summary = dict(current) if isinstance(current, Mapping) else {}
+    if summary_key == "portfolio_summary":
+        if available is not None:
+            summary["available_cash"] = available
+        if allocated is not None:
+            summary["allocated_cash"] = allocated
+    else:
+        if available is not None:
+            summary["cash_or_reserve_value"] = available
+
+    existing_total = _reported_number(summary.get("portfolio_value"))
+    if total is not None and (existing_total is None or existing_total == 0):
+        summary["portfolio_value"] = total
+    if available is not None or allocated is not None:
+        summary["paper_capital_source"] = "paper_cash_account"
+    report[summary_key] = summary
+
+
 def _publish_optional_executive_evidence(
     directory: Path,
     *,
@@ -351,6 +398,11 @@ def refresh_enterprise_dashboards(
     executive["registry_declared_evidence_summary"] = registry_evidence["summary"]
     executive["registry_declared_strategy_evidence"] = registry_evidence["strategies"]
     executive["strategy_kpis"] = strategy_kpis
+    _apply_paper_cash_summary(
+        executive,
+        cash_state,
+        summary_key="portfolio_summary",
+    )
 
     existing_source, source_path, source_warnings = _existing_investor_source(
         directory,
@@ -412,6 +464,11 @@ def refresh_enterprise_dashboards(
     investor["registry_declared_evidence_summary"] = registry_evidence["summary"]
     investor["registry_declared_strategy_evidence"] = registry_evidence["strategies"]
     investor["strategy_kpis"] = strategy_kpis
+    _apply_paper_cash_summary(
+        investor,
+        cash_state,
+        summary_key="investor_summary",
+    )
 
     consumer_payloads, discovery_warnings = build_dashboard_refresh_consumer_payloads(
         registry=registry,
