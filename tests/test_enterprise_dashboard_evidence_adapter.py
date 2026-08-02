@@ -75,9 +75,13 @@ def test_refresh_populates_existing_dashboard_builders(tmp_path: Path) -> None:
     assert summary["registered_strategy_count"] == 2
     assert executive["enterprise_summary"]["enterprise_status"] == "HEALTHY"
     assert executive["enterprise_summary"]["registered_strategy_count"] == 2
-    assert investor["dashboard_status"] == "READY"
+    assert investor["dashboard_status"] == "PARTIAL"
     assert investor["investor_summary"]["portfolio_value"] == 10000
     assert investor["investor_summary"]["cash_or_reserve_value"] == 500
+    provenance = investor["evidence_provenance"]
+    assert provenance["source_type"] == "ADAPTER_RECONSTRUCTION"
+    assert provenance["authoritative"] is False
+    assert provenance["reconstructed"] is True
 
 
 def test_adapter_is_read_only_for_state_files(tmp_path: Path) -> None:

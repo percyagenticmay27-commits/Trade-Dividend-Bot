@@ -111,10 +111,12 @@ def test_missing_sources_produce_explicit_partial_artifacts_without_failure(
     assert (results / "ai_cio_executive_dashboard.json").is_file()
     assert (results / "enterprise_investor_dashboard.json").is_file()
     assert summary["investor_dashboard_status"] == "PARTIAL"
-    assert summary["investor_source"] is None
+    assert summary["investor_source"] == "enterprise_dashboard_evidence_adapter"
     provenance = summary["investor_evidence_provenance"]
-    assert provenance["source_type"] == "NONE"
-    assert provenance["completeness"] == "NONE"
+    assert provenance["source_type"] == "ADAPTER_RECONSTRUCTION"
+    assert provenance["completeness"] == "PARTIAL"
+    assert provenance["authoritative"] is False
+    assert provenance["reconstructed"] is True
     assert summary["warnings"]
     assert summary["errors"]
 
@@ -124,7 +126,7 @@ def test_missing_sources_produce_explicit_partial_artifacts_without_failure(
         )
     )
     assert investor["dashboard_status"] == "PARTIAL"
-    assert investor["evidence_provenance"]["source_type"] == "NONE"
+    assert investor["evidence_provenance"]["source_type"] == "ADAPTER_RECONSTRUCTION"
     assert investor["warnings"]
     assert investor["investor_summary"]["portfolio_value"] == 0.0
     assert investor["reporting_only"] is True
@@ -142,8 +144,12 @@ def test_malformed_optional_investor_source_warns_and_falls_back(
 
     summary = launcher.refresh_enterprise_dashboards(results_dir=results)
 
-    assert summary["investor_source"] is None
-    assert summary["investor_evidence_provenance"]["source_type"] == "NONE"
+    assert summary["investor_source"] == "enterprise_dashboard_evidence_adapter"
+    provenance = summary["investor_evidence_provenance"]
+    assert provenance["source_type"] == "ADAPTER_RECONSTRUCTION"
+    assert provenance["completeness"] == "PARTIAL"
+    assert provenance["authoritative"] is False
+    assert provenance["reconstructed"] is True
     assert summary["investor_dashboard_status"] == "PARTIAL"
     assert any(
         "invalid dashboard source" in warning
@@ -183,6 +189,30 @@ def test_adapter_reconstruction_is_labeled_and_not_claimed_authoritative(
         "enterprise_dashboard_evidence_adapter" in warning
         for warning in summary["warnings"]
     )
+
+
+def test_reconstruction_payload_is_detected_without_metadata_flags() -> None:
+    adapted = {
+        "portfolio_summary": {
+            "portfolio_value": 10000,
+            "cash_value": 500,
+        },
+        "holdings": [],
+        "payment_history": [],
+        "upcoming_payments": [],
+        "evidence_metadata": {},
+    }
+
+    provenance = launcher._classify_investor_evidence(
+        source_path=None,
+        adapted=adapted,
+    )
+
+    assert provenance["source_type"] == "ADAPTER_RECONSTRUCTION"
+    assert provenance["completeness"] == "PARTIAL"
+    assert provenance["authoritative"] is False
+    assert provenance["reconstructed"] is True
+    assert provenance["available_components"]["portfolio_summary"] is True
 
 
 def test_refresh_does_not_touch_cash_or_governance_files(tmp_path: Path) -> None:
@@ -233,5 +263,5 @@ def test_main_returns_zero_for_missing_optional_evidence(
     assert code == 0
     assert "Executive dashboard:" in output
     assert "Investor dashboard:" in output
-    assert "Investor evidence: NONE / NONE" in output
+    assert "Investor evidence: ADAPTER_RECONSTRUCTION / PARTIAL" in output
     assert "WARNING:" in output
