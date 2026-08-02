@@ -56,12 +56,12 @@ def _strategy_ids(rows: Any) -> list[str]:
     if not isinstance(rows, list):
         return []
     return sorted(
-        {
+        [
             str(row.get("strategy_id") or "").strip()
             for row in rows
             if isinstance(row, Mapping)
             and str(row.get("strategy_id") or "").strip()
-        }
+        ]
     )
 
 
