@@ -29,10 +29,19 @@ def render_left_navigation(active: str) -> str:
         ("Investor Dashboard", "/investor-dashboard"),
     )
     links = "".join(
-        f"<a class='side-link {'active' if label == active else ''}' href='{url}'>{html.escape(label)}</a>"
+        f"<a class='side-link {'active' if label == active else ''}' href='{url}'"
+        f"{' aria-current=\'page\'' if label == active else ''}>"
+        f"{html.escape(label)}</a>"
         for label, url in items
     )
-    return f"<aside class='enterprise-sidebar'><div class='side-title'>Enterprise AI CIO</div>{links}<div class='side-group'>Registered Strategies</div><div id='registered-strategy-links'></div></aside>"
+    return (
+        "<aside class='enterprise-sidebar' aria-label='Enterprise navigation'>"
+        "<div class='side-title'>Enterprise AI CIO</div>"
+        f"<nav class='primary-navigation' aria-label='Portal pages'>{links}</nav>"
+        "<div class='side-group'>Registered Strategies</div>"
+        "<div id='registered-strategy-links' class='registered-strategy-links' "
+        "aria-label='Registered strategies'></div></aside>"
+    )
 
 
 def _artifact_list(row: Mapping[str, Any]) -> str:
@@ -147,13 +156,19 @@ def _workspace_tab(
     hidden = "" if active else " hidden"
     button = (
         f"<button type='button' class='workspace-tab{active_class}' "
-        f"data-workspace-strategy='{strategy_id}' data-workspace-tab-target='{tab_id}'>"
+        f"data-workspace-strategy='{strategy_id}' data-workspace-tab-target='{tab_id}' "
+        f"id='tab-{strategy_id}-{tab_id}' role='tab' "
+        f"aria-controls='panel-{strategy_id}-{tab_id}' "
+        f"aria-selected='{'true' if active else 'false'}' "
+        f"tabindex='{'0' if active else '-1'}'>"
         f"{html.escape(label)}</button>"
     )
     panel = (
         f"<section class='workspace-tab-panel'{hidden} "
         f"data-workspace-strategy-panel='{strategy_id}' "
-        f"data-workspace-tab-panel='{tab_id}'>{body}</section>"
+        f"data-workspace-tab-panel='{tab_id}' "
+        f"id='panel-{strategy_id}-{tab_id}' role='tabpanel' "
+        f"aria-labelledby='tab-{strategy_id}-{tab_id}'>{body}</section>"
     )
     return button, panel
 
@@ -175,7 +190,8 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
         active = " active" if index == 0 else ""
         hidden = "" if index == 0 else " hidden"
         buttons.append(
-            f"<button type='button' class='strategy-kpi-card{active}' data-strategy-target='{sid}'>"
+            f"<button type='button' class='strategy-kpi-card{active}' data-strategy-target='{sid}' "
+            f"aria-controls='strategy-{sid}' aria-pressed='{'true' if index == 0 else 'false'}'>"
             f"<strong>{name}</strong><span>{_money(row.get('allocated_capital'))} allocated</span>"
             f"<small>{html.escape(str(row.get('health_status') or 'UNKNOWN'))} · {html.escape(str(row.get('evidence_status') or 'REGISTRY_ONLY'))}</small>"
             f"<small>{html.escape(str(row.get('capability_count') or 0))} capabilities · {html.escape(str(row.get('published_artifact_count') or 0))} artifacts</small>"
@@ -303,7 +319,7 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
     <a href='?strategy={encoded_sid}#strategy-{sid}'>Strategy Workspace</a>
     <a href='?strategy={encoded_sid}&amp;tab=decisions#strategy-{sid}'>Decision Journal</a>
   </nav>
-  <nav class='workspace-tabs' aria-label='{name} KPI workspace tabs'>{''.join(tab_buttons)}</nav>
+  <nav class='workspace-tabs' role='tablist' aria-label='{name} KPI workspace tabs'>{''.join(tab_buttons)}</nav>
   <div class='workspace-tab-content'>{''.join(tab_panels)}</div>
   <details class='readable-evidence'><summary>Currently Readable Evidence</summary>{loaded_evidence}</details>
   <div class='ai-commentary'><strong>AI CIO Commentary</strong><p>{commentary}</p></div>
@@ -319,16 +335,46 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
 (function(){{
  const cards=[...document.querySelectorAll('[data-strategy-target]')];
  const panels=[...document.querySelectorAll('[data-strategy-panel]')];
- function select(id){{cards.forEach(c=>c.classList.toggle('active',c.dataset.strategyTarget===id));panels.forEach(p=>p.hidden=p.dataset.strategyPanel!==id);}}
- cards.forEach(c=>c.addEventListener('click',()=>select(c.dataset.strategyTarget)));
- const tabButtons=[...document.querySelectorAll('[data-workspace-tab-target]')];
- function selectTab(strategy,tab){{
-   document.querySelectorAll('[data-workspace-tab-target][data-workspace-strategy="'+strategy+'"]').forEach(item=>item.classList.toggle('active',item.dataset.workspaceTabTarget===tab));
-   document.querySelectorAll('[data-workspace-tab-panel][data-workspace-strategy-panel="'+strategy+'"]').forEach(item=>item.hidden=item.dataset.workspaceTabPanel!==tab);
+ function updateUrl(strategy,tab){{
+   const url=new URL(window.location.href);
+   if(strategy) url.searchParams.set('strategy',strategy);
+   if(tab) url.searchParams.set('tab',tab);
+   url.hash='strategy-'+strategy;
+   window.history.replaceState({{}},'',url);
  }}
- tabButtons.forEach(button=>button.addEventListener('click',()=>selectTab(button.dataset.workspaceStrategy,button.dataset.workspaceTabTarget)));
+ function select(id,updateState=false){{
+   cards.forEach(c=>{{const active=c.dataset.strategyTarget===id;c.classList.toggle('active',active);c.setAttribute('aria-pressed',active?'true':'false');}});
+   panels.forEach(p=>p.hidden=p.dataset.strategyPanel!==id);
+   document.querySelectorAll('.side-strategy[data-strategy-target]').forEach(item=>{{const active=item.dataset.strategyTarget===id;item.classList.toggle('active',active);item.setAttribute('aria-pressed',active?'true':'false');}});
+   if(updateState) updateUrl(id,null);
+ }}
+ cards.forEach(c=>c.addEventListener('click',()=>select(c.dataset.strategyTarget,true)));
+ const tabButtons=[...document.querySelectorAll('[data-workspace-tab-target]')];
+ function selectTab(strategy,tab,updateState=false){{
+   const strategyTabs=[...document.querySelectorAll('[data-workspace-tab-target][data-workspace-strategy="'+strategy+'"]')];
+   strategyTabs.forEach(item=>{{const active=item.dataset.workspaceTabTarget===tab;item.classList.toggle('active',active);item.setAttribute('aria-selected',active?'true':'false');item.tabIndex=active?0:-1;}});
+   document.querySelectorAll('[data-workspace-tab-panel][data-workspace-strategy-panel="'+strategy+'"]').forEach(item=>item.hidden=item.dataset.workspaceTabPanel!==tab);
+   if(updateState) updateUrl(strategy,tab);
+ }}
+ tabButtons.forEach(button=>{{
+   button.addEventListener('click',()=>selectTab(button.dataset.workspaceStrategy,button.dataset.workspaceTabTarget,true));
+   button.addEventListener('keydown',event=>{{
+     const strategy=button.dataset.workspaceStrategy;
+     const tabs=[...document.querySelectorAll('[data-workspace-tab-target][data-workspace-strategy="'+strategy+'"]')];
+     const current=tabs.indexOf(button);
+     let next=current;
+     if(event.key==='ArrowRight') next=(current+1)%tabs.length;
+     else if(event.key==='ArrowLeft') next=(current-1+tabs.length)%tabs.length;
+     else if(event.key==='Home') next=0;
+     else if(event.key==='End') next=tabs.length-1;
+     else return;
+     event.preventDefault();
+     tabs[next].focus();
+     selectTab(strategy,tabs[next].dataset.workspaceTabTarget,true);
+   }});
+ }});
  const target=document.getElementById('registered-strategy-links');
- if(target){{cards.forEach(c=>{{const a=document.createElement('button');a.type='button';a.className='side-strategy';a.textContent=c.querySelector('strong').textContent;a.onclick=()=>{{select(c.dataset.strategyTarget);document.querySelector('[data-strategy-panel="'+c.dataset.strategyTarget+'"]').scrollIntoView({{behavior:'smooth'}});}};target.appendChild(a);}});}}
+ if(target){{cards.forEach(c=>{{const a=document.createElement('button');a.type='button';a.className='side-strategy';a.dataset.strategyTarget=c.dataset.strategyTarget;a.setAttribute('aria-controls','strategy-'+c.dataset.strategyTarget);a.setAttribute('aria-pressed',c.classList.contains('active')?'true':'false');a.textContent=c.querySelector('strong').textContent;a.onclick=()=>{{select(c.dataset.strategyTarget,true);document.querySelector('[data-strategy-panel="'+c.dataset.strategyTarget+'"]').scrollIntoView({{behavior:'smooth'}});}};target.appendChild(a);}});}}
  const params=new URLSearchParams(window.location.search);
  const requestedStrategy=params.get('strategy');
  const requestedTab=params.get('tab')||'executive-summary';
@@ -345,7 +391,7 @@ def strategy_ui_css() -> str:
 <style>
 .portal-frame{display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px;align-items:start}
 .enterprise-sidebar{position:sticky;top:16px;background:#0b1d3a;color:#fff;border-radius:14px;padding:18px;min-height:520px}
-.side-title{font-size:20px;font-weight:800;margin-bottom:18px}.side-link,.side-strategy{display:block;width:100%;text-align:left;color:#d9e2f2;background:transparent;border:0;text-decoration:none;padding:10px 8px;border-radius:8px;font-weight:700}.side-link.active,.side-link:hover,.side-strategy:hover{background:#5d18d6;color:#fff}.side-group{margin:24px 8px 8px;color:#9fb0c8;font-size:12px;font-weight:800;text-transform:uppercase}.side-strategy{cursor:pointer}
-.enterprise-content{min-width:0}.scope-note{padding:10px 12px;background:#eef4ff;border-left:4px solid #5d18d6}.strategy-cross-links{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.strategy-cross-links a{display:inline-block;padding:8px 11px;border:1px solid #cbd5e1;border-radius:9px;color:#5d18d6;background:#fff;text-decoration:none;font-weight:700}.strategy-cross-links a:hover{background:#f3efff}.workspace-tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 0 14px;margin:14px 0;border-bottom:1px solid #dfe3ec}.workspace-tab{white-space:nowrap;padding:9px 13px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;cursor:pointer;font-weight:700;color:#344054}.workspace-tab.active{background:#5d18d6;color:#fff;border-color:#5d18d6}.workspace-tab-panel{min-height:180px}.readable-evidence{margin-top:18px}.readable-evidence summary{font-weight:800;cursor:pointer}.strategy-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-kpi-card{background:#fff;border:1px solid #dfe3ec;border-radius:14px;padding:18px;text-align:left;color:#101828;cursor:pointer}.strategy-kpi-card.active{outline:3px solid #8b5cf6}.strategy-kpi-card span,.strategy-kpi-card small,.strategy-kpi-card em{display:block;margin-top:8px}.strategy-kpi-card em{color:#5d18d6;font-style:normal;font-weight:800}.strategy-analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.registry-detail-grid{margin-top:18px}.metric-table{width:100%;border-collapse:collapse}.metric-table th{text-align:left}.metric-table td{text-align:right}.strategy-decision-panel{margin-top:18px;border-top:1px solid #dfe3ec;padding-top:18px}.strategy-decision-panel .strategy-decision-journal{max-width:none}.strategy-decision-panel .journal-heading,.strategy-decision-panel .decision-card{background:#fff;border:1px solid #dbe3ef;border-radius:14px;padding:18px;margin-bottom:14px}.strategy-decision-panel .journal-heading{display:flex;justify-content:space-between;gap:18px}.strategy-decision-panel .journal-meta span,.strategy-decision-panel .status,.strategy-decision-panel .decision-type{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}.strategy-decision-panel .journal-cross-links{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.strategy-decision-panel .journal-cross-links a{padding:8px 11px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5d18d6;text-decoration:none;font-weight:700}.strategy-decision-panel .journal-cross-links a[aria-current="page"]{background:#5d18d6;color:#fff}.strategy-decision-panel table{width:100%;border-collapse:collapse}.strategy-decision-panel th,.strategy-decision-panel td{border-bottom:1px solid #e5e7eb;padding:9px;text-align:left}.strategy-decision-panel .committee-evidence-timeline{margin-top:18px}.strategy-decision-panel .committee-timeline{list-style:none;margin:12px 0 0;padding:0 0 0 18px;border-left:3px solid #c4b5fd}.strategy-decision-panel .committee-step{position:relative;display:grid;grid-template-columns:34px 1fr;gap:10px;margin:0 0 16px -36px}.strategy-decision-panel .committee-sequence{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#5b21b6;color:#fff;font-weight:800}.strategy-decision-panel .committee-step-content{background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:12px}.strategy-decision-panel .committee-step-content header{display:flex;justify-content:space-between;gap:12px}.strategy-decision-panel .committee-vote{font-size:12px;font-weight:800;color:#5b21b6}.strategy-decision-panel .committee-step-content dl{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}.strategy-decision-panel .committee-step-content dl div{display:flex;gap:5px}.strategy-decision-panel .committee-step-content dt{color:#64748b}.strategy-decision-panel .committee-step-content dd{margin:0;font-weight:700}.strategy-decision-panel .image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-decision-panel .evidence-image{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0;text-decoration:none}.strategy-decision-panel a.evidence-image{cursor:pointer}.strategy-decision-panel .evidence-image img{width:100%;height:160px;object-fit:cover;display:block}.strategy-decision-panel .evidence-image span,.strategy-decision-panel .evidence-image p{display:block;padding:10px;margin:0}.strategy-decision-panel .image-unavailable{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}.ai-commentary{margin-top:18px;background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px}.ai-commentary strong{color:#e66b00}
-@media(max-width:900px){.portal-frame{grid-template-columns:1fr}.enterprise-sidebar{position:static;min-height:0}.strategy-analysis-grid{grid-template-columns:1fr}}
+.side-title{font-size:20px;font-weight:800;margin-bottom:18px}.side-link,.side-strategy{display:block;width:100%;text-align:left;color:#d9e2f2;background:transparent;border:0;text-decoration:none;padding:10px 8px;border-radius:8px;font-weight:700}.side-link.active,.side-link:hover,.side-link:focus-visible,.side-strategy.active,.side-strategy:hover,.side-strategy:focus-visible{background:#5d18d6;color:#fff}.side-group{margin:24px 8px 8px;color:#9fb0c8;font-size:12px;font-weight:800;text-transform:uppercase}.side-strategy{cursor:pointer}
+.enterprise-content{min-width:0}.scope-note{padding:10px 12px;background:#eef4ff;border-left:4px solid #5d18d6}.strategy-cross-links{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.strategy-cross-links a{display:inline-block;padding:8px 11px;border:1px solid #cbd5e1;border-radius:9px;color:#5d18d6;background:#fff;text-decoration:none;font-weight:700}.strategy-cross-links a:hover{background:#f3efff}.workspace-tabs{display:flex;gap:8px;overflow-x:auto;padding:4px 0 14px;margin:14px 0;border-bottom:1px solid #dfe3ec}.workspace-tab{white-space:nowrap;padding:9px 13px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;cursor:pointer;font-weight:700;color:#344054}.workspace-tab.active{background:#5d18d6;color:#fff;border-color:#5d18d6}.workspace-tab:focus-visible,.strategy-kpi-card:focus-visible,.strategy-cross-links a:focus-visible{outline:3px solid #f59e0b;outline-offset:2px}.workspace-tab-panel{min-height:180px}.readable-evidence{margin-top:18px}.readable-evidence summary{font-weight:800;cursor:pointer}.strategy-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-kpi-card{background:#fff;border:1px solid #dfe3ec;border-radius:14px;padding:18px;text-align:left;color:#101828;cursor:pointer}.strategy-kpi-card.active{outline:3px solid #8b5cf6}.strategy-kpi-card span,.strategy-kpi-card small,.strategy-kpi-card em{display:block;margin-top:8px}.strategy-kpi-card em{color:#5d18d6;font-style:normal;font-weight:800}.strategy-analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.registry-detail-grid{margin-top:18px}.metric-table{width:100%;border-collapse:collapse}.metric-table th{text-align:left}.metric-table td{text-align:right}.strategy-decision-panel{margin-top:18px;border-top:1px solid #dfe3ec;padding-top:18px}.strategy-decision-panel .strategy-decision-journal{max-width:none}.strategy-decision-panel .journal-heading,.strategy-decision-panel .decision-card{background:#fff;border:1px solid #dbe3ef;border-radius:14px;padding:18px;margin-bottom:14px}.strategy-decision-panel .journal-heading{display:flex;justify-content:space-between;gap:18px}.strategy-decision-panel .journal-meta span,.strategy-decision-panel .status,.strategy-decision-panel .decision-type{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}.strategy-decision-panel .journal-cross-links{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0}.strategy-decision-panel .journal-cross-links a{padding:8px 11px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5d18d6;text-decoration:none;font-weight:700}.strategy-decision-panel .journal-cross-links a[aria-current="page"]{background:#5d18d6;color:#fff}.strategy-decision-panel table{width:100%;border-collapse:collapse}.strategy-decision-panel th,.strategy-decision-panel td{border-bottom:1px solid #e5e7eb;padding:9px;text-align:left}.strategy-decision-panel .committee-evidence-timeline{margin-top:18px}.strategy-decision-panel .committee-timeline{list-style:none;margin:12px 0 0;padding:0 0 0 18px;border-left:3px solid #c4b5fd}.strategy-decision-panel .committee-step{position:relative;display:grid;grid-template-columns:34px 1fr;gap:10px;margin:0 0 16px -36px}.strategy-decision-panel .committee-sequence{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#5b21b6;color:#fff;font-weight:800}.strategy-decision-panel .committee-step-content{background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:12px}.strategy-decision-panel .committee-step-content header{display:flex;justify-content:space-between;gap:12px}.strategy-decision-panel .committee-vote{font-size:12px;font-weight:800;color:#5b21b6}.strategy-decision-panel .committee-step-content dl{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}.strategy-decision-panel .committee-step-content dl div{display:flex;gap:5px}.strategy-decision-panel .committee-step-content dt{color:#64748b}.strategy-decision-panel .committee-step-content dd{margin:0;font-weight:700}.strategy-decision-panel .image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-decision-panel .evidence-image{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0;text-decoration:none}.strategy-decision-panel a.evidence-image{cursor:pointer}.strategy-decision-panel .evidence-image img{width:100%;height:160px;object-fit:cover;display:block}.strategy-decision-panel .evidence-image span,.strategy-decision-panel .evidence-image p{display:block;padding:10px;margin:0}.strategy-decision-panel .image-unavailable{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}.ai-commentary{margin-top:18px;background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px}.ai-commentary strong{color:#e66b00}
+@media(max-width:900px){.portal-frame{grid-template-columns:1fr}.enterprise-sidebar{position:static;min-height:0}.primary-navigation,.registered-strategy-links{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.strategy-analysis-grid{grid-template-columns:1fr}.workspace-tabs{scroll-snap-type:x proximity}.workspace-tab{scroll-snap-align:start}}@media(max-width:520px){.primary-navigation,.registered-strategy-links{grid-template-columns:1fr}.strategy-cross-links{display:grid}.journal-heading{display:block}}
 </style>"""
