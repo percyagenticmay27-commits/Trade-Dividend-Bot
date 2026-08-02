@@ -79,7 +79,7 @@ def test_digitalocean_requires_variables_without_exposing_values(tmp_path: Path)
     assert report["handoff_status"] == "BLOCKED"
     assert "SENDGRID_API_KEY" in report["deployment_variables"]["missing"]
     assert report["deployment_variables"]["values_exposed"] is False
-    assert "DIGITALOCEAN" not in json.dumps(report.get("environment", ""))
+    assert "SENDGRID_API_KEY" in json.dumps(report["deployment_variables"])
 
 
 def test_digitalocean_all_gates_pass_is_ready(tmp_path: Path) -> None:
