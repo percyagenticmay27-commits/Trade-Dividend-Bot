@@ -337,6 +337,14 @@ def refresh_enterprise_dashboards(
     )
 
     executive = build_executive_dashboard(input_dir=directory)
+    executive.update({
+        "paper_trade_mode": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "capital_movement_enabled": False,
+        "reporting_only": True,
+        "read_only": True,
+    })
     executive["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
     executive["dashboard_evidence_contract_version"] = "2.0"
     executive["plugin_evidence_source"] = registry_evidence["plugin_evidence_source"]
@@ -389,6 +397,14 @@ def refresh_enterprise_dashboards(
         provenance,
     )
     investor["dashboard_status"] = effective_investor_status
+    investor.update({
+        "paper_trade_mode": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "capital_movement_enabled": False,
+        "reporting_only": True,
+        "read_only": True,
+    })
     investor["evidence_provenance"] = provenance
     investor["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
     investor["dashboard_evidence_contract_version"] = "2.0"
