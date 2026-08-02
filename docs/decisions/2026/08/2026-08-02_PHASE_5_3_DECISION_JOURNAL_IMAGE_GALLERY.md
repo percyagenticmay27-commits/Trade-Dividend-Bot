@@ -7,18 +7,17 @@
 
 Strategy-owned evidence images are displayed inside the selected strategy's
 Decisions tab as a responsive gallery. Each thumbnail carries its decision ID,
-image order, image type, and escaped caption. Selecting a thumbnail opens a
-full-size read-only viewer.
+image order, image type, and escaped caption. Selecting a thumbnail opens the full-size image in a separate read-only browser tab.
 
 ## Behavior
 
 - Preserve source image ordering within each decision.
 - Lazy-load thumbnails.
 - Display image type and caption.
-- Provide a full-size dialog and explicit close control.
+- Provide a script-free full-size image link with safe new-tab isolation.
 - Render a clear empty state when no images exist.
 - Render an unavailable card for unsafe image paths.
-- Support the same gallery in embedded portal views and standalone previews.
+- Support the same gallery in embedded portal views and standalone previews.\n- Preserve the existing rule that rendered journal fragments contain no scripts.
 
 ## Security and isolation
 
