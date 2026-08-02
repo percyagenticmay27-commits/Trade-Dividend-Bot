@@ -1,9 +1,8 @@
 """Run the complete read-only Enterprise portal refresh in one command.
 
-This orchestrator preserves the tested base dashboard refresh and then publishes
-Phase 3 intelligence from those exact artifacts. It is the intended DigitalOcean
-service entry point until the same orchestration is folded into the lower-level
-refresh implementation after deployment validation.
+This orchestrator preserves the tested base dashboard refresh, publishes Phase 3
+intelligence from those exact artifacts, and then generates strategy-scoped
+Decision Journal artifacts for the current Dividend and Swing KPI workspaces.
 """
 from __future__ import annotations
 
@@ -15,6 +14,9 @@ from publish_enterprise_dashboard_intelligence import (
     publish_enterprise_dashboard_intelligence,
 )
 from refresh_enterprise_dashboards import refresh_enterprise_dashboards
+from src.dividend_bot.strategy_decision_journal_generator import (
+    generate_all_strategy_decision_journals,
+)
 
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -29,7 +31,7 @@ def refresh_enterprise_portal(
     results_dir: str | Path = "results",
     state_dir: str | Path = "state",
 ) -> dict[str, Any]:
-    """Refresh base dashboards and publish Phase 3 intelligence atomically per file."""
+    """Refresh dashboards, intelligence, and strategy journals atomically per file."""
     root = Path(root_dir)
     requested_results = Path(results_dir)
     resolved_results = (
@@ -44,15 +46,22 @@ def refresh_enterprise_portal(
     intelligence_summary = publish_enterprise_dashboard_intelligence(
         results_dir=resolved_results,
     )
+    journal_summary = generate_all_strategy_decision_journals(
+        results_dir=resolved_results,
+    )
 
     dashboard_ids = list(
         dashboard_summary.get("strategy_discovery_summary", {}).get("strategy_ids", [])
     )
     intelligence_ids = list(intelligence_summary.get("strategy_ids", []))
-    warnings = list(dashboard_summary.get("warnings", [])) + list(
-        intelligence_summary.get("warnings", [])
+    warnings = (
+        list(dashboard_summary.get("warnings", []))
+        + list(intelligence_summary.get("warnings", []))
+        + list(journal_summary.get("warnings", []))
     )
-    errors = list(dashboard_summary.get("errors", []))
+    errors = list(dashboard_summary.get("errors", [])) + list(
+        journal_summary.get("errors", [])
+    )
 
     if dashboard_ids != intelligence_ids:
         errors.append(
@@ -64,6 +73,7 @@ def refresh_enterprise_portal(
         "refresh_complete": not errors,
         "dashboard_refresh": dashboard_summary,
         "intelligence_publication": intelligence_summary,
+        "decision_journal_generation": journal_summary,
         "registered_strategy_count": int(
             intelligence_summary.get("registered_strategy_count", 0) or 0
         ),
@@ -73,6 +83,10 @@ def refresh_enterprise_portal(
             **{
                 f"intelligence_{key}": value
                 for key, value in intelligence_summary.get("paths", {}).items()
+            },
+            **{
+                f"journal_{key}": value
+                for key, value in journal_summary.get("paths", {}).items()
             },
         },
         "warnings": sorted(set(str(item) for item in warnings if item)),
