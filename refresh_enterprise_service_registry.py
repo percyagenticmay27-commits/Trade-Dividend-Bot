@@ -28,13 +28,21 @@ def main() -> int:
     summary = registry.get("summary", {})
     output_files = registry.get("output_files", {})
     print(f"Registry path: {output_files.get('json', '')}")
+    print(f"Registry contract version: {registry.get('registry_contract_version', '1.0')}")
     print(f"Registered strategy count: {summary.get('strategy_plugin_count', 0)}")
     print(f"Accepted external strategy count: {summary.get('accepted_external_strategy_count', 0)}")
+    print(f"Discovered capability count: {summary.get('capability_count', 0)}")
+    print(f"Published artifact declaration count: {summary.get('published_artifact_count', 0)}")
+    print(f"Strategies declaring capabilities: {summary.get('strategy_with_capabilities_count', 0)}")
+    print(f"Strategies declaring artifacts: {summary.get('strategy_with_artifacts_count', 0)}")
     warnings = registry.get("external_registration_warnings", [])
-    if warnings:
+    contract_warnings = registry.get("strategy_contracts", {}).get("contract_warnings", [])
+    if warnings or contract_warnings:
         print("Warnings:")
         for warning in warnings:
             print(f"- {warning.get('code')}: {warning.get('message')}")
+        for warning in contract_warnings:
+            print(f"- REGISTRY_V2_CONTRACT [{warning.get('strategy_id')}]: {warning.get('message')}")
     else:
         print("Warnings: none")
     return 0

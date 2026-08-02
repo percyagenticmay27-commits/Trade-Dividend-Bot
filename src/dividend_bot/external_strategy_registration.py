@@ -10,6 +10,8 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from .enterprise_strategy_plugin_contract import build_plugin_contract_metadata
+
 SCHEMA_VERSION = "1.0"
 REQUIRED_TRUE_FLAGS = (
     "paper_trade_mode",
@@ -73,7 +75,8 @@ def normalize_external_strategy_registration(registration: Mapping[str, Any], *,
     plugin_type = str(registration.get("plugin_type") or registration.get("service_type") or "STRATEGY").upper()
     if plugin_type not in {"STRATEGY", "STRATEGY_PLUGIN"}:
         raise ValueError("plugin_type/service_type must identify a strategy plugin")
-    return {
+
+    plugin = {
         "strategy_id": strategy_id,
         "display_name": display_name,
         "plugin_type": "STRATEGY",
@@ -94,6 +97,8 @@ def normalize_external_strategy_registration(registration: Mapping[str, Any], *,
         "direct_database_writes": False,
         "source_registration": str(registration.get("registration_path") or "external-json-contract"),
     }
+    plugin.update(build_plugin_contract_metadata(registration))
+    return plugin
 
 
 def load_external_strategy_plugins(
@@ -120,6 +125,7 @@ def load_external_strategy_plugins(
             if not isinstance(payload, Mapping):
                 raise ValueError("registration must be a JSON object")
             plugin = normalize_external_strategy_registration(payload, expected_strategy_id=strategy_id)
+            plugin["source_registration"] = str(path)
             sid = plugin["strategy_id"]
             if sid in seen:
                 raise ValueError(f"duplicate strategy_id: {sid}")
