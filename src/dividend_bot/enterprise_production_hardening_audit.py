@@ -35,6 +35,7 @@ REQUIRED_ENVIRONMENT_NAMES = (
     "REPORT_RECIPIENT",
 )
 PACKAGE_REPORT_NAME = "enterprise_unified_dashboard_evidence_package.json"
+RECOVERY_REPORT_NAME = "enterprise_backup_recovery_validation.json"
 
 
 def _utc_now() -> str:
@@ -148,13 +149,39 @@ def audit_production_hardening(
         if package_report.get(field) is not expected:
             errors.append(f"Evidence package safety field {field} must be {expected}")
 
+    recovery_report_path = results / RECOVERY_REPORT_NAME
+    recovery_report: dict[str, Any] = {}
+    if recovery_report_path.is_file():
+        recovery_report, recovery_error = _read_mapping(recovery_report_path)
+        if recovery_error:
+            errors.append(recovery_error)
+    recovery_status = str(
+        recovery_report.get("recovery_status") or "NOT_YET_EXECUTED"
+    )
+    restore_test_status = str(
+        recovery_report.get("restore_test_status") or "NOT_YET_EXECUTED"
+    )
     recovery = {
         "backup_script_present": required_files.get("backup_dividend_bot.sh", False),
         "health_check_present": required_files.get("health_check_dividend_bot.sh", False),
         "log_rotation_present": required_files.get("rotate_dividend_logs.sh", False),
-        "restore_test_status": "NOT_YET_EXECUTED",
+        "recovery_status": recovery_status,
+        "restore_test_status": restore_test_status,
+        "source_files_unchanged": recovery_report.get("source_files_unchanged"),
     }
-    warnings.append("Recovery restore test has not yet been executed")
+    if recovery_status == "NOT_YET_EXECUTED":
+        warnings.append("Recovery restore test has not yet been executed")
+    else:
+        if recovery_status != "PASSED":
+            errors.append(
+                f"Recovery validation status must be PASSED: {recovery_status}"
+            )
+        if restore_test_status != "PASSED":
+            errors.append(
+                f"Recovery restore test status must be PASSED: {restore_test_status}"
+            )
+        if recovery_report.get("source_files_unchanged") is not True:
+            errors.append("Recovery drill must leave source files unchanged")
     errors = sorted(set(errors))
     warnings = sorted(set(warnings))
     status = "BLOCKED" if errors else "READY_WITH_WARNINGS" if warnings else "READY"
