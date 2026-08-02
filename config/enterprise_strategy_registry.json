@@ -1,0 +1,53 @@
+{
+  "schema_version": "1.0",
+  "registry_id": "ENTERPRISE-AI-CIO-STRATEGY-REGISTRY",
+  "strategy_plugins": [
+    {
+      "strategy_id": "DIVIDEND-001",
+      "display_name": "Dividend Income Strategy",
+      "strategy_type": "DIVIDEND_ETF",
+      "version": "1.0.0",
+      "lifecycle_status": "PRODUCTION",
+      "runtime_status": "ONLINE",
+      "health_status": "HEALTHY",
+      "readiness": "READY",
+      "enabled": true,
+      "paper_trade_mode": true,
+      "paper_compatible": true,
+      "advisory_only": true,
+      "reporting_only": true,
+      "live_trading_enabled": false,
+      "broker_execution_enabled": false,
+      "capital_movement_enabled": false,
+      "automatic_activation_allowed": false,
+      "direct_database_writes": false,
+      "dashboard_artifacts": []
+    },
+    {
+      "strategy_id": "SWING-001",
+      "display_name": "Trade Swing Bot",
+      "strategy_type": "SWING",
+      "version": "1.0.0",
+      "lifecycle_status": "REGISTERED",
+      "runtime_status": "REGISTERED",
+      "health_status": "UNKNOWN",
+      "readiness": "EVIDENCE_PENDING",
+      "enabled": true,
+      "paper_trade_mode": true,
+      "paper_compatible": true,
+      "advisory_only": true,
+      "reporting_only": true,
+      "live_trading_enabled": false,
+      "broker_execution_enabled": false,
+      "capital_movement_enabled": false,
+      "automatic_activation_allowed": false,
+      "direct_database_writes": false,
+      "dashboard_artifacts": []
+    }
+  ],
+  "paper_trade_mode": true,
+  "live_trading_enabled": false,
+  "broker_execution_enabled": false,
+  "capital_movement_enabled": false,
+  "reporting_only": true
+}
