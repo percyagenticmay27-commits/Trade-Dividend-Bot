@@ -113,6 +113,9 @@ def build_strategy_inventory(registry: Mapping[str, Any]) -> dict[str, Any]:
             "health_status": health,
             "readiness": str(_first(plugin, ("readiness", "status"), "UNKNOWN")).upper(),
             "output_count": int(_number(plugin.get("output_count"), 0)),
+            "registered": True,
+            "paper_safe": safe,
+            "evidence_complete": bool(plugin.get("evidence_complete", plugin.get("output_count", 0))),
             "contract_complete": safe,
             "paper_trade_mode": _bool(plugin.get("paper_trade_mode"), False),
             "live_trading_enabled": _bool(plugin.get("live_trading_enabled"), False),
@@ -134,13 +137,24 @@ def build_enterprise_health(inventory: Mapping[str, Any]) -> dict[str, Any]:
     for item in inventory.get("strategies", []):
         if not isinstance(item, Mapping):
             continue
-        safe = bool(item.get("contract_complete"))
+        safe = bool(item.get("paper_safe", item.get("contract_complete")))
         health = str(item.get("health_status", "UNKNOWN")).upper()
-        classification = health if health in {"HEALTHY", "WARNING", "DEGRADED", "CRITICAL"} else ("HEALTHY" if safe else "CRITICAL")
+        if not safe:
+            classification = "CRITICAL"
+        elif health in {"HEALTHY", "WARNING", "DEGRADED", "CRITICAL"}:
+            classification = health
+        else:
+            classification = "HEALTHY"
         score = 95 if classification == "HEALTHY" else 75 if classification == "WARNING" else 50 if classification == "DEGRADED" else 0
         rows.append({"strategy_id": item.get("strategy_id"), "classification": classification, "health_score": score})
     counts = {name: sum(row["classification"] == name for row in rows) for name in ("HEALTHY", "WARNING", "DEGRADED", "CRITICAL")}
-    status = "CRITICAL" if counts["CRITICAL"] else "DEGRADED" if counts["DEGRADED"] else "WARNING" if counts["WARNING"] else "HEALTHY"
+    status = (
+        "UNKNOWN" if not rows
+        else "CRITICAL" if counts["CRITICAL"]
+        else "DEGRADED" if counts["DEGRADED"]
+        else "WARNING" if counts["WARNING"]
+        else "HEALTHY"
+    )
     return {
         "enterprise_status": status,
         "strategies": rows,
@@ -178,24 +192,34 @@ def build_investor_evidence(*, root_dir: Path, results_dir: Path, state_dir: Pat
     upcoming, upcoming_warnings = _load_first_rows((results_dir / "upcoming_payments.csv", results_dir / "upcoming_payments.json"))
     warnings.extend(upcoming_warnings)
 
-    available = _number(_first(cash, ("available_cash", "cash_available", "current_cash"), 0.0))
-    allocated = _number(_first(cash, ("allocated_cash", "total_allocated_cash"), 0.0))
-    portfolio_value = _number(_first(cash, ("portfolio_value",), available + allocated))
-    summary = {
-        "portfolio_value": portfolio_value,
-        "cost_basis": _number(_first(cash, ("cost_basis",), allocated)),
-        "capital_appreciation": _number(_first(cash, ("capital_appreciation",), 0.0)),
-        "projected_annual_income": _number(_first(cash, ("projected_annual_income", "annual_income"), 0.0)),
-        "cash_value": available,
-        "cash_percent": (available / portfolio_value * 100.0) if portfolio_value else 0.0,
-    }
+    summary: dict[str, Any] = {}
+    if cash or holdings:
+        available = _number(_first(cash, ("available_cash", "cash_available", "current_cash"), 0.0))
+        allocated = _number(_first(cash, ("allocated_cash", "total_allocated_cash"), 0.0))
+        holdings_value = sum(_number(_first(row, ("market_value", "position_value", "value"), 0.0)) for row in holdings)
+        portfolio_value = _number(_first(cash, ("portfolio_value",), available + allocated if cash else holdings_value))
+        summary = {
+            "portfolio_value": portfolio_value,
+            "cost_basis": _number(_first(cash, ("cost_basis",), allocated)),
+            "capital_appreciation": _number(_first(cash, ("capital_appreciation",), 0.0)),
+            "projected_annual_income": _number(_first(cash, ("projected_annual_income", "annual_income"), 0.0)),
+            "cash_value": available,
+            "cash_percent": (available / portfolio_value * 100.0) if portfolio_value else 0.0,
+        }
     return {
         "portfolio_summary": summary,
         "holdings": holdings,
         "payment_history": payments,
         "upcoming_payments": upcoming,
         "review_flags": [],
-        "evidence_metadata": {"read_only": True, "paper_trade_mode": True},
+        "evidence_metadata": {
+            "read_only": True,
+            "paper_trade_mode": True,
+            "portfolio_summary_available": bool(summary),
+            "holdings_available": bool(holdings),
+            "payment_history_available": bool(payments),
+            "upcoming_payments_available": bool(upcoming),
+        },
     }, warnings
 
 
@@ -207,9 +231,37 @@ def build_dashboard_evidence(*, root_dir: str | Path = ".", results_dir: str | P
         results = root / results
     if not state.is_absolute():
         state = root / state
+
     registry, registry_warning = _mapping(results / "enterprise_dividend_service_registry.json")
-    inventory = build_strategy_inventory(registry)
-    health = build_enterprise_health(inventory)
+    registry_plugins = _registry_plugins(registry)
+    warnings: list[str] = []
+    if registry_warning:
+        warnings.append(registry_warning)
+
+    evidence_source: str | None = None
+    if registry_plugins:
+        inventory = build_strategy_inventory(registry)
+        health = build_enterprise_health(inventory)
+        evidence_source = "enterprise_service_registry"
+    else:
+        existing_inventory, inventory_warning = _mapping(results / "strategy_inventory.json")
+        existing_health, health_warning = _mapping(results / "enterprise_health.json")
+        if existing_inventory and existing_health:
+            inventory = existing_inventory
+            health = existing_health
+            evidence_source = "existing_dashboard_inputs"
+        else:
+            inventory = {}
+            health = {}
+            warnings.extend(message for message in (inventory_warning, health_warning) if message)
+
     investor, investor_warnings = build_investor_evidence(root_dir=root, results_dir=results, state_dir=state)
-    warnings = ([registry_warning] if registry_warning else []) + investor_warnings
-    return {"strategy_inventory": inventory, "enterprise_health": health, "investor_evidence": investor, "warnings": sorted(set(warnings))}
+    warnings.extend(investor_warnings)
+    return {
+        "strategy_inventory": inventory,
+        "enterprise_health": health,
+        "required_evidence_available": bool(inventory and health),
+        "executive_evidence_source": evidence_source,
+        "investor_evidence": investor,
+        "warnings": sorted(set(warnings)),
+    }
