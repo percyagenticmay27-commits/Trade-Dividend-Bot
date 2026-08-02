@@ -17,7 +17,7 @@ from src.dividend_bot.paper_capital_allocation import (
     parse_allocation_form,
     render_allocation_html,
 )
-from src.dividend_bot.paper_capital_allocation_server import available_cash_from_state, create_wsgi_app
+from src.dividend_bot.paper_capital_allocation_server import (available_cash_from_state, create_wsgi_app, render_allocation_page)
 
 
 REGISTRY = {
@@ -92,6 +92,24 @@ def test_html_contains_cash_registered_strategy_and_safety_text():
     assert "PAPER ONLY" in page
     assert "Swing Trading" not in page
 
+
+
+def test_allocation_page_resolves_canonical_dividend_balance_for_legacy_registry_id():
+    page = render_allocation_page(
+        500,
+        [{"strategy_id": "DIVIDEND", "display_name": "Dividend Income Strategy", "status": "READY", "health": "HEALTHY"}],
+        {"DIVIDEND-001": 5000.0, "SWING-001": 4500.0},
+    )
+    assert "Currently allocated: $5,000.00" in page
+
+
+def test_allocation_page_preserves_exact_swing_balance():
+    page = render_allocation_page(
+        500,
+        [{"strategy_id": "SWING-001", "display_name": "Trade Swing Bot", "status": "AVAILABLE", "health": "HEALTHY"}],
+        {"DIVIDEND-001": 5000.0, "SWING-001": 4500.0},
+    )
+    assert "Currently allocated: $4,500.00" in page
 
 def test_form_parser_reads_selected_allocations():
     requested, allocations = parse_allocation_form(b"requested_cash=200&strategy=dividend-income&amount_dividend-income=200")
