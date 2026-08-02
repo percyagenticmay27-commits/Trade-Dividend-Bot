@@ -102,7 +102,7 @@ def audit_production_hardening(
     }
     for name, present in environment_presence.items():
         if not present:
-            warnings.append(f"Deployment environment variable is not configured: {name}")
+            warnings.append(f"Deployment environment variable is missing: {name}")
 
     package_report_path = results / PACKAGE_REPORT_NAME
     package_report, package_error = _read_mapping(package_report_path)
