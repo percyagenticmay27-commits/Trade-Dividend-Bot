@@ -129,6 +129,44 @@ def test_recovery_components_are_reported(tmp_path: Path) -> None:
     assert recovery["restore_test_status"] == "NOT_YET_EXECUTED"
 
 
+
+def _write_recovery(results: Path, *, status: str = "PASSED") -> None:
+    (results / "enterprise_backup_recovery_validation.json").write_text(
+        json.dumps({
+            "recovery_status": status,
+            "restore_test_status": status,
+            "source_files_unchanged": status == "PASSED",
+        }),
+        encoding="utf-8",
+    )
+
+
+def test_passed_recovery_evidence_removes_restore_warning(tmp_path: Path) -> None:
+    results = _populate(tmp_path)
+    _write_recovery(results)
+    report = audit_production_hardening(
+        root_dir=tmp_path, results_dir=results, environment=_environment()
+    )
+    assert report["recovery_readiness"]["recovery_status"] == "PASSED"
+    assert report["recovery_readiness"]["restore_test_status"] == "PASSED"
+    assert not any(
+        "not yet been executed" in item for item in report["warnings"]
+    )
+    assert report["errors"] == []
+
+
+def test_failed_recovery_evidence_blocks_hardening(tmp_path: Path) -> None:
+    results = _populate(tmp_path)
+    _write_recovery(results, status="FAILED")
+    report = audit_production_hardening(
+        root_dir=tmp_path, results_dir=results, environment=_environment()
+    )
+    assert report["hardening_status"] == "BLOCKED"
+    assert any(
+        "Recovery validation status must be PASSED" in item
+        for item in report["errors"]
+    )
+
 def test_audit_writes_json_and_markdown_reports(tmp_path: Path) -> None:
     results = _populate(tmp_path)
     report = audit_and_write_production_hardening(
