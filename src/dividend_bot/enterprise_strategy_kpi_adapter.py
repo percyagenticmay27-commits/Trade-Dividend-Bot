@@ -110,11 +110,23 @@ def _safe_path(raw: str, root_dir: Path) -> Path | None:
     return resolved if resolved.suffix.lower() in {".json", ".csv"} else None
 
 
+def _canonical_field_name(value: Any) -> str:
+    """Normalize artifact field names without changing their values."""
+    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+
+
 def _read_artifact(path: Path) -> Any:
     if path.suffix.lower() == ".json":
         return json.loads(path.read_text(encoding="utf-8"))
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
-        return [dict(row) for row in csv.DictReader(handle)]
+        return [
+            {
+                _canonical_field_name(key): value
+                for key, value in row.items()
+                if key is not None
+            }
+            for row in csv.DictReader(handle)
+        ]
 
 
 def _walk_mappings(value: Any) -> Iterable[Mapping[str, Any]]:
@@ -225,7 +237,14 @@ def build_strategy_kpis(
         )
         positions = _count(
             payloads,
-            ("positions", "holdings", "open_positions", "position_count", "holding_count"),
+            (
+                "positions",
+                "holdings",
+                "open_positions",
+                "open_buckets",
+                "position_count",
+                "holding_count",
+            ),
         )
         opportunity = _metric(
             payloads,
