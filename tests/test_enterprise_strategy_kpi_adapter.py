@@ -196,3 +196,32 @@ def test_adapter_is_read_only(tmp_path: Path) -> None:
     build_strategy_kpis(registry=registry, root_dir=tmp_path)
 
     assert artifact.read_text(encoding="utf-8") == original
+
+
+
+def test_dividend_snapshot_csv_maps_legacy_headers_to_enterprise_kpis(
+    tmp_path: Path,
+) -> None:
+    snapshot = tmp_path / "portfolio_snapshot.csv"
+    snapshot.write_text(
+        "Date,Portfolio_Value,Open_Buckets,Cash\n"
+        "2026-08-02,5125.50,3,125.50\n",
+        encoding="utf-8",
+    )
+    registry = {
+        "strategy_plugins": [
+            _plugin("DIVIDEND-001", "Dividend Income Strategy", str(snapshot))
+        ]
+    }
+
+    rows, warnings = build_strategy_kpis(
+        registry=registry,
+        strategy_allocations={"DIVIDEND-001": 5000},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert rows[0]["allocated_capital"] == 5000.0
+    assert rows[0]["portfolio_value"] == 5125.5
+    assert rows[0]["position_count"] == 3
+    assert rows[0]["evidence_status"] == "AVAILABLE"
