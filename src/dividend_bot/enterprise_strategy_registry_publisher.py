@@ -12,6 +12,7 @@ SCHEMA_VERSION = "1.0"
 DEFAULT_SOURCE = Path("config/enterprise_strategy_registry.json")
 DEFAULT_TARGET = Path("results/enterprise_dividend_service_registry.json")
 REQUIRED_STRATEGIES = ("DIVIDEND-001", "SWING-001")
+LEGACY_CANONICAL_ALIASES = {"DIVIDEND"}
 
 
 def _read_mapping(path: Path) -> dict[str, Any]:
@@ -115,8 +116,7 @@ def publish_enterprise_strategy_registry(
     canonical_ids = {_strategy_id(item) for item in canonical_plugins}
     preserved = [
         item for item in _plugins(existing)
-        if _strategy_id(item) and _strategy_id(item) not in canonical_ids
-    ] if existing.get("strategy_plugins") is not None else []
+        if _strategy_id(item)\n        and _strategy_id(item) not in canonical_ids\n        and _strategy_id(item) not in LEGACY_CANONICAL_ALIASES\n    ] if existing.get("strategy_plugins") is not None else []
     merged = sorted(
         [*preserved, *canonical_plugins], key=lambda item: _strategy_id(item)
     )
