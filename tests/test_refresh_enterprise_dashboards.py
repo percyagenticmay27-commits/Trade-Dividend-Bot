@@ -197,6 +197,19 @@ def test_adapter_reconstruction_is_labeled_and_not_claimed_authoritative(
         for warning in summary["warnings"]
     )
 
+    executive = json.loads(
+        (results / "ai_cio_executive_dashboard.json").read_text(encoding="utf-8")
+    )
+    investor = json.loads(
+        (results / "enterprise_investor_dashboard.json").read_text(encoding="utf-8")
+    )
+    assert executive["portfolio_summary"]["available_cash"] == 500.0
+    assert executive["portfolio_summary"]["allocated_cash"] == 9500.0
+    assert executive["portfolio_summary"]["portfolio_value"] == 10000.0
+    assert executive["portfolio_summary"]["paper_capital_source"] == "paper_cash_account"
+    assert investor["investor_summary"]["cash_or_reserve_value"] == 500.0
+    assert investor["investor_summary"]["portfolio_value"] == 10000.0
+
 
 def test_reconstruction_payload_is_detected_without_metadata_flags() -> None:
     adapted = {
