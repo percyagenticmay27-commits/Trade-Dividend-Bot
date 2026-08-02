@@ -21,7 +21,25 @@
       "capital_movement_enabled": false,
       "automatic_activation_allowed": false,
       "direct_database_writes": false,
-      "dashboard_artifacts": []
+      "plugin_contract_version": "2.0",
+      "capabilities": [
+        {"capability_id": "executive_dashboard", "display_name": "Executive Dashboard", "enabled": true, "read_only": true},
+        {"capability_id": "income_reporting", "display_name": "Income Reporting", "enabled": true, "read_only": true},
+        {"capability_id": "investor_dashboard", "display_name": "Investor Dashboard", "enabled": true, "read_only": true},
+        {"capability_id": "portfolio", "display_name": "Portfolio", "enabled": true, "read_only": true},
+        {"capability_id": "portfolio_lifecycle", "display_name": "Portfolio Lifecycle", "enabled": true, "read_only": true},
+        {"capability_id": "strategy_health", "display_name": "Strategy Health", "enabled": true, "read_only": true},
+        {"capability_id": "wealth_attribution", "display_name": "Wealth Attribution", "enabled": true, "read_only": true}
+      ],
+      "dashboard_artifacts": [
+        {"artifact_id": "ai_cio_executive_dashboard", "artifact_type": "EXECUTIVE_DASHBOARD", "path": "results/ai_cio_executive_dashboard.json", "format": "JSON", "scope": "ENTERPRISE", "authoritative": true, "required": false, "read_only": true},
+        {"artifact_id": "enterprise_investor_dashboard", "artifact_type": "INVESTOR_DASHBOARD", "path": "results/enterprise_investor_dashboard.json", "format": "JSON", "scope": "ENTERPRISE", "authoritative": true, "required": false, "read_only": true},
+        {"artifact_id": "portfolio_snapshot", "artifact_type": "PORTFOLIO", "path": "portfolio_snapshot.csv", "format": "CSV", "scope": "STRATEGY", "authoritative": true, "required": false, "read_only": true},
+        {"artifact_id": "strategy_health_report", "artifact_type": "STRATEGY_HEALTH", "path": "strategy_health_report.md", "format": "MARKDOWN", "scope": "STRATEGY", "authoritative": true, "required": false, "read_only": true}
+      ],
+      "capability_count": 7,
+      "published_artifact_count": 4,
+      "contract_warnings": []
     },
     {
       "strategy_id": "SWING-001",
