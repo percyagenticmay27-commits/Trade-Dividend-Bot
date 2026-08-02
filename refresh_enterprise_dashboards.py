@@ -12,6 +12,9 @@ from src.dividend_bot.registry_dashboard_evidence_adapter_v2 import (
     build_registry_dashboard_evidence_v2,
 )
 from src.dividend_bot.enterprise_strategy_kpi_adapter import build_strategy_kpis
+from src.dividend_bot.enterprise_dashboard_decision_journal_adapter import (
+    attach_strategy_decision_journals,
+)
 from src.dividend_bot.enterprise_dashboard_strategy_discovery import (
     build_dashboard_refresh_consumer_payloads,
 )
@@ -328,6 +331,10 @@ def refresh_enterprise_dashboards(
         strategy_allocations=_strategy_allocations(cash_state),
         root_dir=root,
     )
+    strategy_kpis, journal_warnings = attach_strategy_decision_journals(
+        strategy_kpis,
+        results_dir=directory,
+    )
 
     executive = build_executive_dashboard(input_dir=directory)
     executive["dashboard_scope"] = "ENTERPRISE_ALL_REGISTERED_STRATEGIES"
@@ -427,6 +434,7 @@ def refresh_enterprise_dashboards(
         list(evidence.get("warnings", []))
         + source_warnings
         + kpi_warnings
+        + journal_warnings
         + discovery_warnings
     )
     warnings.extend(
