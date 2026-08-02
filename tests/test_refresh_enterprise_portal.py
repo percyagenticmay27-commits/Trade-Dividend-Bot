@@ -38,7 +38,32 @@ def _intelligence_summary(tmp_path: Path) -> dict:
     }
 
 
-def test_runs_base_refresh_before_intelligence_publication(monkeypatch, tmp_path: Path) -> None:
+def _journal_summary(tmp_path: Path) -> dict:
+    results = tmp_path / "results"
+    return {
+        "generation_complete": True,
+        "paths": {
+            "dividend_decision_journal": str(
+                results / "dividend_strategy_decision_journal.json"
+            ),
+            "swing_decision_journal": str(
+                results / "swing_strategy_decision_journal.json"
+            ),
+        },
+        "warnings": ["journal warning"],
+        "errors": [],
+    }
+
+
+def _patch_journals(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(
+        launcher,
+        "generate_all_strategy_decision_journals",
+        lambda **kwargs: _journal_summary(tmp_path),
+    )
+
+
+def test_runs_base_refresh_before_intelligence_and_journal_publication(monkeypatch, tmp_path: Path) -> None:
     calls: list[tuple[str, object]] = []
 
     def fake_refresh(**kwargs):
@@ -49,8 +74,13 @@ def test_runs_base_refresh_before_intelligence_publication(monkeypatch, tmp_path
         calls.append(("publish", kwargs))
         return _intelligence_summary(tmp_path)
 
+    def fake_journals(**kwargs):
+        calls.append(("journals", kwargs))
+        return _journal_summary(tmp_path)
+
     monkeypatch.setattr(launcher, "refresh_enterprise_dashboards", fake_refresh)
     monkeypatch.setattr(launcher, "publish_enterprise_dashboard_intelligence", fake_publish)
+    monkeypatch.setattr(launcher, "generate_all_strategy_decision_journals", fake_journals)
 
     summary = launcher.refresh_enterprise_portal(
         root_dir=tmp_path,
@@ -58,30 +88,25 @@ def test_runs_base_refresh_before_intelligence_publication(monkeypatch, tmp_path
         state_dir="state",
     )
 
-    assert [name for name, _ in calls] == ["refresh", "publish"]
+    assert [name for name, _ in calls] == ["refresh", "publish", "journals"]
     assert calls[1][1]["results_dir"] == tmp_path / "results"
+    assert calls[2][1]["results_dir"] == tmp_path / "results"
     assert summary["refresh_complete"] is True
 
 
 def test_returns_one_combined_summary(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(
-        launcher,
-        "refresh_enterprise_dashboards",
-        lambda **kwargs: _dashboard_summary(tmp_path),
-    )
-    monkeypatch.setattr(
-        launcher,
-        "publish_enterprise_dashboard_intelligence",
-        lambda **kwargs: _intelligence_summary(tmp_path),
-    )
+    monkeypatch.setattr(launcher, "refresh_enterprise_dashboards", lambda **kwargs: _dashboard_summary(tmp_path))
+    monkeypatch.setattr(launcher, "publish_enterprise_dashboard_intelligence", lambda **kwargs: _intelligence_summary(tmp_path))
+    _patch_journals(monkeypatch, tmp_path)
 
     summary = launcher.refresh_enterprise_portal(root_dir=tmp_path)
 
     assert summary["registered_strategy_count"] == 2
     assert summary["strategy_ids"] == ["DIVIDEND-001", "SWING-001"]
-    assert summary["warnings"] == ["base warning", "intelligence warning"]
+    assert summary["warnings"] == ["base warning", "intelligence warning", "journal warning"]
     assert "executive_json" in summary["paths"]
     assert "intelligence_enterprise_dashboard_intelligence" in summary["paths"]
+    assert "journal_dividend_decision_journal" in summary["paths"]
 
 
 def test_detects_strategy_identity_drift(monkeypatch, tmp_path: Path) -> None:
@@ -89,18 +114,11 @@ def test_detects_strategy_identity_drift(monkeypatch, tmp_path: Path) -> None:
     intelligence = _intelligence_summary(tmp_path)
     intelligence["strategy_ids"] = ["DIVIDEND-001"]
     intelligence["registered_strategy_count"] = 1
-
-    monkeypatch.setattr(
-        launcher, "refresh_enterprise_dashboards", lambda **kwargs: dashboard
-    )
-    monkeypatch.setattr(
-        launcher,
-        "publish_enterprise_dashboard_intelligence",
-        lambda **kwargs: intelligence,
-    )
+    monkeypatch.setattr(launcher, "refresh_enterprise_dashboards", lambda **kwargs: dashboard)
+    monkeypatch.setattr(launcher, "publish_enterprise_dashboard_intelligence", lambda **kwargs: intelligence)
+    _patch_journals(monkeypatch, tmp_path)
 
     summary = launcher.refresh_enterprise_portal(root_dir=tmp_path)
-
     assert summary["refresh_complete"] is False
     assert any("strategy IDs" in error for error in summary["errors"])
 
@@ -108,18 +126,11 @@ def test_detects_strategy_identity_drift(monkeypatch, tmp_path: Path) -> None:
 def test_preserves_dashboard_errors(monkeypatch, tmp_path: Path) -> None:
     dashboard = _dashboard_summary(tmp_path)
     dashboard["errors"] = ["required dashboard evidence missing"]
-
-    monkeypatch.setattr(
-        launcher, "refresh_enterprise_dashboards", lambda **kwargs: dashboard
-    )
-    monkeypatch.setattr(
-        launcher,
-        "publish_enterprise_dashboard_intelligence",
-        lambda **kwargs: _intelligence_summary(tmp_path),
-    )
+    monkeypatch.setattr(launcher, "refresh_enterprise_dashboards", lambda **kwargs: dashboard)
+    monkeypatch.setattr(launcher, "publish_enterprise_dashboard_intelligence", lambda **kwargs: _intelligence_summary(tmp_path))
+    _patch_journals(monkeypatch, tmp_path)
 
     summary = launcher.refresh_enterprise_portal(root_dir=tmp_path)
-
     assert summary["refresh_complete"] is False
     assert summary["errors"] == ["required dashboard evidence missing"]
 
@@ -127,41 +138,30 @@ def test_preserves_dashboard_errors(monkeypatch, tmp_path: Path) -> None:
 def test_absolute_results_directory_is_not_rebased(monkeypatch, tmp_path: Path) -> None:
     results = tmp_path / "absolute-results"
     captured: dict[str, object] = {}
-
-    monkeypatch.setattr(
-        launcher,
-        "refresh_enterprise_dashboards",
-        lambda **kwargs: _dashboard_summary(tmp_path),
-    )
+    monkeypatch.setattr(launcher, "refresh_enterprise_dashboards", lambda **kwargs: _dashboard_summary(tmp_path))
 
     def fake_publish(**kwargs):
-        captured.update(kwargs)
+        captured["publish"] = kwargs["results_dir"]
         return _intelligence_summary(tmp_path)
 
+    def fake_journals(**kwargs):
+        captured["journals"] = kwargs["results_dir"]
+        return _journal_summary(tmp_path)
+
     monkeypatch.setattr(launcher, "publish_enterprise_dashboard_intelligence", fake_publish)
+    monkeypatch.setattr(launcher, "generate_all_strategy_decision_journals", fake_journals)
 
-    launcher.refresh_enterprise_portal(
-        root_dir=tmp_path / "root",
-        results_dir=results,
-    )
-
-    assert captured["results_dir"] == results
+    launcher.refresh_enterprise_portal(root_dir=tmp_path / "root", results_dir=results)
+    assert captured["publish"] == results
+    assert captured["journals"] == results
 
 
 def test_safety_metadata_is_locked(monkeypatch, tmp_path: Path) -> None:
-    monkeypatch.setattr(
-        launcher,
-        "refresh_enterprise_dashboards",
-        lambda **kwargs: _dashboard_summary(tmp_path),
-    )
-    monkeypatch.setattr(
-        launcher,
-        "publish_enterprise_dashboard_intelligence",
-        lambda **kwargs: _intelligence_summary(tmp_path),
-    )
+    monkeypatch.setattr(launcher, "refresh_enterprise_dashboards", lambda **kwargs: _dashboard_summary(tmp_path))
+    monkeypatch.setattr(launcher, "publish_enterprise_dashboard_intelligence", lambda **kwargs: _intelligence_summary(tmp_path))
+    _patch_journals(monkeypatch, tmp_path)
 
     summary = launcher.refresh_enterprise_portal(root_dir=tmp_path)
-
     assert summary["paper_trade_mode"] is True
     assert summary["live_trading_enabled"] is False
     assert summary["broker_execution_enabled"] is False
