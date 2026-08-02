@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
 MODULE_NAME = "strategy_decision_journal"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 SCHEMA_VERSION = "1.0"
 
 PAPER_TRADE_MODE = True
@@ -34,6 +34,15 @@ def _nonempty(value: Any, field: str) -> str:
     if not text:
         raise DecisionJournalError(f"{field} is required")
     return text
+
+
+def _first_nonempty(entry: Mapping[str, Any], *fields: str) -> Any:
+    """Return the first supplied non-empty compatibility field value."""
+    for field in fields:
+        value = entry.get(field)
+        if str(value or "").strip():
+            return value
+    return None
 
 
 def _timestamp(value: Any) -> str:
@@ -115,13 +124,21 @@ def _normalize_common(entry: Mapping[str, Any], strategy_id: str, kind: str) -> 
 
 
 def _normalize_dividend(entry: Mapping[str, Any], common: dict[str, Any]) -> dict[str, Any]:
-    mode = str(entry.get("ecosystem_mode") or "PAIR").strip().upper()
+    mode_value = _first_nonempty(entry, "ecosystem_mode", "ecosystem_node") or "PAIR"
+    mode = str(mode_value).strip().upper()
     if mode not in SUPPORTED_DIVIDEND_MODES:
         raise DecisionJournalError(f"Unsupported dividend ecosystem_mode: {mode}")
 
+    # Canonical v1 fields remain preferred. The strategy event publisher may use
+    # the compact aliases `ecosystem` and `ecosystem_node`; normalize those here
+    # so stored journals retain one stable canonical schema.
+    ecosystem_value = _first_nonempty(entry, "ecosystem_id", "ecosystem")
+    ecosystem_name_value = _first_nonempty(
+        entry, "ecosystem_name", "ecosystem", "ecosystem_id"
+    )
     ecosystem = {
-        "ecosystem_id": _nonempty(entry.get("ecosystem_id"), "ecosystem_id"),
-        "ecosystem_name": _nonempty(entry.get("ecosystem_name"), "ecosystem_name"),
+        "ecosystem_id": _nonempty(ecosystem_value, "ecosystem_id"),
+        "ecosystem_name": _nonempty(ecosystem_name_value, "ecosystem_name"),
         "mode": mode,
     }
 
