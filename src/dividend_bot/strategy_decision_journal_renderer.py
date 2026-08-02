@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from html import escape
 from typing import Any, Mapping, Sequence
 
@@ -56,9 +56,21 @@ def _render_committee_rows(rows: Sequence[Mapping[str, Any]]) -> str:
 
 
 def _render_dividend_identity(entry: Mapping[str, Any]) -> str:
-    ecosystem = escape(_text(entry.get("ecosystem_name"), "Dividend ecosystem"))
-    income_leg = escape(_text(entry.get("income_leg")))
-    leverage_leg = escape(_text(entry.get("leverage_leg")))
+    nested = entry.get("ecosystem")
+    ecosystem_data = nested if isinstance(nested, Mapping) else {}
+    ecosystem = escape(
+        _text(
+            ecosystem_data.get("ecosystem_name")
+            or entry.get("ecosystem_name"),
+            "Dividend ecosystem",
+        )
+    )
+    income_leg = escape(
+        _text(ecosystem_data.get("income_leg") or entry.get("income_leg"))
+    )
+    leverage_leg = escape(
+        _text(ecosystem_data.get("leverage_leg") or entry.get("leverage_leg"))
+    )
     return (
         f'<div class="decision-object"><span class="type">ECOSYSTEM PAIR</span>'
         f'<h3>{ecosystem}</h3><div class="pair">'
@@ -79,7 +91,9 @@ def _render_swing_identity(entry: Mapping[str, Any]) -> str:
 def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
     """Render one strategy-owned, read-only Decision Journal HTML fragment."""
     strategy_id = _text(journal.get("strategy_id"), "UNKNOWN")
-    strategy_type = _text(journal.get("strategy_type"), "UNKNOWN").upper()
+    strategy_type = _text(
+        journal.get("strategy_type") or journal.get("strategy_kind"), "UNKNOWN"
+    ).upper()
     entries_raw = journal.get("decisions") or journal.get("entries") or []
     entries = _sorted_entries([e for e in entries_raw if isinstance(e, Mapping)])
 
@@ -119,7 +133,12 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
 
     empty = '<div class="empty-state">No decisions reported for this strategy.</div>' if not cards else ""
     title = escape(_text(journal.get("strategy_name"), strategy_id))
-    generated_at = escape(_text(journal.get("generated_at"), datetime.utcnow().isoformat(timespec="seconds") + "Z"))
+    generated_at = escape(
+        _text(
+            journal.get("generated_at"),
+            datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z"),
+        )
+    )
 
     return f'''<section class="strategy-decision-journal" data-strategy-id="{escape(strategy_id)}">
 <header class="journal-heading"><div><p class="eyebrow">STRATEGY-OWNED · NEWEST FIRST</p>
