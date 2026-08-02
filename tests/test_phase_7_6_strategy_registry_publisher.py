@@ -79,6 +79,41 @@ def test_publisher_writes_canonical_registry(tmp_path: Path) -> None:
     assert payload["broker_execution_enabled"] is False
 
 
+def test_canonical_dividend_source_declares_existing_evidence_contract() -> None:
+    payload = json.loads(
+        Path("config/enterprise_strategy_registry.json").read_text(encoding="utf-8")
+    )
+    dividend = next(
+        item for item in payload["strategy_plugins"]
+        if item["strategy_id"] == "DIVIDEND-001"
+    )
+    capabilities = {
+        item["capability_id"] for item in dividend["capabilities"] if item["enabled"]
+    }
+    artifacts = {
+        item["artifact_id"]: item["path"]
+        for item in dividend["dashboard_artifacts"]
+    }
+    assert capabilities == {
+        "executive_dashboard",
+        "income_reporting",
+        "investor_dashboard",
+        "portfolio",
+        "portfolio_lifecycle",
+        "strategy_health",
+        "wealth_attribution",
+    }
+    assert artifacts["ai_cio_executive_dashboard"] == (
+        "results/ai_cio_executive_dashboard.json"
+    )
+    assert artifacts["enterprise_investor_dashboard"] == (
+        "results/enterprise_investor_dashboard.json"
+    )
+    assert artifacts["portfolio_snapshot"] == "portfolio_snapshot.csv"
+    assert dividend["capability_count"] == 7
+    assert dividend["published_artifact_count"] == 4
+
+
 def test_unrelated_existing_plugin_is_preserved(tmp_path: Path) -> None:
     source = _source(tmp_path)
     target = tmp_path / "results" / "registry.json"
@@ -116,7 +151,6 @@ def test_canonical_entries_replace_stale_versions(tmp_path: Path) -> None:
     assert dividend["live_trading_enabled"] is False
 
 
-
 def test_legacy_dividend_alias_is_replaced_not_preserved(tmp_path: Path) -> None:
     source = _source(tmp_path)
     target = tmp_path / "results" / "registry.json"
@@ -130,6 +164,7 @@ def test_legacy_dividend_alias_is_replaced_not_preserved(tmp_path: Path) -> None
     )
     assert report["strategy_ids"] == ["DIVIDEND-001", "SWING-001"]
     assert "DIVIDEND" not in report["preserved_strategy_ids"]
+
 
 def test_launcher_exit_codes(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
