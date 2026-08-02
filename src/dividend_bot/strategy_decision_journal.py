@@ -12,8 +12,12 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any, Iterable, Mapping
 
+from .enterprise_strategy_decision_canonicalizer import (
+    canonicalize_strategy_decision_event,
+)
+
 MODULE_NAME = "strategy_decision_journal"
-MODULE_VERSION = "1.0.1"
+MODULE_VERSION = "1.0.2"
 SCHEMA_VERSION = "1.0"
 
 PAPER_TRADE_MODE = True
@@ -37,7 +41,6 @@ def _nonempty(value: Any, field: str) -> str:
 
 
 def _first_nonempty(entry: Mapping[str, Any], *fields: str) -> Any:
-    """Return the first supplied non-empty compatibility field value."""
     for field in fields:
         value = entry.get(field)
         if str(value or "").strip():
@@ -129,9 +132,6 @@ def _normalize_dividend(entry: Mapping[str, Any], common: dict[str, Any]) -> dic
     if mode not in SUPPORTED_DIVIDEND_MODES:
         raise DecisionJournalError(f"Unsupported dividend ecosystem_mode: {mode}")
 
-    # Canonical v1 fields remain preferred. The strategy event publisher may use
-    # the compact aliases `ecosystem` and `ecosystem_node`; normalize those here
-    # so stored journals retain one stable canonical schema.
     ecosystem_value = _first_nonempty(entry, "ecosystem_id", "ecosystem")
     ecosystem_name_value = _first_nonempty(
         entry, "ecosystem_name", "ecosystem", "ecosystem_id"
@@ -215,10 +215,11 @@ def normalize_decision(
     if kind not in SUPPORTED_STRATEGY_KINDS:
         raise DecisionJournalError(f"Unsupported strategy_kind: {kind}")
 
-    common = _normalize_common(entry, strategy_id, kind)
+    canonical_entry = canonicalize_strategy_decision_event(entry)
+    common = _normalize_common(canonical_entry, strategy_id, kind)
     if kind == "DIVIDEND":
-        return _normalize_dividend(entry, common)
-    return _normalize_swing(entry, common)
+        return _normalize_dividend(canonical_entry, common)
+    return _normalize_swing(canonical_entry, common)
 
 
 def build_strategy_decision_journal(
