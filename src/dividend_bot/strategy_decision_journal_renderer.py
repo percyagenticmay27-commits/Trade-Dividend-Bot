@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from html import escape
 from typing import Any, Mapping, Sequence
+from urllib.parse import quote
 
 MODULE_NAME = "strategy_decision_journal_renderer"
 MODULE_VERSION = "1.0.0"
@@ -215,6 +216,8 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
 
     empty = '<div class="empty-state">No decisions reported for this strategy.</div>' if not cards else ""
     title = escape(_text(journal.get("strategy_name"), strategy_id))
+    encoded_strategy_id = quote(strategy_id, safe="")
+    strategy_anchor = escape(strategy_id, quote=True)
     generated_at = escape(
         _text(
             journal.get("generated_at"),
@@ -226,6 +229,12 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
 <header class="journal-heading"><div><p class="eyebrow">STRATEGY-OWNED · NEWEST FIRST</p>
 <h2>{title} Decision Journal</h2><p>Only decisions and evidence owned by {escape(strategy_id)} are shown.</p></div>
 <div class="journal-meta"><span>PAPER ONLY</span><span>READ ONLY</span><small>Generated {generated_at}</small></div></header>
+<nav class="journal-cross-links" aria-label="{title} Enterprise links">
+<a href="/executive-dashboard?strategy={encoded_strategy_id}#strategy-{strategy_anchor}">Executive Dashboard</a>
+<a href="/investor-dashboard?strategy={encoded_strategy_id}#strategy-{strategy_anchor}">Investor Dashboard</a>
+<a href="/executive-dashboard?strategy={encoded_strategy_id}#strategy-{strategy_anchor}">Strategy Workspace</a>
+<a href="/executive-dashboard?strategy={encoded_strategy_id}&amp;tab=decisions#strategy-{strategy_anchor}" aria-current="page">Decision Journal</a>
+</nav>
 <div class="journal-filters"><button data-filter="ALL">All</button><button data-filter="BUY">Buy</button>
 <button data-filter="SELL">Sell</button><button data-filter="REPLACE">Replace</button>
 <button data-filter="WATCHLIST">Watchlist</button></div>
@@ -241,7 +250,7 @@ body{{font-family:Arial,sans-serif;background:#f5f7fb;color:#101828;margin:0;pad
 .journal-heading,.decision-card{{background:#fff;border:1px solid #dbe3ef;border-radius:16px;padding:20px;margin-bottom:16px}}
 .journal-heading{{display:flex;justify-content:space-between;gap:20px}}.eyebrow,.type{{color:#5b21b6;font-weight:700;font-size:12px}}
 .journal-meta span,.status,.decision-type{{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}}
-.journal-filters{{display:flex;gap:8px;margin:16px 0}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
+.journal-cross-links,.journal-filters{{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}}.journal-cross-links a{{padding:9px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5b21b6;text-decoration:none;font-weight:700}}.journal-cross-links a[aria-current="page"]{{background:#5b21b6;color:#fff}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
 .decision-card header{{display:flex;justify-content:space-between}}.pair{{display:flex;align-items:center;gap:16px;margin:12px 0}}.pair span:not(.plus){{background:#f8fafc;border:1px solid #dbe3ef;padding:12px 18px;border-radius:12px}}.pair b{{display:block;font-size:11px;color:#64748b}}
 table{{width:100%;border-collapse:collapse;margin-top:12px}}th,td{{border-bottom:1px solid #e5e7eb;padding:10px;text-align:left}}details{{margin-top:14px}}summary{{font-weight:700;cursor:pointer}}.committee-evidence-timeline{{margin-top:18px}}.committee-timeline{{list-style:none;margin:12px 0 0;padding:0 0 0 18px;border-left:3px solid #c4b5fd}}.committee-step{{position:relative;display:grid;grid-template-columns:34px 1fr;gap:10px;margin:0 0 16px -36px}}.committee-sequence{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#5b21b6;color:#fff;font-weight:800}}.committee-step-content{{background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:12px}}.committee-step-content header{{display:flex;justify-content:space-between;gap:12px}}.committee-vote{{font-size:12px;font-weight:800;color:#5b21b6}}.committee-step-content dl{{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}}.committee-step-content dl div{{display:flex;gap:5px}}.committee-step-content dt{{color:#64748b}}.committee-step-content dd{{margin:0;font-weight:700}}
 .image-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}}.evidence-image{{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0;text-decoration:none}}a.evidence-image{{cursor:pointer}}.evidence-image img{{width:100%;height:160px;object-fit:cover;display:block}}.evidence-image span,.evidence-image p{{display:block;padding:10px;margin:0}}.image-unavailable{{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}}.empty,.empty-state{{color:#64748b;padding:18px}}
