@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.dividend_bot.enterprise_portal_strategy_ui import render_left_navigation, render_strategy_workspace
+from src.dividend_bot.enterprise_portal_strategy_ui import render_left_navigation, render_strategy_workspace, strategy_ui_css
 from src.dividend_bot.enterprise_strategy_kpi_adapter import build_strategy_kpis
 from src.dividend_bot.portal_dashboard_routes import render_executive_dashboard_body, render_investor_dashboard_body
 
@@ -94,6 +94,24 @@ def test_strategy_workspace_uses_one_view_analysis_and_more_link() -> None:
     assert "AI CIO Commentary" in value
     assert "Trade Swing Bot" in value
     assert "Watchlist" in value
+    assert "Strategy data pending" not in value
+
+
+def test_registry_only_workspace_has_explicit_pending_state_and_theme() -> None:
+    value = render_strategy_workspace({"strategy_kpis": [{
+        "strategy_id": "SWING-001",
+        "display_name": "Trade Swing Bot",
+        "allocated_capital": 4500,
+        "evidence_status": "REGISTRY_ONLY",
+    }]}, audience="executive")
+    css = strategy_ui_css()
+
+    assert "Strategy data pending" in value
+    assert "Not reported" in value
+    assert "data-availability-pending" in value
+    assert "--cio-purple" in css
+    assert "data-workspace-tab-target='income'" in css
+    assert "data-workspace-tab-target='decisions'" in css
 
 
 def test_executive_dashboard_labels_top_cards_as_enterprise_totals() -> None:
