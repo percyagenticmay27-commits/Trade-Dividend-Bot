@@ -293,7 +293,7 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
         )
         panels.append(f"""
 <section class='strategy-analysis panel'{hidden} data-strategy-panel='{sid}'>
-  <h2>{name} — KPI Workspace</h2>
+  <h2>{name} — One View Analysis KPI Workspace</h2>
   <p class='scope-note'>This workspace contains only this registered strategy's evidence. Enterprise totals remain above.</p>
   <nav class='workspace-tabs' aria-label='{name} KPI workspace tabs'>{''.join(tab_buttons)}</nav>
   <div class='workspace-tab-content'>{''.join(tab_panels)}</div>
