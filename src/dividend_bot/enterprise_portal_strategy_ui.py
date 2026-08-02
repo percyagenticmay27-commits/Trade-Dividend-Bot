@@ -4,6 +4,8 @@ from __future__ import annotations
 import html
 from typing import Any, Mapping
 
+from .strategy_decision_journal_renderer import render_strategy_decision_journal
+
 
 def _money(value: Any) -> str:
     try:
@@ -61,6 +63,42 @@ def _capability_list(row: Mapping[str, Any]) -> str:
     ) + "</ul>"
 
 
+
+def _decision_journal(row: Mapping[str, Any]) -> str:
+    journal = row.get("decision_journal")
+    strategy_id = str(row.get("strategy_id") or "").strip()
+    status = html.escape(str(row.get("decision_journal_status") or "NOT_REPORTED"))
+    if not isinstance(journal, Mapping):
+        return (
+            "<section class='strategy-decision-panel'>"
+            "<h3>Decisions</h3>"
+            f"<p class='scope-note'>Decision Journal status: {status}.</p>"
+            "<p>No strategy-owned decisions are currently available.</p>"
+            "</section>"
+        )
+    journal_strategy_id = str(journal.get("strategy_id") or "").strip()
+    if journal_strategy_id != strategy_id:
+        return (
+            "<section class='strategy-decision-panel'>"
+            "<h3>Decisions unavailable</h3>"
+            "<p>Cross-strategy Decision Journal evidence was rejected.</p>"
+            "</section>"
+        )
+    try:
+        rendered = render_strategy_decision_journal(journal)
+    except (TypeError, ValueError):
+        return (
+            "<section class='strategy-decision-panel'>"
+            "<h3>Decisions unavailable</h3>"
+            "<p>The strategy Decision Journal could not be rendered safely.</p>"
+            "</section>"
+        )
+    return (
+        "<section class='strategy-decision-panel'>"
+        f"{rendered}"
+        "</section>"
+    )
+
 def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> str:
     strategies = report.get("strategy_kpis")
     if not isinstance(strategies, list) or not strategies:
@@ -103,6 +141,7 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
             f"The registry declares {html.escape(str(row.get('capability_count') or 0))} capabilities and "
             f"{html.escape(str(row.get('published_artifact_count') or 0))} report artifacts."
         )
+        decision_journal = _decision_journal(row)
         panels.append(f"""
 <section class='strategy-analysis panel'{hidden} data-strategy-panel='{sid}'>
   <h2>{name} — One View Analysis</h2>
@@ -122,6 +161,7 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
     <div><h3>Published Artifact Contract</h3>{_artifact_list(row)}</div>
   </div>
   <div><h3>Currently Readable Evidence</h3>{loaded_evidence}</div>
+  {decision_journal}
   <div class='ai-commentary'><strong>AI CIO Commentary</strong><p>{commentary}</p></div>
 </section>""")
 
@@ -150,6 +190,6 @@ def strategy_ui_css() -> str:
 .portal-frame{display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px;align-items:start}
 .enterprise-sidebar{position:sticky;top:16px;background:#0b1d3a;color:#fff;border-radius:14px;padding:18px;min-height:520px}
 .side-title{font-size:20px;font-weight:800;margin-bottom:18px}.side-link,.side-strategy{display:block;width:100%;text-align:left;color:#d9e2f2;background:transparent;border:0;text-decoration:none;padding:10px 8px;border-radius:8px;font-weight:700}.side-link.active,.side-link:hover,.side-strategy:hover{background:#5d18d6;color:#fff}.side-group{margin:24px 8px 8px;color:#9fb0c8;font-size:12px;font-weight:800;text-transform:uppercase}.side-strategy{cursor:pointer}
-.enterprise-content{min-width:0}.scope-note{padding:10px 12px;background:#eef4ff;border-left:4px solid #5d18d6}.strategy-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-kpi-card{background:#fff;border:1px solid #dfe3ec;border-radius:14px;padding:18px;text-align:left;color:#101828;cursor:pointer}.strategy-kpi-card.active{outline:3px solid #8b5cf6}.strategy-kpi-card span,.strategy-kpi-card small,.strategy-kpi-card em{display:block;margin-top:8px}.strategy-kpi-card em{color:#5d18d6;font-style:normal;font-weight:800}.strategy-analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.registry-detail-grid{margin-top:18px}.metric-table{width:100%;border-collapse:collapse}.metric-table th{text-align:left}.metric-table td{text-align:right}.ai-commentary{margin-top:18px;background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px}.ai-commentary strong{color:#e66b00}
+.enterprise-content{min-width:0}.scope-note{padding:10px 12px;background:#eef4ff;border-left:4px solid #5d18d6}.strategy-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-kpi-card{background:#fff;border:1px solid #dfe3ec;border-radius:14px;padding:18px;text-align:left;color:#101828;cursor:pointer}.strategy-kpi-card.active{outline:3px solid #8b5cf6}.strategy-kpi-card span,.strategy-kpi-card small,.strategy-kpi-card em{display:block;margin-top:8px}.strategy-kpi-card em{color:#5d18d6;font-style:normal;font-weight:800}.strategy-analysis-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px}.registry-detail-grid{margin-top:18px}.metric-table{width:100%;border-collapse:collapse}.metric-table th{text-align:left}.metric-table td{text-align:right}.strategy-decision-panel{margin-top:18px;border-top:1px solid #dfe3ec;padding-top:18px}.strategy-decision-panel .strategy-decision-journal{max-width:none}.strategy-decision-panel .journal-heading,.strategy-decision-panel .decision-card{background:#fff;border:1px solid #dbe3ef;border-radius:14px;padding:18px;margin-bottom:14px}.strategy-decision-panel .journal-heading{display:flex;justify-content:space-between;gap:18px}.strategy-decision-panel .journal-meta span,.strategy-decision-panel .status,.strategy-decision-panel .decision-type{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}.strategy-decision-panel table{width:100%;border-collapse:collapse}.strategy-decision-panel th,.strategy-decision-panel td{border-bottom:1px solid #e5e7eb;padding:9px;text-align:left}.strategy-decision-panel .image-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.strategy-decision-panel img{max-width:100%;height:auto}.ai-commentary{margin-top:18px;background:#fffaf0;border:1px solid #f4cc73;border-radius:12px;padding:18px}.ai-commentary strong{color:#e66b00}
 @media(max-width:900px){.portal-frame{grid-template-columns:1fr}.enterprise-sidebar{position:static;min-height:0}.strategy-analysis-grid{grid-template-columns:1fr}}
 </style>"""
