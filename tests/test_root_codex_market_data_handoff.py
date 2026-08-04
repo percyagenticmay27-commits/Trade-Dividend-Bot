@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+import refresh_enterprise_market_data
 from src.dividend_bot import codex_robinhood_market_data_bridge as bridge_module
 from src.dividend_bot.codex_robinhood_market_data_bridge import (
     read_codex_market_data_handoff,
@@ -68,3 +69,16 @@ def test_codex_runner_defaults_to_real_server_path(monkeypatch: pytest.MonkeyPat
         "HOME": "/root",
     }
     assert result["provider"] == "ROBINHOOD_MCP"
+
+
+def test_default_cache_is_system_state_directory() -> None:
+    assert refresh_enterprise_market_data.DEFAULT_CACHE_DIR == "/var/lib/enterprise-market-data-cache"
+
+
+def test_systemd_unit_has_no_repository_runtime_dependency() -> None:
+    unit = Path("deploy/systemd/enterprise-market-data-refresh.service").read_text(
+        encoding="utf-8"
+    )
+    assert "StateDirectory=enterprise-market-data-cache" in unit
+    assert "--cache-dir /var/lib/enterprise-market-data-cache" in unit
+    assert "/home/tradebot/Trade-Dividend-Bot/runtime" not in unit
