@@ -13,17 +13,20 @@ RuntimeDirectoryMode=0750
 StateDirectory=enterprise-market-data-cache
 StateDirectoryMode=0750
 
-# The + prefix makes only these tightly scoped handoff commands run as root.
-# The - prefix makes Robinhood/Codex unavailability non-fatal so the AI CIO
-# can continue through yfinance, Stooq, and freshness-validated cache fallback.
-# Root's authenticated Codex profile is never copied or exposed to tradebot.
-ExecStartPre=-+/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/root_codex_market_data_handoff.py --operation get_quote --symbol SOXL
-ExecStartPre=-+/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/root_codex_market_data_handoff.py --operation get_history --symbol SOXL --period 1mo --interval 1d
-ExecStartPre=-+/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/root_codex_market_data_handoff.py --operation get_quote --symbol TQQQ
-ExecStartPre=-+/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/root_codex_market_data_handoff.py --operation get_history --symbol TQQQ --period 1mo --interval 1d
+# Pass 1 is unprivileged and uses YFinance -> Stooq -> fresh cache only.
+# It always exits zero so the conditional fallback evaluator can inspect evidence.
+ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/refresh_enterprise_market_data.py --strategy-id SWING-001 --required-symbol SOXL --required-symbol TQQQ --cache-dir /var/lib/enterprise-market-data-cache --disable-robinhood --always-zero
 
+# Only this tightly scoped command runs as root. It invokes Codex/Robinhood solely
+# for quote or history operations still unresolved after the public/cache pass.
+# Root's authenticated Codex profile is never copied or exposed to tradebot.
+ExecStart=+/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/refresh_robinhood_fallback_handoffs.py --status-file /home/tradebot/Trade-Dividend-Bot/results/enterprise_market_data_status.json --output-dir /run/enterprise-market-data-handoff --period 1mo --interval 1d
+
+# Pass 2 repeats the cost-aware chain and may consume a newly created Robinhood
+# handoff only after YFinance, Stooq, and fresh cache remain unavailable.
 ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/refresh_enterprise_market_data.py --strategy-id SWING-001 --required-symbol SOXL --required-symbol TQQQ --cache-dir /var/lib/enterprise-market-data-cache
-TimeoutStartSec=240
+
+TimeoutStartSec=300
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
