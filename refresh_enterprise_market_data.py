@@ -9,6 +9,8 @@ from pathlib import Path
 from src.dividend_bot.codex_robinhood_market_data_bridge import read_codex_market_data_handoff
 from src.dividend_bot.enterprise_market_data_provider import build_default_provider
 
+DEFAULT_CACHE_DIR = "/var/lib/enterprise-market-data-cache"
+
 
 def main() -> int:
     parser = argparse.ArgumentParser()
@@ -16,7 +18,7 @@ def main() -> int:
     parser.add_argument("--required-symbol", action="append", default=[])
     parser.add_argument("--optional-symbol", action="append", default=[])
     parser.add_argument("--results-dir", default="results")
-    parser.add_argument("--cache-dir", default="runtime/enterprise_market_data_cache")
+    parser.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR)
     parser.add_argument("--handoff-dir", default="/run/enterprise-market-data-handoff")
     args = parser.parse_args()
 
