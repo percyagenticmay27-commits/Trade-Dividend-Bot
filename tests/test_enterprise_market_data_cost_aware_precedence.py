@@ -2,36 +2,65 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import refresh_enterprise_market_data as refresh
+import refresh_enterprise_market_data_normalized as refresh
 from refresh_robinhood_fallback_handoffs import unresolved_operations
 
 
-def test_routine_market_data_precedence_is_public_cache_then_robinhood(tmp_path: Path) -> None:
-    provider = refresh.build_cost_aware_provider(tmp_path / "results", tmp_path / "cache", lambda *_: {})
+def test_routine_market_data_precedence_is_public_cache_then_robinhood(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "test-key")
+    provider = refresh.build_market_data_provider(
+        tmp_path / "results",
+        tmp_path / "cache",
+        lambda *_: {},
+    )
     assert [source.name for source in provider.sources] == [
         "YFINANCE",
-        "STOOQ",
+        "TWELVE_DATA",
         "LOCAL_CACHE",
         "ROBINHOOD_MCP",
     ]
     assert list(refresh.MARKET_DATA_PROVIDER_ORDER) == [
         "YFINANCE",
-        "STOOQ",
+        "TWELVE_DATA",
         "LOCAL_CACHE",
         "ROBINHOOD_MCP",
     ]
 
 
-def test_public_only_pass_has_no_robinhood_source(tmp_path: Path) -> None:
-    provider = refresh.build_cost_aware_provider(tmp_path / "results", tmp_path / "cache", None)
-    assert [source.name for source in provider.sources] == ["YFINANCE", "STOOQ", "LOCAL_CACHE"]
+def test_public_only_pass_has_no_robinhood_source(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("TWELVE_DATA_API_KEY", "test-key")
+    provider = refresh.build_market_data_provider(
+        tmp_path / "results",
+        tmp_path / "cache",
+        lambda *_: {},
+        public_only=True,
+    )
+    assert [source.name for source in provider.sources] == [
+        "YFINANCE",
+        "TWELVE_DATA",
+        "LOCAL_CACHE",
+    ]
+
+
+def test_builder_skips_twelve_data_without_key(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+    provider = refresh.build_market_data_provider(
+        tmp_path / "results",
+        tmp_path / "cache",
+        None,
+        public_only=True,
+    )
+    assert [source.name for source in provider.sources] == ["YFINANCE", "LOCAL_CACHE"]
 
 
 def test_robinhood_fallback_skipped_when_public_pass_is_ready() -> None:
     status = {
         "records": [
             {"symbol": "SOXL", "quote": {"provider": "YFINANCE"}, "history": {"provider": "YFINANCE"}},
-            {"symbol": "TQQQ", "quote": {"provider": "STOOQ"}, "history": {"provider": "LOCAL_CACHE"}},
+            {"symbol": "TQQQ", "quote": {"provider": "TWELVE_DATA"}, "history": {"provider": "LOCAL_CACHE"}},
         ]
     }
     assert unresolved_operations(status) == []
