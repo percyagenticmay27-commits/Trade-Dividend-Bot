@@ -88,9 +88,10 @@ def test_systemd_robinhood_handoff_failure_does_not_block_fallback() -> None:
     unit = Path("deploy/systemd/enterprise-market-data-refresh.service").read_text(
         encoding="utf-8"
     )
-    handoff_lines = [
-        line for line in unit.splitlines() if line.startswith("ExecStartPre=")
-    ]
-    assert len(handoff_lines) == 4
-    assert all(line.startswith("ExecStartPre=-+") for line in handoff_lines)
-    assert "ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python" in unit
+    exec_lines = [line for line in unit.splitlines() if line.startswith("ExecStart=")]
+    assert len(exec_lines) == 3
+    assert "--disable-robinhood --always-zero" in exec_lines[0]
+    assert exec_lines[1].startswith("ExecStart=+")
+    assert "refresh_robinhood_fallback_handoffs.py" in exec_lines[1]
+    assert "root_codex_market_data_handoff.py --operation" not in unit
+    assert "--disable-robinhood" not in exec_lines[2]
