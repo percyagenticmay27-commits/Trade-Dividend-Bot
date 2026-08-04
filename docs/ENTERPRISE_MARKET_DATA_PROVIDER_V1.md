@@ -33,6 +33,24 @@ The systemd service remains `User=tradebot`. Only its tightly scoped `ExecStartP
 
 The main `refresh_enterprise_market_data.py` process runs as `tradebot`, reads only the normalized handoff, and applies normal provider failover when the handoff is unavailable or invalid.
 
+## Runtime and persistent cache ownership
+
+Transient Robinhood handoff files are managed by systemd through:
+
+```ini
+RuntimeDirectory=enterprise-market-data-handoff
+```
+
+They live under `/run/enterprise-market-data-handoff` and are recreated for service execution.
+
+The freshness-validated fallback cache is persistent and managed by systemd through:
+
+```ini
+StateDirectory=enterprise-market-data-cache
+```
+
+It lives under `/var/lib/enterprise-market-data-cache`. The service no longer depends on a repository-local `runtime/` directory. No strategy allocation, portfolio state, OAuth material, or broker information is stored in the cache.
+
 ## Evidence
 - `results/enterprise_market_data_status.json`
 - `results/enterprise_market_data_provider_health.json`
@@ -51,6 +69,15 @@ sudo systemctl start enterprise-market-data-refresh.service
 sudo systemctl status enterprise-market-data-refresh.service
 ```
 
+Systemd creates and owns both required infrastructure directories:
+
+```text
+/run/enterprise-market-data-handoff
+/var/lib/enterprise-market-data-cache
+```
+
+No manual creation of a repository-local `runtime/` directory is required.
+
 Review logs:
 
 ```bash
@@ -59,12 +86,15 @@ sudo journalctl -u enterprise-market-data-refresh.service --no-pager -n 100
 
 Install `yfinance` in the Dividend AI CIO virtual environment only if approved. The service still falls through to Stooq and the freshness-validated cache when unavailable.
 
-Manual fallback-only execution as `tradebot` is supported, but Robinhood MCP handoff files must already exist:
+Manual fallback-only execution as `tradebot` is supported, but Robinhood MCP handoff files must already exist. Use the persistent cache directory explicitly:
 
 ```bash
 sudo -u tradebot /home/tradebot/Trade-Dividend-Bot/.venv/bin/python \
   /home/tradebot/Trade-Dividend-Bot/refresh_enterprise_market_data.py \
-  --strategy-id SWING-001 --required-symbol SOXL --required-symbol TQQQ
+  --strategy-id SWING-001 \
+  --required-symbol SOXL \
+  --required-symbol TQQQ \
+  --cache-dir /var/lib/enterprise-market-data-cache
 ```
 
 ## Swing Phase 2 integration
