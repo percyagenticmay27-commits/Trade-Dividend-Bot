@@ -10,6 +10,8 @@ Group=tradebot
 WorkingDirectory=/home/tradebot/Trade-Dividend-Bot
 RuntimeDirectory=enterprise-market-data-handoff
 RuntimeDirectoryMode=0750
+StateDirectory=enterprise-market-data-cache
+StateDirectoryMode=0750
 
 # The leading + makes only these tightly scoped handoff commands run as root.
 # Root's authenticated Codex profile is never copied or exposed to tradebot.
@@ -18,14 +20,14 @@ ExecStartPre=+/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/
 ExecStartPre=+/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/root_codex_market_data_handoff.py --operation get_quote --symbol TQQQ
 ExecStartPre=+/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/root_codex_market_data_handoff.py --operation get_history --symbol TQQQ --period 1mo --interval 1d
 
-ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/refresh_enterprise_market_data.py --strategy-id SWING-001 --required-symbol SOXL --required-symbol TQQQ
+ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/refresh_enterprise_market_data.py --strategy-id SWING-001 --required-symbol SOXL --required-symbol TQQQ --cache-dir /var/lib/enterprise-market-data-cache
 TimeoutStartSec=240
 UMask=0027
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/run/enterprise-market-data-handoff /home/tradebot/Trade-Dividend-Bot/results /home/tradebot/Trade-Dividend-Bot/runtime
+ReadWritePaths=/run/enterprise-market-data-handoff /home/tradebot/Trade-Dividend-Bot/results
 
 [Install]
 WantedBy=multi-user.target
