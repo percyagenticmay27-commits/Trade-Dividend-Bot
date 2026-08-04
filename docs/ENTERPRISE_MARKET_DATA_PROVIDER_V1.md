@@ -20,18 +20,20 @@ The provider owns selection, normalization, freshness, cache validation, health,
 
 The server's existing Robinhood OAuth connection belongs to root's Codex profile. Authentication files are never copied to the repository or to the `tradebot` account.
 
-The systemd service remains `User=tradebot`. Only its tightly scoped `ExecStartPre=+` commands run `root_codex_market_data_handoff.py` as root. Those commands:
+The systemd service remains `User=tradebot`. Only its tightly scoped `ExecStartPre=-+` commands run `root_codex_market_data_handoff.py` as root. The `+` grants root execution only to the allowlisted handoff command. The `-` makes upstream Robinhood/Codex failure non-fatal so the unprivileged AI CIO process can continue through yfinance, Stooq, and freshness-validated cache fallback.
+
+Those commands:
 
 - allow only `get_quote` and `get_history`;
 - invoke `/usr/local/bin/codex exec` with root's existing authenticated profile;
 - reject order, buy, sell, cancel, transfer, position, and execution operations;
-- use strict timeouts and fail closed;
+- use strict timeouts and fail closed for the Robinhood attempt;
 - reject OAuth, token, cookie, secret, authorization, and account-number fields;
-- atomically write mode `0640` normalized JSON into `/run/enterprise-market-data-handoff`;
+- atomically write mode `0640` normalized JSON into `/run/enterprise-market-data-handoff` only after a successful response;
 - change only the handoff file ownership to `tradebot:tradebot`;
 - never expose `/root/.codex` to the unprivileged runtime.
 
-The main `refresh_enterprise_market_data.py` process runs as `tradebot`, reads only the normalized handoff, and applies normal provider failover when the handoff is unavailable or invalid.
+A Codex usage limit, MCP outage, authentication failure, timeout, malformed response, or missing handoff is recorded in the service log but does not stop the provider chain. The main `refresh_enterprise_market_data.py` process still runs as `tradebot`, treats the Robinhood handoff as unavailable, and attempts yfinance, then Stooq, then a fresh local cache. If no fresh source succeeds, the affected strategy is blocked safely.
 
 ## Runtime and persistent cache ownership
 
