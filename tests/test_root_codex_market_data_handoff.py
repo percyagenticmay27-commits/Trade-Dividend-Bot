@@ -82,3 +82,15 @@ def test_systemd_unit_has_no_repository_runtime_dependency() -> None:
     assert "StateDirectory=enterprise-market-data-cache" in unit
     assert "--cache-dir /var/lib/enterprise-market-data-cache" in unit
     assert "/home/tradebot/Trade-Dividend-Bot/runtime" not in unit
+
+
+def test_systemd_robinhood_handoff_failure_does_not_block_fallback() -> None:
+    unit = Path("deploy/systemd/enterprise-market-data-refresh.service").read_text(
+        encoding="utf-8"
+    )
+    handoff_lines = [
+        line for line in unit.splitlines() if line.startswith("ExecStartPre=")
+    ]
+    assert len(handoff_lines) == 4
+    assert all(line.startswith("ExecStartPre=-+") for line in handoff_lines)
+    assert "ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python" in unit
