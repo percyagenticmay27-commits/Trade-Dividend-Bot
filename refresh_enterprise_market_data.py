@@ -38,7 +38,7 @@ def build_cost_aware_provider(
     cache_dir: Path,
     handoff_reader: Any | None,
 ) -> EnterpriseMarketDataProvider:
-    """Build routine market-data precedence without spending Codex credits first."""
+    """Use public sources and fresh cache before quota-controlled Robinhood MCP."""
     sources: list[Any] = [YFinanceSource(), StooqSource(), LocalCacheSource(cache_dir)]
     if handoff_reader is not None:
         sources.append(CodexRobinhoodSource(handoff_reader))
