@@ -16,17 +16,33 @@ from src.dividend_bot.enterprise_market_data_provider import (
     MODULE_VERSION,
     ORDER_PLACEMENT_ENABLED,
     PAPER_TRADE_MODE,
-    PROVIDER_ORDER,
     SCHEMA_VERSION,
+    CodexRobinhoodSource,
+    EnterpriseMarketDataProvider,
+    LocalCacheSource,
     MarketDataUnavailable,
+    StooqSource,
+    YFinanceSource,
     atomic_write_text,
-    build_default_provider,
     utc_now,
 )
 
 DEFAULT_CACHE_DIR = "/var/lib/enterprise-market-data-cache"
 DEFAULT_HISTORY_PERIOD = "1mo"
 DEFAULT_HISTORY_INTERVAL = "1d"
+MARKET_DATA_PROVIDER_ORDER = ("YFINANCE", "STOOQ", "LOCAL_CACHE", "ROBINHOOD_MCP")
+
+
+def build_cost_aware_provider(
+    results_dir: Path,
+    cache_dir: Path,
+    handoff_reader: Any | None,
+) -> EnterpriseMarketDataProvider:
+    """Build routine market-data precedence without spending Codex credits first."""
+    sources: list[Any] = [YFinanceSource(), StooqSource(), LocalCacheSource(cache_dir)]
+    if handoff_reader is not None:
+        sources.append(CodexRobinhoodSource(handoff_reader))
+    return EnterpriseMarketDataProvider(sources=sources, results_dir=results_dir, cache_dir=cache_dir)
 
 
 def _attempts(provider: Any) -> list[dict[str, Any]]:
@@ -111,7 +127,7 @@ def refresh_strategy_market_data(
         "generated_at": generated_at,
         "strategy_id": strategy_id,
         "status": overall_status,
-        "provider_attempt_order": list(PROVIDER_ORDER),
+        "provider_attempt_order": list(MARKET_DATA_PROVIDER_ORDER),
         "records": records,
         "warnings": warnings,
         "errors": errors,
@@ -127,7 +143,7 @@ def refresh_strategy_market_data(
         "strategy_id": strategy_id,
         "healthy": overall_status != "BLOCKED",
         "status": overall_status,
-        "provider_attempt_order": list(PROVIDER_ORDER),
+        "provider_attempt_order": list(MARKET_DATA_PROVIDER_ORDER),
         "symbols": [
             {
                 "symbol": record["symbol"],
@@ -155,6 +171,23 @@ def refresh_strategy_market_data(
             "capital_movement_enabled": False,
         },
     }
+    contract = {
+        "schema_version": SCHEMA_VERSION,
+        "provider_precedence": list(MARKET_DATA_PROVIDER_ORDER),
+        "policy": "PUBLIC_FIRST_COST_AWARE_ROBINHOOD_FALLBACK",
+        "quote_fields": [
+            "symbol", "price", "quote_timestamp", "trading_date", "provider",
+            "source_type", "stale", "confidence", "warnings",
+        ],
+        "history_fields": [
+            "symbol", "interval", "period", "provider", "generated_at",
+            "latest_bar_date", "stale", "corporate_action_adjusted", "bars",
+        ],
+        "operations": [
+            "get_quote", "get_history", "get_latest_close", "get_previous_close",
+            "get_volume", "get_split_history", "get_dividend_history",
+        ],
+    }
 
     atomic_write_text(
         provider.results_dir / "enterprise_market_data_status.json",
@@ -163,6 +196,10 @@ def refresh_strategy_market_data(
     atomic_write_text(
         provider.results_dir / "enterprise_market_data_provider_health.json",
         json.dumps(provider_health, indent=2, sort_keys=True) + "\n",
+    )
+    atomic_write_text(
+        provider.results_dir / "enterprise_market_data_contract.json",
+        json.dumps(contract, indent=2, sort_keys=True) + "\n",
     )
     return result
 
@@ -177,10 +214,14 @@ def main() -> int:
     parser.add_argument("--handoff-dir", default="/run/enterprise-market-data-handoff")
     parser.add_argument("--history-period", default=DEFAULT_HISTORY_PERIOD)
     parser.add_argument("--history-interval", default=DEFAULT_HISTORY_INTERVAL)
+    parser.add_argument("--disable-robinhood", action="store_true")
+    parser.add_argument("--always-zero", action="store_true")
     args = parser.parse_args()
 
-    handoff_reader = partial(read_codex_market_data_handoff, handoff_dir=args.handoff_dir)
-    provider = build_default_provider(Path(args.results_dir), Path(args.cache_dir), handoff_reader)
+    handoff_reader = None
+    if not args.disable_robinhood:
+        handoff_reader = partial(read_codex_market_data_handoff, handoff_dir=args.handoff_dir)
+    provider = build_cost_aware_provider(Path(args.results_dir), Path(args.cache_dir), handoff_reader)
     result = refresh_strategy_market_data(
         provider,
         args.strategy_id,
@@ -190,6 +231,8 @@ def main() -> int:
         interval=args.history_interval,
     )
     print(json.dumps(result, indent=2, sort_keys=True))
+    if args.always_zero:
+        return 0
     return 2 if result["status"] == "BLOCKED" else 0
 
 
