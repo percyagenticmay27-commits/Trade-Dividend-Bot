@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import io
 import json
 from functools import partial
 from pathlib import Path
@@ -30,6 +32,16 @@ from src.dividend_bot.enterprise_market_data_provider import (
 DEFAULT_CACHE_DIR = "/var/lib/enterprise-market-data-cache"
 DEFAULT_HISTORY_PERIOD = "1mo"
 DEFAULT_HISTORY_INTERVAL = "1d"
+HISTORY_EXPORT_DIRECTORY = "enterprise_market_data_history"
+HISTORY_CSV_FIELDS = (
+    "date",
+    "open",
+    "high",
+    "low",
+    "close",
+    "adjusted_close",
+    "volume",
+)
 MARKET_DATA_PROVIDER_ORDER = ("YFINANCE", "STOOQ", "LOCAL_CACHE", "ROBINHOOD_MCP")
 
 
@@ -47,6 +59,45 @@ def build_cost_aware_provider(
 
 def _attempts(provider: Any) -> list[dict[str, Any]]:
     return [attempt.to_dict() for attempt in provider.attempts]
+
+
+def _write_history_exports(
+    results_dir: Path,
+    strategy_id: str,
+    symbol: str,
+    history: dict[str, Any],
+) -> tuple[Path, Path]:
+    """Atomically publish full normalized bars as provider-neutral JSON and CSV."""
+    export_dir = results_dir / HISTORY_EXPORT_DIRECTORY
+    json_path = export_dir / f"{symbol}.history.json"
+    csv_path = export_dir / f"{symbol}.csv"
+
+    payload = {
+        "schema_version": SCHEMA_VERSION,
+        "strategy_id": strategy_id,
+        "symbol": symbol,
+        "period": history["period"],
+        "interval": history["interval"],
+        "provider": history["provider"],
+        "generated_at": history["generated_at"],
+        "latest_bar_date": history["latest_bar_date"],
+        "stale": history["stale"],
+        "corporate_action_adjusted": history["corporate_action_adjusted"],
+        "split_history": list(history.get("split_history", [])),
+        "dividend_history": list(history.get("dividend_history", [])),
+        "cache_used": history.get("cache_used", False),
+        "warnings": list(history.get("warnings", [])),
+        "bars": list(history["bars"]),
+    }
+    atomic_write_text(json_path, json.dumps(payload, indent=2, sort_keys=True) + "\n")
+
+    buffer = io.StringIO(newline="")
+    writer = csv.DictWriter(buffer, fieldnames=HISTORY_CSV_FIELDS, extrasaction="ignore")
+    writer.writeheader()
+    for bar in history["bars"]:
+        writer.writerow({field: bar.get(field, "") for field in HISTORY_CSV_FIELDS})
+    atomic_write_text(csv_path, buffer.getvalue())
+    return json_path, csv_path
 
 
 def refresh_strategy_market_data(
@@ -95,6 +146,9 @@ def refresh_strategy_market_data(
 
             try:
                 history = provider.get_history(symbol, period=period, interval=interval)
+                json_path, csv_path = _write_history_exports(
+                    provider.results_dir, strategy_id, symbol, history
+                )
                 record["history"] = {
                     "period": history["period"],
                     "interval": history["interval"],
@@ -104,6 +158,8 @@ def refresh_strategy_market_data(
                     "stale": history["stale"],
                     "corporate_action_adjusted": history["corporate_action_adjusted"],
                     "bar_count": len(history["bars"]),
+                    "bars_json_path": str(json_path),
+                    "bars_csv_path": str(csv_path),
                     "cache_used": history.get("cache_used", False),
                     "warnings": list(history.get("warnings", [])),
                     "attempts": _attempts(provider),
@@ -128,6 +184,7 @@ def refresh_strategy_market_data(
         "strategy_id": strategy_id,
         "status": overall_status,
         "provider_attempt_order": list(MARKET_DATA_PROVIDER_ORDER),
+        "history_export_directory": str(provider.results_dir / HISTORY_EXPORT_DIRECTORY),
         "records": records,
         "warnings": warnings,
         "errors": errors,
@@ -153,6 +210,8 @@ def refresh_strategy_market_data(
                 "history_provider": (record["history"] or {}).get("provider"),
                 "quote_timestamp": (record["quote"] or {}).get("quote_timestamp"),
                 "latest_bar_date": (record["history"] or {}).get("latest_bar_date"),
+                "bars_json_path": (record["history"] or {}).get("bars_json_path"),
+                "bars_csv_path": (record["history"] or {}).get("bars_csv_path"),
                 "quote_cache_used": (record["quote"] or {}).get("cache_used", False),
                 "history_cache_used": (record["history"] or {}).get("cache_used", False),
                 "quote_attempts": (record["quote"] or {}).get("attempts", []),
@@ -183,6 +242,13 @@ def refresh_strategy_market_data(
             "symbol", "interval", "period", "provider", "generated_at",
             "latest_bar_date", "stale", "corporate_action_adjusted", "bars",
         ],
+        "history_exports": {
+            "directory": HISTORY_EXPORT_DIRECTORY,
+            "json_pattern": "{symbol}.history.json",
+            "csv_pattern": "{symbol}.csv",
+            "csv_fields": list(HISTORY_CSV_FIELDS),
+            "atomic_writes": True,
+        },
         "operations": [
             "get_quote", "get_history", "get_latest_close", "get_previous_close",
             "get_volume", "get_split_history", "get_dividend_history",
