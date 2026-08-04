@@ -2,38 +2,48 @@
 
 AI CIO-owned, strategy-neutral, read-only market-data service.
 
-## Provider precedence
-1. Robinhood MCP through root's authenticated `/usr/local/bin/codex exec` profile
-2. yfinance
-3. Stooq
-4. prior valid normalized local cache
+## Cost-aware provider precedence
+
+Routine public market-data operations use:
+
+1. yfinance
+2. Stooq
+3. prior valid normalized local cache
+4. Robinhood MCP through root's authenticated `/usr/local/bin/codex exec` profile
 5. safe failure
+
+Robinhood is intentionally next to last because Codex usage is quota-controlled. The service does not invoke Codex when yfinance, Stooq, or a fresh cache can satisfy both quote and history requirements.
 
 Freshness is mandatory. Stale cache or provider data is rejected. A required-symbol failure blocks only the requesting strategy; an optional-symbol failure is a warning.
 
 ## Contract
+
 `get_quote`, `get_history`, `get_latest_close`, `get_previous_close`, `get_volume`, `get_split_history`, and `get_dividend_history`.
 
 The provider owns selection, normalization, freshness, cache validation, health, and evidence. Strategy repositories do not know which upstream provider succeeded.
 
-## Root-owned Robinhood MCP bridge
+## Two-pass conditional Robinhood bridge
 
-The server's existing Robinhood OAuth connection belongs to root's Codex profile. Authentication files are never copied to the repository or to the `tradebot` account.
+The server's Robinhood OAuth connection belongs to root's Codex profile. Authentication files are never copied to the repository or to the `tradebot` account.
 
-The systemd service remains `User=tradebot`. Only its tightly scoped `ExecStartPre=-+` commands run `root_codex_market_data_handoff.py` as root. The `+` grants root execution only to the allowlisted handoff command. The `-` makes upstream Robinhood/Codex failure non-fatal so the unprivileged AI CIO process can continue through yfinance, Stooq, and freshness-validated cache fallback.
+The systemd service performs three sequential actions:
 
-Those commands:
+1. An unprivileged public/cache pass runs as `tradebot` with Robinhood disabled. It uses yfinance, Stooq, and fresh cache only.
+2. A tightly scoped root command reads the first-pass evidence. It invokes Codex/Robinhood only for quote or history operations that remain unresolved.
+3. A final unprivileged pass repeats the cost-aware provider chain and may consume the newly written Robinhood handoff only after the public providers and fresh cache remain unavailable.
 
-- allow only `get_quote` and `get_history`;
-- invoke `/usr/local/bin/codex exec` with root's existing authenticated profile;
-- reject order, buy, sell, cancel, transfer, position, and execution operations;
-- use strict timeouts and fail closed for the Robinhood attempt;
-- reject OAuth, token, cookie, secret, authorization, and account-number fields;
-- atomically write mode `0640` normalized JSON into `/run/enterprise-market-data-handoff` only after a successful response;
-- change only the handoff file ownership to `tradebot:tradebot`;
-- never expose `/root/.codex` to the unprivileged runtime.
+The conditional root bridge:
 
-A Codex usage limit, MCP outage, authentication failure, timeout, malformed response, or missing handoff is recorded in the service log but does not stop the provider chain. The main `refresh_enterprise_market_data.py` process still runs as `tradebot`, treats the Robinhood handoff as unavailable, and attempts yfinance, then Stooq, then a fresh local cache. If no fresh source succeeds, the affected strategy is blocked safely.
+- accepts only `get_quote` and `get_history`;
+- invokes `/usr/local/bin/codex exec` with root's existing authenticated profile;
+- rejects order, buy, sell, cancel, transfer, position, and execution operations;
+- uses strict timeouts and fails closed for each Robinhood attempt;
+- rejects OAuth, token, cookie, secret, authorization, and account-number fields;
+- atomically writes mode `0640` normalized JSON into `/run/enterprise-market-data-handoff` only after a successful response;
+- changes only the handoff file ownership to `tradebot:tradebot`;
+- never exposes `/root/.codex` to the unprivileged runtime.
+
+A Codex usage limit, MCP outage, authentication failure, timeout, malformed response, or missing handoff does not bypass freshness protection. If no fresh source succeeds, the affected strategy is blocked safely.
 
 ## Runtime and persistent cache ownership
 
@@ -51,13 +61,20 @@ The freshness-validated fallback cache is persistent and managed by systemd thro
 StateDirectory=enterprise-market-data-cache
 ```
 
-It lives under `/var/lib/enterprise-market-data-cache`. The service no longer depends on a repository-local `runtime/` directory. No strategy allocation, portfolio state, OAuth material, or broker information is stored in the cache.
+It lives under `/var/lib/enterprise-market-data-cache`. The service does not depend on a repository-local `runtime/` directory. No strategy allocation, portfolio state, OAuth material, or broker information is stored in the cache.
 
 ## Evidence
+
 - `results/enterprise_market_data_status.json`
 - `results/enterprise_market_data_provider_health.json`
 - `results/enterprise_market_data_refresh.csv`
 - `results/enterprise_market_data_contract.json`
+
+The contract publishes policy `PUBLIC_FIRST_COST_AWARE_ROBINHOOD_FALLBACK` and precedence:
+
+```text
+YFINANCE -> STOOQ -> LOCAL_CACHE -> ROBINHOOD_MCP -> SAFE_FAILURE
+```
 
 ## Deployment
 
@@ -78,28 +95,14 @@ Systemd creates and owns both required infrastructure directories:
 /var/lib/enterprise-market-data-cache
 ```
 
-No manual creation of a repository-local `runtime/` directory is required.
-
 Review logs:
 
 ```bash
-sudo journalctl -u enterprise-market-data-refresh.service --no-pager -n 100
-```
-
-Install `yfinance` in the Dividend AI CIO virtual environment only if approved. The service still falls through to Stooq and the freshness-validated cache when unavailable.
-
-Manual fallback-only execution as `tradebot` is supported, but Robinhood MCP handoff files must already exist. Use the persistent cache directory explicitly:
-
-```bash
-sudo -u tradebot /home/tradebot/Trade-Dividend-Bot/.venv/bin/python \
-  /home/tradebot/Trade-Dividend-Bot/refresh_enterprise_market_data.py \
-  --strategy-id SWING-001 \
-  --required-symbol SOXL \
-  --required-symbol TQQQ \
-  --cache-dir /var/lib/enterprise-market-data-cache
+sudo journalctl -u enterprise-market-data-refresh.service --no-pager -n 150
 ```
 
 ## Swing Phase 2 integration
+
 1. Read `results/enterprise_market_data_contract.json` and treat Version 1.0 as the stable host contract.
 2. Replace direct local-CSV primary reads with calls or JSON handoffs from this provider.
 3. Use normalized quote/history fields for portfolio valuation, indicators, performance, executive summary, KPI evidence, and email.
