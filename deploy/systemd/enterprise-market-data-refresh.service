@@ -1,0 +1,19 @@
+[Unit]
+Description=Enterprise AI CIO Market Data Refresh (paper-only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=tradebot
+Group=tradebot
+WorkingDirectory=/home/tradebot/Trade-Dividend-Bot
+ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/refresh_enterprise_market_data.py --strategy-id SWING-001 --required-symbol SOXL --required-symbol TQQQ
+TimeoutStartSec=180
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/home/tradebot/Trade-Dividend-Bot/results /home/tradebot/Trade-Dividend-Bot/runtime
+
+[Install]
+WantedBy=multi-user.target
