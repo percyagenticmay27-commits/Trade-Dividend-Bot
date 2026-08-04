@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pytest
 
+from src.dividend_bot import codex_robinhood_market_data_bridge as bridge_module
 from src.dividend_bot.codex_robinhood_market_data_bridge import (
     read_codex_market_data_handoff,
     run_codex_market_data,
@@ -22,11 +23,7 @@ def test_tradebot_reader_consumes_sanitized_quote_handoff(tmp_path: Path) -> Non
         "warnings": [],
     }
     (tmp_path / "SOXL.quote.json").write_text(json.dumps(payload), encoding="utf-8")
-
-    result = read_codex_market_data_handoff(
-        "get_quote", "SOXL", handoff_dir=tmp_path
-    )
-
+    result = read_codex_market_data_handoff("get_quote", "SOXL", handoff_dir=tmp_path)
     assert result["provider"] == "ROBINHOOD_MCP"
     assert result["price"] == 42.5
 
@@ -34,7 +31,6 @@ def test_tradebot_reader_consumes_sanitized_quote_handoff(tmp_path: Path) -> Non
 def test_reader_rejects_symbol_mismatch(tmp_path: Path) -> None:
     payload = {"symbol": "TQQQ", "price": 10.0}
     (tmp_path / "SOXL.quote.json").write_text(json.dumps(payload), encoding="utf-8")
-
     with pytest.raises(RuntimeError, match="symbol does not match"):
         read_codex_market_data_handoff("get_quote", "SOXL", handoff_dir=tmp_path)
 
@@ -42,7 +38,6 @@ def test_reader_rejects_symbol_mismatch(tmp_path: Path) -> None:
 def test_reader_rejects_authentication_material(tmp_path: Path) -> None:
     payload = {"symbol": "SOXL", "price": 10.0, "oauth": "forbidden"}
     (tmp_path / "SOXL.quote.json").write_text(json.dumps(payload), encoding="utf-8")
-
     with pytest.raises(RuntimeError, match="sensitive"):
         read_codex_market_data_handoff("get_quote", "SOXL", handoff_dir=tmp_path)
 
@@ -65,9 +60,8 @@ def test_codex_runner_defaults_to_real_server_path(monkeypatch: pytest.MonkeyPat
         captured["environment"] = kwargs["env"]
         return Completed()
 
-    monkeypatch.setattr("subprocess.run", fake_run)
+    monkeypatch.setattr(bridge_module.subprocess, "run", fake_run)
     result = run_codex_market_data("get_quote", "SOXL")
-
     assert captured["command"][0] == "/usr/local/bin/codex"
     assert captured["environment"] == {
         "PATH": "/usr/local/bin:/usr/bin:/bin",
