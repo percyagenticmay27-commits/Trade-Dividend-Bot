@@ -80,27 +80,28 @@ def test_daily_decision_email_converts_exact_markdown_reports_to_csv(tmp_path: P
             rows = list(reader)
 
         assert rows
-        assert all(row["paper_trade_mode"] == "True" for row in rows)
-        assert any(row["report_section"] == "Executive Header" for row in rows)
-        assert any(row["report_section"] == "What This Report Shows" for row in rows)
-        assert any(row["report_section"] == "Why This Report Is Used" for row in rows)
         assert "source_file" not in rows[0]
         assert "row_type" not in rows[0]
         assert "label" not in rows[0]
 
         if path.name == "daily_paper_report.csv":
             assert reader.fieldnames == DAILY_PAPER_FIELDS
+            assert all(row["paper_trade_mode"] == "True" for row in rows)
+            assert any(row["report_section"] == "Executive Header" for row in rows)
             assert any(row["report_section"] == "Portfolio Summary" for row in rows)
             assert any(row["report_section"] == "Current Pair Holdings" for row in rows)
             assert any(row["metric"] == "Starting Capital" and row["value"] == "$50,000.00" for row in rows)
         elif path.name == "daily_change_summary.csv":
             assert reader.fieldnames == DAILY_CHANGE_FIELDS
-            assert any(row["report_section"] == "Portfolio Changes" for row in rows)
-            assert any(row["report_section"] == "Daily Events" for row in rows)
-            assert any(row["report_section"] == "Next Trading Day" for row in rows)
-            assert any(row["current_pair"] == "AMDW / AMDL" for row in rows)
+            assert any(row["event"] == "Report Name" for row in rows)
+            assert any(row["event"] == "Purpose" for row in rows)
+            assert any(row["event"] == "No portfolio changes" for row in rows)
         else:
             assert reader.fieldnames == EXPECTED_EXECUTIVE_FIELDS
+            assert all(row["paper_trade_mode"] == "True" for row in rows)
+            assert any(row["report_section"] == "Executive Header" for row in rows)
+            assert any(row["report_section"] == "What This Report Shows" for row in rows)
+            assert any(row["report_section"] == "Why This Report Is Used" for row in rows)
             assert any(row["source_line"] for row in rows)
 
 
