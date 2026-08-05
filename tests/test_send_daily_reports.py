@@ -8,6 +8,7 @@ from pathlib import Path
 from send_daily_reports import EXPECTED_CSV_NAMES, send_daily_reports
 from src.dividend_bot.executive_daily_change_summary import DAILY_CHANGE_FIELDS
 from src.dividend_bot.executive_daily_paper_report import DAILY_PAPER_FIELDS
+from src.dividend_bot.executive_strategy_health_report import STRATEGY_HEALTH_FIELDS
 
 
 EXPECTED_EXECUTIVE_FIELDS = [
@@ -96,6 +97,13 @@ def test_daily_decision_email_converts_exact_markdown_reports_to_csv(tmp_path: P
             assert any(row["event"] == "Report Name" for row in rows)
             assert any(row["event"] == "Purpose" for row in rows)
             assert any(row["event"] == "No portfolio changes" for row in rows)
+        elif path.name == "strategy_health_report.csv":
+            assert reader.fieldnames == STRATEGY_HEALTH_FIELDS
+            assert all(row["paper_trade_mode"] == "True" for row in rows)
+            assert any(row["report_section"] == "Portfolio Health" for row in rows)
+            assert any(row["report_section"] == "Pair Performance" for row in rows)
+            assert any(row["report_section"] == "Deployment Gates" for row in rows)
+            assert any(row["metric"] == "Starting Capital" and row["value"] == "$50,000.00" for row in rows)
         else:
             assert reader.fieldnames == EXPECTED_EXECUTIVE_FIELDS
             assert all(row["paper_trade_mode"] == "True" for row in rows)
