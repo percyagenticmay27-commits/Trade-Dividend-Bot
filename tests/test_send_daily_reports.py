@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from send_daily_reports import EXPECTED_CSV_NAMES, send_daily_reports
+from src.dividend_bot.executive_daily_change_summary import DAILY_CHANGE_FIELDS
 from src.dividend_bot.executive_daily_paper_report import DAILY_PAPER_FIELDS
 
 
@@ -92,6 +93,12 @@ def test_daily_decision_email_converts_exact_markdown_reports_to_csv(tmp_path: P
             assert any(row["report_section"] == "Portfolio Summary" for row in rows)
             assert any(row["report_section"] == "Current Pair Holdings" for row in rows)
             assert any(row["metric"] == "Starting Capital" and row["value"] == "$50,000.00" for row in rows)
+        elif path.name == "daily_change_summary.csv":
+            assert reader.fieldnames == DAILY_CHANGE_FIELDS
+            assert any(row["report_section"] == "Portfolio Changes" for row in rows)
+            assert any(row["report_section"] == "Daily Events" for row in rows)
+            assert any(row["report_section"] == "Next Trading Day" for row in rows)
+            assert any(row["current_pair"] == "AMDW / AMDL" for row in rows)
         else:
             assert reader.fieldnames == EXPECTED_EXECUTIVE_FIELDS
             assert any(row["source_line"] for row in rows)
