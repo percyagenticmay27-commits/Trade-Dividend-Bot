@@ -9,8 +9,10 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
+from src.dividend_bot.daily_markdown_report_csv import generate_markdown_report_csvs
+
 MODULE_NAME = "daily_dividend_csv_exports"
-MODULE_VERSION = "1.2.0"
+MODULE_VERSION = "1.3.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -68,7 +70,10 @@ def _validate_fresh_state(state: Mapping[str, Any], *, today: date, max_age_days
     if age_days < 0:
         raise RuntimeError(f"Dividend paper state date is in the future: {state_date.isoformat()}")
     if age_days > max_age_days:
-        raise RuntimeError(f"Dividend paper state is stale: {state_date.isoformat()} is {age_days} days old (maximum {max_age_days})")
+        raise RuntimeError(
+            f"Dividend paper state is stale: {state_date.isoformat()} is {age_days} days old "
+            f"(maximum {max_age_days})"
+        )
     return state_date
 
 
@@ -152,42 +157,76 @@ def _text_map(value: Any) -> dict[str, Any]:
 
 
 def _portfolio_rows(state: Mapping[str, Any], state_date: date) -> list[dict[str, Any]]:
-    rows = []
+    rows: list[dict[str, Any]] = []
     for pair_name, raw_entry in sorted(_text_map(state.get("pairs")).items()):
         entry = _text_map(raw_entry)
         prices = _text_map(entry.get("last_prices"))
         signals = _text_map(entry.get("last_signal"))
-        a_shares, b_shares = _number(entry.get("a_shares")), _number(entry.get("b_shares"))
-        a_price, b_price = _number(prices.get("A")), _number(prices.get("B"))
-        a_value, b_value = a_shares * a_price, b_shares * b_price
+        a_shares = _number(entry.get("a_shares"))
+        b_shares = _number(entry.get("b_shares"))
+        a_price = _number(prices.get("A"))
+        b_price = _number(prices.get("B"))
+        a_value = a_shares * a_price
+        b_value = b_shares * b_price
         sgov = _number(entry.get("sgov_balance"))
         rows.append({
-            "as_of_date": state_date.isoformat(), "pair": pair_name,
-            "a_shares": round(a_shares, 8), "a_current_price": round(a_price, 8), "a_market_value": round(a_value, 8),
-            "a_signal": str(signals.get("A") or ""), "a_in_sgov": bool(entry.get("a_in_sgov", False)), "a_earnings_lock": bool(entry.get("a_earnings_lock", False)),
-            "b_shares": round(b_shares, 8), "b_current_price": round(b_price, 8), "b_market_value": round(b_value, 8),
-            "b_signal": str(signals.get("B") or ""), "b_in_sgov": bool(entry.get("b_in_sgov", False)), "b_earnings_lock": bool(entry.get("b_earnings_lock", False)),
-            "sgov_balance": round(sgov, 8), "pair_total_value": round(a_value + b_value + sgov, 8),
+            "as_of_date": state_date.isoformat(),
+            "pair": pair_name,
+            "a_shares": round(a_shares, 8),
+            "a_current_price": round(a_price, 8),
+            "a_market_value": round(a_value, 8),
+            "a_signal": str(signals.get("A") or ""),
+            "a_in_sgov": bool(entry.get("a_in_sgov", False)),
+            "a_earnings_lock": bool(entry.get("a_earnings_lock", False)),
+            "b_shares": round(b_shares, 8),
+            "b_current_price": round(b_price, 8),
+            "b_market_value": round(b_value, 8),
+            "b_signal": str(signals.get("B") or ""),
+            "b_in_sgov": bool(entry.get("b_in_sgov", False)),
+            "b_earnings_lock": bool(entry.get("b_earnings_lock", False)),
+            "sgov_balance": round(sgov, 8),
+            "pair_total_value": round(a_value + b_value + sgov, 8),
             "total_dividends_received": round(_number(entry.get("total_dividends_received")), 8),
         })
     return rows
 
 
 def _watchlist_rows(portfolio_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    rows = []
+    rows: list[dict[str, Any]] = []
     for item in portfolio_rows:
         for sleeve in ("a", "b"):
-            signal, in_sgov = str(item[f"{sleeve}_signal"]), bool(item[f"{sleeve}_in_sgov"])
+            signal = str(item[f"{sleeve}_signal"])
+            in_sgov = bool(item[f"{sleeve}_in_sgov"])
             locked = bool(item[f"{sleeve}_earnings_lock"])
-            action = "WAIT_POST_EARNINGS_BUY" if locked else "REENTRY_WATCH" if signal == "BUY" and in_sgov else "EXIT_WATCH" if signal == "SELL" and not in_sgov else "WAIT_FOR_BUY" if in_sgov else "HOLD_MONITOR"
-            rows.append({"as_of_date": item["as_of_date"], "pair": item["pair"], "sleeve": sleeve.upper(), "signal": signal,
-                         "current_price": item[f"{sleeve}_current_price"], "market_value": item[f"{sleeve}_market_value"],
-                         "in_sgov": in_sgov, "earnings_lock": locked, "watch_action": action})
+            action = (
+                "WAIT_POST_EARNINGS_BUY" if locked
+                else "REENTRY_WATCH" if signal == "BUY" and in_sgov
+                else "EXIT_WATCH" if signal == "SELL" and not in_sgov
+                else "WAIT_FOR_BUY" if in_sgov
+                else "HOLD_MONITOR"
+            )
+            rows.append({
+                "as_of_date": item["as_of_date"],
+                "pair": item["pair"],
+                "sleeve": sleeve.upper(),
+                "signal": signal,
+                "current_price": item[f"{sleeve}_current_price"],
+                "market_value": item[f"{sleeve}_market_value"],
+                "in_sgov": in_sgov,
+                "earnings_lock": locked,
+                "watch_action": action,
+            })
     return rows
 
 
-def _performance_row(snapshot_file: Path, state_date: date, current: datetime, portfolio_value: float, dividends: float) -> dict[str, Any]:
-    snapshots = []
+def _performance_row(
+    snapshot_file: Path,
+    state_date: date,
+    current: datetime,
+    portfolio_value: float,
+    dividends: float,
+) -> dict[str, Any]:
+    snapshots: list[dict[str, str]] = []
     if snapshot_file.is_file():
         with snapshot_file.open(newline="", encoding="utf-8") as handle:
             for row in csv.DictReader(handle):
@@ -198,14 +237,20 @@ def _performance_row(snapshot_file: Path, state_date: date, current: datetime, p
                 if row_date <= state_date:
                     snapshots.append(row)
     snapshots.sort(key=lambda row: str(row.get("Date") or ""))
-    prior = next((row for row in reversed(snapshots) if str(row.get("Date") or "")[:10] < state_date.isoformat()), None)
+    prior = next(
+        (row for row in reversed(snapshots) if str(row.get("Date") or "")[:10] < state_date.isoformat()),
+        None,
+    )
     first = snapshots[0] if snapshots else None
     prior_value = _number(prior.get("Portfolio_Value")) if prior else 0.0
     inception_value = _number(first.get("Portfolio_Value")) if first else portfolio_value
     daily_change = portfolio_value - prior_value if prior else 0.0
     total_change = portfolio_value - inception_value
     return {
-        "as_of_date": state_date.isoformat(), "generated_at": current.isoformat(), "strategy": "DIVIDEND", "paper_trade_mode": True,
+        "as_of_date": state_date.isoformat(),
+        "generated_at": current.isoformat(),
+        "strategy": "DIVIDEND",
+        "paper_trade_mode": True,
         "current_portfolio_value": round(portfolio_value, 8),
         "prior_snapshot_date": str(prior.get("Date") or "") if prior else "",
         "prior_portfolio_value": round(prior_value, 8) if prior else "",
@@ -215,13 +260,21 @@ def _performance_row(snapshot_file: Path, state_date: date, current: datetime, p
         "inception_portfolio_value": round(inception_value, 8),
         "total_value_change": round(total_change, 8),
         "total_return_percent": round(total_change / inception_value * 100.0, 8) if inception_value else 0.0,
-        "total_dividends_received": round(dividends, 8), "snapshot_history_available": bool(snapshots), "data_stale": False,
+        "total_dividends_received": round(dividends, 8),
+        "snapshot_history_available": bool(snapshots),
+        "data_stale": False,
     }
 
 
-def generate_daily_dividend_csv_exports(*, root_dir: str | Path = ".", state_path: str | Path = DEFAULT_STATE_PATH,
-                                         snapshot_path: str | Path = DEFAULT_SNAPSHOT_PATH, output_dir: str | Path = DEFAULT_OUTPUT_DIR,
-                                         now: datetime | None = None, max_state_age_days: int = DEFAULT_MAX_STATE_AGE_DAYS) -> list[Path]:
+def generate_daily_dividend_csv_exports(
+    *,
+    root_dir: str | Path = ".",
+    state_path: str | Path = DEFAULT_STATE_PATH,
+    snapshot_path: str | Path = DEFAULT_SNAPSHOT_PATH,
+    output_dir: str | Path = DEFAULT_OUTPUT_DIR,
+    now: datetime | None = None,
+    max_state_age_days: int = DEFAULT_MAX_STATE_AGE_DAYS,
+) -> list[Path]:
     root = Path(root_dir)
     current = now.astimezone(timezone.utc) if now is not None else datetime.now(timezone.utc)
     state, state_date, selected_state_path = _discover_fresh_state(
@@ -238,14 +291,38 @@ def generate_daily_dividend_csv_exports(*, root_dir: str | Path = ".", state_pat
     etf_value = sum(_number(row["a_market_value"]) + _number(row["b_market_value"]) for row in portfolio_rows)
     sgov_value = sum(_number(row["sgov_balance"]) for row in portfolio_rows)
     dividends = sum(_number(row["total_dividends_received"]) for row in portfolio_rows)
-    executive_rows = [{"as_of_date": state_date.isoformat(), "generated_at": current.isoformat(), "strategy": "DIVIDEND",
-                       "paper_trade_mode": True, "state_source": str(selected_state_path),
-                       "portfolio_value": round(portfolio_value, 8), "etf_exposure": round(etf_value, 8),
-                       "sgov_exposure": round(sgov_value, 8), "total_dividends_received": round(dividends, 8),
-                       "pair_count": len(portfolio_rows), "watchlist_item_count": len(watchlist_rows), "data_stale": False}]
-    performance_rows = [_performance_row(root / Path(snapshot_path), state_date, current, portfolio_value, dividends)]
+    executive_rows = [{
+        "as_of_date": state_date.isoformat(),
+        "generated_at": current.isoformat(),
+        "strategy": "DIVIDEND",
+        "paper_trade_mode": True,
+        "state_source": str(selected_state_path),
+        "portfolio_value": round(portfolio_value, 8),
+        "etf_exposure": round(etf_value, 8),
+        "sgov_exposure": round(sgov_value, 8),
+        "total_dividends_received": round(dividends, 8),
+        "pair_count": len(portfolio_rows),
+        "watchlist_item_count": len(watchlist_rows),
+        "data_stale": False,
+    }]
+    performance_rows = [
+        _performance_row(root / Path(snapshot_path), state_date, current, portfolio_value, dividends)
+    ]
     destination = root / Path(output_dir)
-    outputs = [destination / EXECUTIVE_SUMMARY_FILE, destination / PORTFOLIO_FILE, destination / WATCHLIST_FILE, destination / PERFORMANCE_FILE]
+    outputs = [
+        destination / EXECUTIVE_SUMMARY_FILE,
+        destination / PORTFOLIO_FILE,
+        destination / WATCHLIST_FILE,
+        destination / PERFORMANCE_FILE,
+    ]
     for path, rows in zip(outputs, [executive_rows, portfolio_rows, watchlist_rows, performance_rows]):
         _atomic_write_csv(path, list(rows[0]), rows)
+
+    outputs.extend(
+        generate_markdown_report_csvs(
+            root_dir=root,
+            output_dir=output_dir,
+            as_of_date=state_date,
+        )
+    )
     return outputs
