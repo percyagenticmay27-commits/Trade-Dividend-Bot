@@ -1,10 +1,14 @@
-"""Scheduled Gmail delivery for daily, weekly, and monthly paper-only reports."""
+"""Scheduled delivery for daily, weekly, and monthly paper-only reports."""
 from __future__ import annotations
 
+import base64
 import calendar
+import json
 import os
 import smtplib
 import ssl
+import urllib.error
+import urllib.request
 from datetime import datetime
 from email.message import EmailMessage
 from pathlib import Path
@@ -14,13 +18,14 @@ from zoneinfo import ZoneInfo
 from src.dividend_bot.daily_dividend_csv_exports import generate_daily_dividend_csv_exports
 
 MODULE_NAME = "scheduled_report_email"
-MODULE_VERSION = "1.1.0"
+MODULE_VERSION = "1.2.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
 
 DEFAULT_TIMEZONE = "America/Chicago"
 DEFAULT_SEND_HOUR = 19
+SENDGRID_MAIL_URL = "https://api.sendgrid.com/v3/mail/send"
 WEEKLY_REPORT_FILES = (
     "weekly_portfolio_review.md",
     "results/html/executive_dashboard.html",
@@ -40,14 +45,47 @@ MONTHLY_REPORT_FILES = (
 
 def configured_email_settings(environment: Optional[Mapping[str, str]] = None) -> dict[str, str]:
     values = dict(os.environ if environment is None else environment)
-    required = ("GMAIL_USER", "GMAIL_APP_PASSWORD", "REPORT_RECIPIENT")
+    recipient = str(values.get("REPORT_RECIPIENT") or "").strip()
+    if not recipient:
+        raise RuntimeError("Missing required email environment variables: REPORT_RECIPIENT")
+
+    sendgrid_key = str(values.get("SENDGRID_API_KEY") or "").strip()
+    sendgrid_from = str(values.get("SENDGRID_FROM_EMAIL") or "").strip()
+    if sendgrid_key:
+        missing = []
+        if not sendgrid_from:
+            missing.append("SENDGRID_FROM_EMAIL")
+        if missing:
+            raise RuntimeError("Missing required SendGrid environment variables: " + ", ".join(missing))
+        return {
+            "transport": "SENDGRID",
+            "sender": sendgrid_from,
+            "sender_name": str(values.get("SENDGRID_FROM_NAME") or "Dividend AI CIO").strip(),
+            "reply_to": str(values.get("SENDGRID_REPLY_TO") or "").strip(),
+            "api_key": sendgrid_key,
+            "password": "",
+            "recipient": recipient,
+            "timezone": str(values.get("DIVIDEND_BOT_TIMEZONE") or DEFAULT_TIMEZONE).strip(),
+            "dashboard_base_url": str(values.get("DIVIDEND_DASHBOARD_BASE_URL") or "").rstrip("/"),
+            "daily_state_max_age_days": str(values.get("DIVIDEND_DAILY_STATE_MAX_AGE_DAYS") or "5").strip(),
+        }
+
+    required = ("GMAIL_USER", "GMAIL_APP_PASSWORD")
     missing = [name for name in required if not str(values.get(name, "")).strip()]
     if missing:
-        raise RuntimeError("Missing required email environment variables: " + ", ".join(missing))
+        raise RuntimeError(
+            "Missing required email environment variables: "
+            + ", ".join(missing)
+            + ". Configure SENDGRID_API_KEY/SENDGRID_FROM_EMAIL or Gmail credentials."
+        )
     return {
+        "transport": "GMAIL_SMTP",
         "sender": str(values["GMAIL_USER"]).strip(),
+        "sender_name": "",
+        "reply_to": "",
+        "api_key": "",
         "password": str(values["GMAIL_APP_PASSWORD"]).strip(),
-        "recipient": str(values["REPORT_RECIPIENT"]).strip(),
+        "recipient": recipient,
         "timezone": str(values.get("DIVIDEND_BOT_TIMEZONE") or DEFAULT_TIMEZONE).strip(),
         "dashboard_base_url": str(values.get("DIVIDEND_DASHBOARD_BASE_URL") or "").rstrip("/"),
         "daily_state_max_age_days": str(values.get("DIVIDEND_DAILY_STATE_MAX_AGE_DAYS") or "5").strip(),
@@ -121,7 +159,7 @@ def build_report_message(
     if normalized == "daily":
         text_lines.extend([
             "",
-            "The attached CSV files contain the fresh Dividend strategy executive summary, portfolio, and watchlist.",
+            "The attached CSV files contain the fresh Dividend strategy executive summary, performance, portfolio, and watchlist.",
         ])
     if links:
         text_lines.extend(["", "Secure dashboard links:"])
@@ -164,12 +202,84 @@ def send_report_message(message: EmailMessage, *, password: str) -> None:
         smtp.send_message(message)
 
 
+def _message_text_parts(message: EmailMessage) -> tuple[str, str]:
+    plain = ""
+    html = ""
+    for part in message.walk():
+        if part.get_content_disposition() == "attachment":
+            continue
+        if part.get_content_type() == "text/plain" and not plain:
+            plain = part.get_content()
+        elif part.get_content_type() == "text/html" and not html:
+            html = part.get_content()
+    return plain, html
+
+
+def send_sendgrid_message(
+    message: EmailMessage,
+    *,
+    api_key: str,
+    sender_name: str = "",
+    reply_to: str = "",
+    timeout: int = 30,
+) -> None:
+    """Send an EmailMessage through SendGrid without exposing credentials."""
+    plain, html = _message_text_parts(message)
+    payload: dict[str, object] = {
+        "personalizations": [{"to": [{"email": str(message["To"])}]}],
+        "from": {"email": str(message["From"])},
+        "subject": str(message["Subject"]),
+        "content": [
+            {"type": "text/plain", "value": plain},
+            {"type": "text/html", "value": html or plain},
+        ],
+    }
+    if sender_name:
+        payload["from"] = {"email": str(message["From"]), "name": sender_name}
+    if reply_to:
+        payload["reply_to"] = {"email": reply_to}
+
+    attachments = []
+    for part in message.iter_attachments():
+        raw = part.get_payload(decode=True) or b""
+        attachments.append({
+            "content": base64.b64encode(raw).decode("ascii"),
+            "type": part.get_content_type(),
+            "filename": part.get_filename() or "attachment",
+            "disposition": "attachment",
+        })
+    if attachments:
+        payload["attachments"] = attachments
+
+    request = urllib.request.Request(
+        SENDGRID_MAIL_URL,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Trade-Dividend-Bot-Scheduled-Reports/1.2",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(getattr(response, "status", response.getcode()))
+            if status < 200 or status >= 300:
+                raise RuntimeError(f"SendGrid email delivery failed with HTTP {status}")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")[:500]
+        raise RuntimeError(f"SendGrid email delivery failed with HTTP {exc.code}: {detail}") from exc
+    except urllib.error.URLError as exc:
+        raise RuntimeError(f"SendGrid email delivery failed: {exc.reason}") from exc
+
+
 def send_scheduled_reports(
     *,
     root_dir: str | Path = ".",
     now: Optional[datetime] = None,
     environment: Optional[Mapping[str, str]] = None,
     smtp_sender=send_report_message,
+    sendgrid_sender=send_sendgrid_message,
 ) -> list[str]:
     settings = configured_email_settings(environment)
     zone = ZoneInfo(settings["timezone"])
@@ -193,7 +303,17 @@ def send_scheduled_reports(
             attachments=attachments,
             links=dashboard_links(settings["dashboard_base_url"]),
         )
-        smtp_sender(message, password=settings["password"])
+        if settings["reply_to"]:
+            message["Reply-To"] = settings["reply_to"]
+        if settings["transport"] == "SENDGRID":
+            sendgrid_sender(
+                message,
+                api_key=settings["api_key"],
+                sender_name=settings["sender_name"],
+                reply_to=settings["reply_to"],
+            )
+        else:
+            smtp_sender(message, password=settings["password"])
         sent.append(frequency)
     return sent
 
