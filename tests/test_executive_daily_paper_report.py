@@ -6,7 +6,10 @@ import json
 from datetime import date
 from pathlib import Path
 
-from src.dividend_bot.executive_daily_paper_report import build_daily_paper_rows
+from src.dividend_bot.executive_daily_paper_report import (
+    DAILY_PAPER_FIELDS,
+    build_daily_paper_rows,
+)
 
 
 def _write_state(root: Path) -> None:
@@ -42,6 +45,11 @@ def _write_state(root: Path) -> None:
             "Signal": "BUY", "Action": "PAPER_BUY_OPEN", "Ticker": "AMDW",
             "Shares": "2", "Price": "25", "Paper_Value": "50", "Reason": "test",
         })
+        writer.writerow({
+            "Date": "2026-08-04", "Pair": "AMDW / AMDL", "Sleeve": "B",
+            "Signal": "SELL", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "BEX",
+            "Shares": "0", "Price": "10", "Paper_Value": "20", "Reason": "test sale",
+        })
 
 
 def test_legacy_ledger_is_presented_on_approved_fifty_thousand_basis(tmp_path: Path):
@@ -51,7 +59,8 @@ def test_legacy_ledger_is_presented_on_approved_fifty_thousand_basis(tmp_path: P
     assert summary["Starting Capital"] == "$50,000.00"
     assert summary["Current Stock Market Value"] == "$6,000.00"
     assert summary["SGOV Value"] == "$2,000.00"
-    assert summary["Total Portfolio Value"] == "$8,000.00"
+    assert summary["Cash / Reserved Funds"] == "$42,000.00"
+    assert summary["Total Portfolio Value"] == "$50,000.00"
     assert summary["Accounting Reconciliation"] == "RECONCILED"
     assert summary["Legacy Ledger Reporting Scale"] == "100x"
 
@@ -79,3 +88,24 @@ def test_invested_leg_has_cost_basis_and_uninvested_leg_is_not_hold(tmp_path: Pa
     assert invested["unrealized_gain_loss"] == "1000.00"
     assert parked["invested_capital"] == "0.00"
     assert parked["recommendation"] != "CONTINUE_HOLDING"
+
+
+def test_last_activity_is_first_and_expanded_audit_fields_are_reported(tmp_path: Path):
+    _write_state(tmp_path)
+    rows = build_daily_paper_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
+    holdings = [row for row in rows if row["report_section"] == "Current Pair Holdings"]
+    invested = next(row for row in holdings if row["active_leg"] == "AMDW")
+    parked = next(row for row in holdings if row["active_leg"] == "SGOV")
+
+    assert DAILY_PAPER_FIELDS[0] == "last_activity"
+    assert DAILY_PAPER_FIELDS[1] == "days_since"
+    assert invested["last_activity"] == "2026-08-01"
+    assert invested["days_since"] == "4"
+    assert invested["last_event"] == "POSITION CREATED"
+    assert parked["last_activity"] == "2026-08-04"
+    assert parked["days_since"] == "1"
+    assert parked["last_event"] == "SOLD AND MOVED TO SGOV"
+    assert invested["portfolio_pct"] == "12.00%"
+    assert parked["portfolio_pct"] == "4.00%"
+    assert "todays_dividend" in invested
+    assert "total_dividends" in invested
