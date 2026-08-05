@@ -49,6 +49,16 @@ def _environment() -> dict[str, str]:
     }
 
 
+def _write_daily_reports(root: Path) -> None:
+    for name in (
+        "daily_paper_report.md",
+        "daily_change_summary.md",
+        "strategy_health_report.md",
+        "live_readiness_report.md",
+    ):
+        (root / name).write_text(f"# {name}\n- Status: READY\n", encoding="utf-8")
+
+
 def test_email_settings_require_all_credentials():
     with pytest.raises(RuntimeError):
         configured_email_settings({"GMAIL_USER": "a@example.com"})
@@ -63,8 +73,7 @@ def test_email_settings_use_environment_values():
 
 
 def test_every_day_at_seven_is_daily_due():
-    now = datetime(2026, 8, 5, 19, 0, tzinfo=TZ)
-    assert due_report_frequencies(now) == ["daily"]
+    assert due_report_frequencies(datetime(2026, 8, 5, 19, 0, tzinfo=TZ)) == ["daily"]
 
 
 def test_friday_at_seven_is_daily_and_weekly_due():
@@ -80,13 +89,11 @@ def test_last_day_at_seven_is_monthly_due():
 
 
 def test_non_due_hour_returns_empty():
-    now = datetime(2026, 7, 31, 18, 0, tzinfo=TZ)
-    assert due_report_frequencies(now) == []
+    assert due_report_frequencies(datetime(2026, 7, 31, 18, 0, tzinfo=TZ)) == []
 
 
 def test_month_end_that_is_not_friday_sends_daily_and_monthly():
-    now = datetime(2026, 8, 31, 19, 0, tzinfo=TZ)
-    assert due_report_frequencies(now) == ["daily", "monthly"]
+    assert due_report_frequencies(datetime(2026, 8, 31, 19, 0, tzinfo=TZ)) == ["daily", "monthly"]
 
 
 def test_dashboard_links_are_secure_paths():
@@ -98,8 +105,7 @@ def test_dashboard_links_are_secure_paths():
 def test_existing_attachments_skips_missing_files(tmp_path: Path):
     report = tmp_path / "weekly_portfolio_review.md"
     report.write_text("# Weekly", encoding="utf-8")
-    found = existing_attachments(tmp_path, ["weekly_portfolio_review.md", "missing.html"])
-    assert found == [report]
+    assert existing_attachments(tmp_path, ["weekly_portfolio_review.md", "missing.html"]) == [report]
 
 
 def test_message_contains_csv_attachment(tmp_path: Path):
@@ -134,6 +140,7 @@ def test_send_scheduled_reports_sends_daily_weekly_and_monthly_together(tmp_path
     (tmp_path / "paper_portfolio_state.json").write_text(
         json.dumps(_state("2026-07-31")), encoding="utf-8"
     )
+    _write_daily_reports(tmp_path)
     (tmp_path / "weekly_portfolio_review.md").write_text("# Weekly", encoding="utf-8")
     sent_messages = []
 
@@ -150,10 +157,14 @@ def test_send_scheduled_reports_sends_daily_weekly_and_monthly_together(tmp_path
     assert len(sent_messages) == 3
     daily_message = sent_messages[0][0]
     assert sorted(part.get_filename() for part in daily_message.iter_attachments()) == [
+        "daily_change_summary.csv",
+        "daily_paper_report.csv",
         "dividend_executive_summary.csv",
         "dividend_performance.csv",
         "dividend_portfolio.csv",
         "dividend_watchlist.csv",
+        "live_readiness_report.csv",
+        "strategy_health_report.csv",
     ]
     assert all(password == "secret" for _, password in sent_messages)
 
@@ -162,6 +173,7 @@ def test_stale_daily_state_blocks_email(tmp_path: Path):
     (tmp_path / "paper_portfolio_state.json").write_text(
         json.dumps(_state("2026-06-01")), encoding="utf-8"
     )
+    _write_daily_reports(tmp_path)
     with pytest.raises(RuntimeError, match="stale"):
         send_scheduled_reports(
             root_dir=tmp_path,
