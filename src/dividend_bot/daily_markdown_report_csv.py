@@ -1,16 +1,18 @@
-"""Convert required Dividend Markdown reports to structured daily CSV evidence."""
+"""Convert required Dividend Markdown reports to executive CSV evidence."""
 from __future__ import annotations
 
 import csv
 import os
 import re
 import tempfile
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.dividend_bot.executive_reporting_framework import executive_framework_rows
+
 MODULE_NAME = "daily_markdown_report_csv"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "2.0.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -25,14 +27,11 @@ REPORT_EXPORTS = (
 )
 
 CSV_FIELDS = [
-    "as_of_date",
-    "source_file",
-    "section",
-    "row_type",
-    "label",
+    "report_section",
+    "field",
     "value",
-    "text",
-    "line_number",
+    "report_text",
+    "source_line",
     "paper_trade_mode",
 ]
 
@@ -66,7 +65,37 @@ def _strip_markdown(text: str) -> str:
     return value.strip()
 
 
-def markdown_rows(source: Path, *, as_of_date: date) -> list[dict[str, Any]]:
+def _framework_csv_rows(
+    source: Path,
+    *,
+    as_of_date: date,
+    generated_at: datetime,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in executive_framework_rows(
+        source_name=source.name,
+        trading_date=as_of_date,
+        generated_at=generated_at,
+    ):
+        rows.append(
+            {
+                "report_section": item["section"],
+                "field": item["field"],
+                "value": item["value"],
+                "report_text": "",
+                "source_line": "",
+                "paper_trade_mode": True,
+            }
+        )
+    return rows
+
+
+def markdown_rows(
+    source: Path,
+    *,
+    as_of_date: date,
+    generated_at: datetime | None = None,
+) -> list[dict[str, Any]]:
     if not source.is_file():
         raise RuntimeError(f"Required daily Dividend report is missing: {source}")
     try:
@@ -74,9 +103,13 @@ def markdown_rows(source: Path, *, as_of_date: date) -> list[dict[str, Any]]:
     except OSError as exc:
         raise RuntimeError(f"Required daily Dividend report is unreadable: {source}") from exc
 
-    rows: list[dict[str, Any]] = []
-    section = ""
+    generated = generated_at or datetime.now(timezone.utc)
+    if generated.tzinfo is None:
+        generated = generated.replace(tzinfo=timezone.utc)
+    rows = _framework_csv_rows(source, as_of_date=as_of_date, generated_at=generated)
+    section = "Report Details"
     in_code_block = False
+
     for line_number, raw_line in enumerate(lines, start=1):
         stripped = raw_line.strip()
         if not stripped:
@@ -85,60 +118,61 @@ def markdown_rows(source: Path, *, as_of_date: date) -> list[dict[str, Any]]:
             in_code_block = not in_code_block
             continue
 
-        row_type = "code" if in_code_block else "text"
-        label = ""
+        field = ""
         value = ""
-        text = stripped
+        text = _strip_markdown(stripped)
 
         heading = re.match(r"^(#{1,6})\s+(.+)$", stripped)
         if heading and not in_code_block:
             section = _strip_markdown(heading.group(2))
-            row_type = "heading"
-            text = section
-        elif re.match(r"^[-*+]\s+", stripped) and not in_code_block:
-            row_type = "bullet"
-            text = _strip_markdown(stripped)
-        elif re.match(r"^\d+[.)]\s+", stripped) and not in_code_block:
-            row_type = "numbered_item"
-            text = _strip_markdown(stripped)
-
-        normalized = _strip_markdown(text)
-        if not in_code_block and ":" in normalized:
-            possible_label, possible_value = normalized.split(":", 1)
-            if possible_label.strip() and possible_value.strip():
-                label = possible_label.strip()
+            field = "Section"
+            value = section
+            text = ""
+        elif not in_code_block and ":" in text:
+            possible_field, possible_value = text.split(":", 1)
+            if possible_field.strip() and possible_value.strip():
+                field = possible_field.strip()
                 value = possible_value.strip()
-                if row_type == "text":
-                    row_type = "key_value"
+                text = ""
 
         rows.append(
             {
-                "as_of_date": as_of_date.isoformat(),
-                "source_file": source.name,
-                "section": section,
-                "row_type": row_type,
-                "label": label,
+                "report_section": section,
+                "field": field,
                 "value": value,
-                "text": normalized,
-                "line_number": line_number,
+                "report_text": text,
+                "source_line": line_number,
                 "paper_trade_mode": True,
             }
         )
 
-    if not rows:
+    content_rows = [row for row in rows if row["source_line"] != ""]
+    if not content_rows:
         raise RuntimeError(f"Required daily Dividend report is empty: {source}")
     return rows
 
 
 def generate_markdown_report_csvs(
-    *, root_dir: str | Path, output_dir: str | Path, as_of_date: date
+    *,
+    root_dir: str | Path,
+    output_dir: str | Path,
+    as_of_date: date,
+    generated_at: datetime | None = None,
 ) -> list[Path]:
     root = Path(root_dir)
     destination = root / Path(output_dir)
+    generated = generated_at or datetime.now(timezone.utc)
     outputs: list[Path] = []
     for source_relative, output_name in REPORT_EXPORTS:
         source = root / source_relative
         output = destination / output_name
-        _atomic_write_csv(output, markdown_rows(source, as_of_date=as_of_date))
+        _atomic_write_csv(
+            output,
+            markdown_rows(
+                source,
+                as_of_date=as_of_date,
+                generated_at=generated,
+            ),
+        )
         outputs.append(output)
     return outputs
