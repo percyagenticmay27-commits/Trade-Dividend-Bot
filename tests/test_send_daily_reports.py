@@ -8,6 +8,16 @@ from pathlib import Path
 from send_daily_reports import EXPECTED_CSV_NAMES, send_daily_reports
 
 
+EXPECTED_EXECUTIVE_FIELDS = [
+    "report_section",
+    "field",
+    "value",
+    "report_text",
+    "source_line",
+    "paper_trade_mode",
+]
+
+
 def _write_inputs(root: Path) -> None:
     (root / "paper_state.json").write_text(
         json.dumps({"as_of_date": "2026-08-05"}), encoding="utf-8"
@@ -46,10 +56,19 @@ def test_daily_decision_email_converts_exact_markdown_reports_to_csv(tmp_path: P
 
     for path in payload["attachments"]:
         with path.open(newline="", encoding="utf-8") as handle:
-            rows = list(csv.DictReader(handle))
+            reader = csv.DictReader(handle)
+            rows = list(reader)
+            assert reader.fieldnames == EXPECTED_EXECUTIVE_FIELDS
+
         assert rows
-        assert rows[0]["source_file"].endswith(".md")
-        assert rows[0]["paper_trade_mode"] == "True"
+        assert all(row["paper_trade_mode"] == "True" for row in rows)
+        assert any(row["report_section"] == "Executive Header" for row in rows)
+        assert any(row["report_section"] == "What This Report Shows" for row in rows)
+        assert any(row["report_section"] == "Why This Report Is Used" for row in rows)
+        assert any(row["source_line"] for row in rows)
+        assert "source_file" not in rows[0]
+        assert "row_type" not in rows[0]
+        assert "label" not in rows[0]
 
 
 def test_daily_decision_email_duplicate_protection(tmp_path: Path):
