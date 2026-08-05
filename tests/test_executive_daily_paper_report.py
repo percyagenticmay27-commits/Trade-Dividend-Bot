@@ -65,7 +65,7 @@ def test_pair_rows_show_original_replacement_and_real_position_state(tmp_path: P
     assert {row["original_pair"] for row in holdings} == {"AMDW / AMDL"}
     assert {row["pair_type"] for row in holdings} == {"REPLACEMENT"}
     assert {row["position_state"] for row in holdings} == {"A_INVESTED_IN_AMDW_B_MOVED_TO_SGOV"}
-    assert {row["recommendation"] for row in holdings} == {"WAITING_FOR_CONFIRMATION"}
+    assert {row["recommendation"] for row in holdings} == {"SELL_REVIEW"}
 
 
 def test_invested_leg_has_cost_basis_and_uninvested_leg_is_not_hold(tmp_path: Path):
