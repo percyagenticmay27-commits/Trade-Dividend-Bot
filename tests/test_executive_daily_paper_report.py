@@ -77,16 +77,24 @@ def test_pair_rows_show_original_replacement_and_real_position_state(tmp_path: P
     assert {row["recommendation"] for row in holdings} == {"SELL_REVIEW"}
 
 
-def test_invested_leg_has_cost_basis_and_uninvested_leg_is_not_hold(tmp_path: Path):
+def test_invested_leg_has_cost_basis_and_sgov_leg_retains_portfolio_value(tmp_path: Path):
     _write_state(tmp_path)
     rows = build_daily_paper_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
     holdings = [row for row in rows if row["report_section"] == "Current Pair Holdings"]
     invested = next(row for row in holdings if row["active_leg"] == "AMDW")
     parked = next(row for row in holdings if row["active_leg"] == "SGOV")
+
     assert invested["invested_capital"] == "5000.00"
     assert invested["market_value"] == "6000.00"
+    assert invested["sgov_balance"] == "0.00"
     assert invested["unrealized_gain_loss"] == "1000.00"
+    assert invested["portfolio_pct"] == "12.00%"
+
+    assert parked["stock_moved"] == "BEX"
     assert parked["invested_capital"] == "0.00"
+    assert parked["market_value"] == "2000.00"
+    assert parked["sgov_balance"] == "2000.00"
+    assert parked["portfolio_pct"] == "4.00%"
     assert parked["recommendation"] != "CONTINUE_HOLDING"
 
 
@@ -99,17 +107,12 @@ def test_last_activity_is_first_and_expanded_audit_fields_are_reported(tmp_path:
 
     assert DAILY_PAPER_FIELDS[0] == "last_activity"
     assert DAILY_PAPER_FIELDS[1] == "days_since"
+    assert "stock_moved" in DAILY_PAPER_FIELDS
     assert invested["last_activity"] == "2026-08-01"
     assert invested["days_since"] == "4"
     assert invested["last_event"] == "POSITION CREATED"
     assert parked["last_activity"] == "2026-08-04"
     assert parked["days_since"] == "1"
     assert parked["last_event"] == "SOLD AND MOVED TO SGOV"
-
-    # Portfolio % is pair-level: $6,000 stock value + $2,000 SGOV = $8,000,
-    # which represents 16% of the approved $50,000 portfolio. Both sleeve rows
-    # identify the same pair allocation and therefore carry the same percentage.
-    assert invested["portfolio_pct"] == "16.00%"
-    assert parked["portfolio_pct"] == "16.00%"
     assert "todays_dividend" in invested
     assert "total_dividends" in invested
