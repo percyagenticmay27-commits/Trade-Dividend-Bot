@@ -9,10 +9,14 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.dividend_bot.executive_daily_paper_report import (
+    DAILY_PAPER_FIELDS,
+    build_daily_paper_rows,
+)
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "daily_markdown_report_csv"
-MODULE_VERSION = "2.0.0"
+MODULE_VERSION = "2.1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -36,14 +40,19 @@ CSV_FIELDS = [
 ]
 
 
-def _atomic_write_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+def _atomic_write_csv(
+    path: Path,
+    rows: list[dict[str, Any]],
+    *,
+    fieldnames: list[str] | tuple[str, ...] = CSV_FIELDS,
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(
         prefix=f".{path.name}.", dir=str(path.parent), text=True
     )
     try:
         with os.fdopen(fd, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=CSV_FIELDS, extrasaction="ignore")
+            writer = csv.DictWriter(handle, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(rows)
             handle.flush()
@@ -166,13 +175,23 @@ def generate_markdown_report_csvs(
     for source_relative, output_name in REPORT_EXPORTS:
         source = root / source_relative
         output = destination / output_name
-        _atomic_write_csv(
-            output,
-            markdown_rows(
-                source,
-                as_of_date=as_of_date,
+        if source_relative.name == "daily_paper_report.md":
+            if not source.is_file():
+                raise RuntimeError(f"Required daily Dividend report is missing: {source}")
+            rows = build_daily_paper_rows(
+                root_dir=root,
+                trading_date=as_of_date,
                 generated_at=generated,
-            ),
-        )
+            )
+            _atomic_write_csv(output, rows, fieldnames=DAILY_PAPER_FIELDS)
+        else:
+            _atomic_write_csv(
+                output,
+                markdown_rows(
+                    source,
+                    as_of_date=as_of_date,
+                    generated_at=generated,
+                ),
+            )
         outputs.append(output)
     return outputs
