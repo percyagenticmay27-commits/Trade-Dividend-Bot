@@ -18,9 +18,13 @@ from src.dividend_bot.executive_daily_paper_report import (
     build_daily_paper_rows,
 )
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
+from src.dividend_bot.executive_strategy_health_report import (
+    STRATEGY_HEALTH_FIELDS,
+    build_strategy_health_rows,
+)
 
 MODULE_NAME = "daily_markdown_report_csv"
-MODULE_VERSION = "3.0.0"
+MODULE_VERSION = "4.0.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -195,6 +199,13 @@ def generate_markdown_report_csvs(
                 generated_at=generated,
             )
             _atomic_write_csv(output, rows, fieldnames=DAILY_CHANGE_FIELDS)
+        elif source_relative.name == "strategy_health_report.md":
+            rows = build_strategy_health_rows(
+                root_dir=root,
+                trading_date=as_of_date,
+                generated_at=generated,
+            )
+            _atomic_write_csv(output, rows, fieldnames=STRATEGY_HEALTH_FIELDS)
         else:
             _atomic_write_csv(
                 output,
