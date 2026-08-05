@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 MODULE_NAME = "daily_dividend_csv_exports"
-MODULE_VERSION = "1.1.0"
+MODULE_VERSION = "1.2.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -18,6 +18,11 @@ ORDER_PLACEMENT_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
 
 DEFAULT_STATE_PATH = Path("paper_portfolio_state.json")
+STATE_CANDIDATE_PATHS = (
+    Path("paper_portfolio_state.json"),
+    Path("paper_state.json"),
+    Path("reports/paper_state.json"),
+)
 DEFAULT_SNAPSHOT_PATH = Path("portfolio_snapshot.csv")
 DEFAULT_OUTPUT_DIR = Path("results/daily_dividend_csv")
 DEFAULT_MAX_STATE_AGE_DAYS = 5
@@ -51,7 +56,10 @@ def _parse_state_date(state: Mapping[str, Any]) -> date:
     raw = str(state.get("as_of_date") or state.get("last_processed_date") or "").strip()
     if not raw:
         raise RuntimeError("Dividend paper state has no as_of_date or last_processed_date")
-    return date.fromisoformat(raw[:10])
+    try:
+        return date.fromisoformat(raw[:10])
+    except ValueError as exc:
+        raise RuntimeError(f"Dividend paper state has invalid date: {raw}") from exc
 
 
 def _validate_fresh_state(state: Mapping[str, Any], *, today: date, max_age_days: int) -> date:
@@ -62,6 +70,74 @@ def _validate_fresh_state(state: Mapping[str, Any], *, today: date, max_age_days
     if age_days > max_age_days:
         raise RuntimeError(f"Dividend paper state is stale: {state_date.isoformat()} is {age_days} days old (maximum {max_age_days})")
     return state_date
+
+
+def _generated_timestamp(state: Mapping[str, Any], path: Path, state_date: date) -> float:
+    for key in ("generated_at", "updated_at", "last_processed_at"):
+        raw = str(state.get(key) or "").strip()
+        if not raw:
+            continue
+        try:
+            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            return parsed.timestamp()
+        except ValueError:
+            continue
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return datetime.combine(state_date, datetime.min.time(), tzinfo=timezone.utc).timestamp()
+
+
+def _load_state_candidate(path: Path, *, today: date, max_age_days: int) -> tuple[dict[str, Any], date, float]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Dividend paper state is unreadable: {path}") from exc
+    if not isinstance(raw, Mapping):
+        raise RuntimeError(f"Dividend paper state must be a JSON object: {path}")
+    state = dict(raw)
+    pairs = state.get("pairs")
+    if not isinstance(pairs, Mapping) or not pairs:
+        raise RuntimeError(f"Dividend paper state contains no portfolio pairs: {path}")
+    state_date = _validate_fresh_state(state, today=today, max_age_days=max_age_days)
+    return state, state_date, _generated_timestamp(state, path, state_date)
+
+
+def _discover_fresh_state(
+    root: Path,
+    *,
+    state_path: str | Path,
+    today: date,
+    max_age_days: int,
+) -> tuple[dict[str, Any], date, Path]:
+    requested = Path(state_path)
+    candidates = (requested,) if requested != DEFAULT_STATE_PATH else STATE_CANDIDATE_PATHS
+    valid: list[tuple[float, date, int, Path, dict[str, Any]]] = []
+    failures: list[str] = []
+    existing = False
+    for priority, relative in enumerate(candidates):
+        path = relative if relative.is_absolute() else root / relative
+        if not path.is_file():
+            continue
+        existing = True
+        try:
+            state, state_date, generated = _load_state_candidate(
+                path, today=today, max_age_days=max_age_days
+            )
+        except RuntimeError as exc:
+            failures.append(str(exc))
+            continue
+        valid.append((generated, state_date, -priority, path, state))
+    if not valid:
+        if failures:
+            raise RuntimeError("No fresh valid Dividend paper state found: " + " | ".join(failures))
+        label = ", ".join(str(path) for path in candidates)
+        reason = "missing" if not existing else "invalid"
+        raise RuntimeError(f"Dividend paper state is {reason}; checked: {label}")
+    _, state_date, _, selected_path, state = max(valid, key=lambda item: (item[0], item[1], item[2]))
+    return state, state_date, selected_path
 
 
 def _number(value: Any) -> float:
@@ -147,12 +223,13 @@ def generate_daily_dividend_csv_exports(*, root_dir: str | Path = ".", state_pat
                                          snapshot_path: str | Path = DEFAULT_SNAPSHOT_PATH, output_dir: str | Path = DEFAULT_OUTPUT_DIR,
                                          now: datetime | None = None, max_state_age_days: int = DEFAULT_MAX_STATE_AGE_DAYS) -> list[Path]:
     root = Path(root_dir)
-    state_file = root / Path(state_path)
-    if not state_file.is_file():
-        raise RuntimeError(f"Dividend paper state is missing: {state_file}")
-    state = json.loads(state_file.read_text(encoding="utf-8"))
     current = now.astimezone(timezone.utc) if now is not None else datetime.now(timezone.utc)
-    state_date = _validate_fresh_state(state, today=current.date(), max_age_days=max_state_age_days)
+    state, state_date, selected_state_path = _discover_fresh_state(
+        root,
+        state_path=state_path,
+        today=current.date(),
+        max_age_days=max_state_age_days,
+    )
     portfolio_rows = _portfolio_rows(state, state_date)
     if not portfolio_rows:
         raise RuntimeError("Dividend paper state contains no portfolio pairs")
@@ -162,7 +239,8 @@ def generate_daily_dividend_csv_exports(*, root_dir: str | Path = ".", state_pat
     sgov_value = sum(_number(row["sgov_balance"]) for row in portfolio_rows)
     dividends = sum(_number(row["total_dividends_received"]) for row in portfolio_rows)
     executive_rows = [{"as_of_date": state_date.isoformat(), "generated_at": current.isoformat(), "strategy": "DIVIDEND",
-                       "paper_trade_mode": True, "portfolio_value": round(portfolio_value, 8), "etf_exposure": round(etf_value, 8),
+                       "paper_trade_mode": True, "state_source": str(selected_state_path),
+                       "portfolio_value": round(portfolio_value, 8), "etf_exposure": round(etf_value, 8),
                        "sgov_exposure": round(sgov_value, 8), "total_dividends_received": round(dividends, 8),
                        "pair_count": len(portfolio_rows), "watchlist_item_count": len(watchlist_rows), "data_stale": False}]
     performance_rows = [_performance_row(root / Path(snapshot_path), state_date, current, portfolio_value, dividends)]
