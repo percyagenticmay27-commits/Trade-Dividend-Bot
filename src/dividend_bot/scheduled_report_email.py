@@ -1,4 +1,4 @@
-"""Scheduled Gmail delivery for weekly and monthly paper-only reports."""
+"""Scheduled Gmail delivery for daily, weekly, and monthly paper-only reports."""
 from __future__ import annotations
 
 import calendar
@@ -11,8 +11,10 @@ from pathlib import Path
 from typing import Mapping, Optional, Sequence
 from zoneinfo import ZoneInfo
 
+from src.dividend_bot.daily_dividend_csv_exports import generate_daily_dividend_csv_exports
+
 MODULE_NAME = "scheduled_report_email"
-MODULE_VERSION = "1.0.2"
+MODULE_VERSION = "1.1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -48,6 +50,7 @@ def configured_email_settings(environment: Optional[Mapping[str, str]] = None) -
         "recipient": str(values["REPORT_RECIPIENT"]).strip(),
         "timezone": str(values.get("DIVIDEND_BOT_TIMEZONE") or DEFAULT_TIMEZONE).strip(),
         "dashboard_base_url": str(values.get("DIVIDEND_DASHBOARD_BASE_URL") or "").rstrip("/"),
+        "daily_state_max_age_days": str(values.get("DIVIDEND_DAILY_STATE_MAX_AGE_DAYS") or "5").strip(),
     }
 
 
@@ -65,7 +68,7 @@ def due_report_frequencies(
     current = now.astimezone(zone) if now is not None else datetime.now(zone)
     if current.hour != send_hour:
         return []
-    due: list[str] = []
+    due: list[str] = ["daily"]
     if current.weekday() == 4:
         due.append("weekly")
     if is_last_calendar_day(current):
@@ -103,8 +106,8 @@ def build_report_message(
     links: Sequence[tuple[str, str]] = (),
 ) -> EmailMessage:
     normalized = frequency.lower()
-    if normalized not in {"weekly", "monthly"}:
-        raise ValueError("frequency must be weekly or monthly")
+    if normalized not in {"daily", "weekly", "monthly"}:
+        raise ValueError("frequency must be daily, weekly, or monthly")
     title = normalized.title()
     message = EmailMessage()
     message["From"] = sender
@@ -115,6 +118,11 @@ def build_report_message(
         "",
         f"The {normalized} Dividend Bot reporting cycle is complete.",
     ]
+    if normalized == "daily":
+        text_lines.extend([
+            "",
+            "The attached CSV files contain the fresh Dividend strategy executive summary, portfolio, and watchlist.",
+        ])
     if links:
         text_lines.extend(["", "Secure dashboard links:"])
         text_lines.extend(f"- {label}: {url}" for label, url in links)
@@ -123,9 +131,7 @@ def build_report_message(
         text_lines.extend(f"- {path.name}" for path in attachments)
     message.set_content("\n".join(text_lines) + "\n")
 
-    link_html = "".join(
-        f'<li><a href="{url}">{label}</a></li>' for label, url in links
-    ) or "<li>No dashboard URL configured.</li>"
+    link_html = "".join(f'<li><a href="{url}">{label}</a></li>' for label, url in links) or "<li>No dashboard URL configured.</li>"
     attachment_html = "".join(f"<li>{path.name}</li>" for path in attachments) or "<li>No attachments were available.</li>"
     message.add_alternative(
         f"""
@@ -140,7 +146,13 @@ def build_report_message(
         subtype="html",
     )
     for path in attachments:
-        maintype, subtype = ("text", "html") if path.suffix.lower() == ".html" else ("text", "markdown")
+        suffix = path.suffix.lower()
+        if suffix == ".html":
+            maintype, subtype = "text", "html"
+        elif suffix == ".csv":
+            maintype, subtype = "text", "csv"
+        else:
+            maintype, subtype = "text", "markdown"
         message.add_attachment(path.read_bytes(), maintype=maintype, subtype=subtype, filename=path.name)
     return message
 
@@ -164,8 +176,15 @@ def send_scheduled_reports(
     current = now.astimezone(zone) if now is not None else datetime.now(zone)
     sent: list[str] = []
     for frequency in due_report_frequencies(current, timezone_name=settings["timezone"]):
-        names = WEEKLY_REPORT_FILES if frequency == "weekly" else MONTHLY_REPORT_FILES
-        attachments = existing_attachments(root_dir, names)
+        if frequency == "daily":
+            attachments = generate_daily_dividend_csv_exports(
+                root_dir=root_dir,
+                now=current,
+                max_state_age_days=int(settings["daily_state_max_age_days"]),
+            )
+        else:
+            names = WEEKLY_REPORT_FILES if frequency == "weekly" else MONTHLY_REPORT_FILES
+            attachments = existing_attachments(root_dir, names)
         message = build_report_message(
             frequency=frequency,
             sender=settings["sender"],
