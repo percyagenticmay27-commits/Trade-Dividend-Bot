@@ -9,6 +9,10 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.dividend_bot.executive_daily_change_summary import (
+    DAILY_CHANGE_FIELDS,
+    build_daily_change_rows,
+)
 from src.dividend_bot.executive_daily_paper_report import (
     DAILY_PAPER_FIELDS,
     build_daily_paper_rows,
@@ -16,7 +20,7 @@ from src.dividend_bot.executive_daily_paper_report import (
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "daily_markdown_report_csv"
-MODULE_VERSION = "2.1.0"
+MODULE_VERSION = "3.0.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
@@ -175,15 +179,22 @@ def generate_markdown_report_csvs(
     for source_relative, output_name in REPORT_EXPORTS:
         source = root / source_relative
         output = destination / output_name
+        if not source.is_file():
+            raise RuntimeError(f"Required daily Dividend report is missing: {source}")
         if source_relative.name == "daily_paper_report.md":
-            if not source.is_file():
-                raise RuntimeError(f"Required daily Dividend report is missing: {source}")
             rows = build_daily_paper_rows(
                 root_dir=root,
                 trading_date=as_of_date,
                 generated_at=generated,
             )
             _atomic_write_csv(output, rows, fieldnames=DAILY_PAPER_FIELDS)
+        elif source_relative.name == "daily_change_summary.md":
+            rows = build_daily_change_rows(
+                root_dir=root,
+                trading_date=as_of_date,
+                generated_at=generated,
+            )
+            _atomic_write_csv(output, rows, fieldnames=DAILY_CHANGE_FIELDS)
         else:
             _atomic_write_csv(
                 output,
