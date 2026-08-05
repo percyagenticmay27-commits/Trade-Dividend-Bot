@@ -1,8 +1,8 @@
-"""Build the Step 3 Executive Daily Change Summary from paper evidence.
+"""Build a simple Executive Daily Change Summary from paper evidence.
 
-Reporting only: this module never places orders, moves capital, or changes strategy
-state. It summarizes changes recorded in the paper trade log and the current pair
-ledger, then produces explicit next-day actions.
+Each business row describes one stock and one event. Pair-level state strings are
+intentionally avoided because they can mix two different sleeve activities and
+make BUY, SELL, and SGOV transitions ambiguous. This module is reporting-only.
 """
 from __future__ import annotations
 
@@ -15,47 +15,36 @@ from typing import Any
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "executive_daily_change_summary"
-MODULE_VERSION = "3.0.0"
+MODULE_VERSION = "3.1.0"
 PAPER_TRADE_MODE = True
-APPROVED_STARTING_CAPITAL = 50_000.0
 LEGACY_STARTING_CAPITAL = 500.0
 
 DAILY_CHANGE_FIELDS = [
     "activity_date",
     "days_since",
     "report_section",
-    "change_category",
-    "current_pair",
+    "event",
     "original_pair",
-    "pair_type",
+    "current_pair",
     "stock",
-    "stock_moved",
-    "previous_state",
-    "current_state",
-    "signal",
-    "required_action",
+    "from_location",
+    "to_location",
     "amount",
-    "previous_value",
-    "current_value",
-    "change_value",
-    "change_pct",
+    "signal",
+    "next_action",
     "reason",
-    "next_day_action",
-    "priority",
     "source",
     "paper_trade_mode",
 ]
 
-_ACTION_CATEGORY = {
-    "PAPER_BUY_OPEN": "PURCHASE",
-    "PAPER_BUY_FROM_SGOV": "REENTRY",
-    "PAPER_SELL_TO_SGOV": "SGOV MOVEMENT",
-    "PAPER_PARK_IN_SGOV": "SGOV MOVEMENT",
-    "PAPER_DIVIDEND_RECEIVED": "DIVIDEND",
-    "PAIR_REPLACED": "PAIR REPLACEMENT",
-    "PAPER_REPLACEMENT": "PAIR REPLACEMENT",
-    "EARNINGS_EXIT": "EARNINGS EVENT",
-    "PAPER_EARNINGS_EXIT": "EARNINGS EVENT",
+_ACTION_EVENT = {
+    "PAPER_BUY_OPEN": "BOUGHT",
+    "PAPER_BUY_FROM_SGOV": "BOUGHT FROM SGOV",
+    "PAPER_SELL_TO_SGOV": "SOLD TO SGOV",
+    "PAPER_PARK_IN_SGOV": "MOVED TO SGOV",
+    "PAPER_DIVIDEND_RECEIVED": "DIVIDEND RECEIVED",
+    "EARNINGS_EXIT": "EARNINGS EXIT TO SGOV",
+    "PAPER_EARNINGS_EXIT": "EARNINGS EXIT TO SGOV",
 }
 
 
@@ -114,37 +103,37 @@ def _days_since(value: str, trading_date: date) -> str:
     return "" if parsed is None else str(max(0, (trading_date - parsed).days))
 
 
-def _pair_identity(original_pair: str, entry: dict[str, Any]) -> tuple[str, str]:
-    a = str(entry.get("a_ticker") or "A").strip()
-    b = str(entry.get("b_ticker") or "B").strip()
-    return f"{a} / {b}", "ORIGINAL" if f"{a} / {b}" == original_pair else "REPLACEMENT"
+def _pair_name(entry: dict[str, Any], fallback: str) -> str:
+    if not entry:
+        return fallback
+    return f"{str(entry.get('a_ticker') or 'A').strip()} / {str(entry.get('b_ticker') or 'B').strip()}"
 
 
-def _position_state(entry: dict[str, Any]) -> str:
-    a = str(entry.get("a_ticker") or "A").strip()
-    b = str(entry.get("b_ticker") or "B").strip()
-    a_sgov = bool(entry.get("a_in_sgov", _number(entry.get("a_shares")) == 0))
-    b_sgov = bool(entry.get("b_in_sgov", _number(entry.get("b_shares")) == 0))
-    if a_sgov and b_sgov:
-        return "MOVED_TO_SGOV"
-    if not a_sgov and not b_sgov:
-        return f"INVESTED_IN_{a}_AND_{b}"
-    if a_sgov:
-        return f"A_MOVED_TO_SGOV_B_INVESTED_IN_{b}"
-    return f"A_INVESTED_IN_{a}_B_MOVED_TO_SGOV"
-
-
-def _next_action(entry: dict[str, Any]) -> str:
-    state = _position_state(entry)
+def _side_details(entry: dict[str, Any], side: str, scale: float) -> dict[str, Any]:
+    key = side.lower()
+    ticker = str(entry.get(f"{key}_ticker") or side).strip()
+    shares = _number(entry.get(f"{key}_shares")) * scale
+    in_sgov = bool(entry.get(f"{key}_in_sgov", shares == 0))
+    prices = entry.get("last_prices") if isinstance(entry.get("last_prices"), dict) else {}
+    price = _number(prices.get(side))
+    market_value = shares * price if not in_sgov else 0.0
     signals = entry.get("last_signal") if isinstance(entry.get("last_signal"), dict) else {}
-    values = {str(v).upper() for v in signals.values()}
-    if state == "MOVED_TO_SGOV":
-        return "WAIT_FOR_ENTRY_CONFIRMATION" if "BUY" in values else "REMAIN_IN_SGOV"
-    if "SELL" in values:
-        return "SELL_REVIEW"
-    if "BUY" in values and state.startswith("INVESTED_IN_"):
-        return "CONTINUE_HOLDING"
-    return "MONITOR_NEXT_SESSION"
+    signal = str(signals.get(side) or "UNKNOWN").upper()
+    return {
+        "ticker": ticker,
+        "in_sgov": in_sgov,
+        "market_value": market_value,
+        "signal": signal,
+    }
+
+
+def _next_action(*, in_sgov: bool, signal: str) -> str:
+    signal = signal.upper()
+    if in_sgov:
+        return "WAIT FOR BUY CONFIRMATION" if signal == "BUY" else "REMAIN IN SGOV"
+    if signal == "SELL":
+        return "REVIEW SALE"
+    return "CONTINUE HOLDING"
 
 
 def _current_values(state: dict[str, Any], scale: float) -> tuple[float, float]:
@@ -153,14 +142,71 @@ def _current_values(state: dict[str, Any], scale: float) -> tuple[float, float]:
     for value in (state.get("pairs") or {}).values():
         if not isinstance(value, dict):
             continue
-        prices = value.get("last_prices") if isinstance(value.get("last_prices"), dict) else {}
-        for side in ("A", "B"):
-            key = side.lower()
-            in_sgov = bool(value.get(f"{key}_in_sgov", _number(value.get(f"{key}_shares")) == 0))
-            if not in_sgov:
-                stock += _number(value.get(f"{key}_shares")) * scale * _number(prices.get(side))
+        stock += _side_details(value, "A", scale)["market_value"]
+        stock += _side_details(value, "B", scale)["market_value"]
         sgov += _number(value.get("sgov_balance")) * scale
     return stock, sgov
+
+
+def _replacement_rows(
+    *,
+    previous: dict[str, Any],
+    current: dict[str, Any],
+    trading_date: date,
+    current_scale: float,
+) -> list[dict[str, Any]]:
+    """Expose removed and added stocks whenever a pair member changes."""
+    rows: list[dict[str, Any]] = []
+    previous_pairs = previous.get("pairs") if isinstance(previous.get("pairs"), dict) else {}
+    current_pairs = current.get("pairs") if isinstance(current.get("pairs"), dict) else {}
+    previous_scale = _scale_for(previous)
+
+    for original_pair, current_entry in current_pairs.items():
+        if not isinstance(current_entry, dict):
+            continue
+        prior_entry = previous_pairs.get(original_pair)
+        if not isinstance(prior_entry, dict):
+            continue
+        current_pair = _pair_name(current_entry, original_pair)
+        for side in ("A", "B"):
+            prior = _side_details(prior_entry, side, previous_scale)
+            now = _side_details(current_entry, side, current_scale)
+            if prior["ticker"] == now["ticker"]:
+                continue
+            removed_amount = prior["market_value"]
+            rows.append(_blank_row(
+                "Pair Changes",
+                activity_date=trading_date.isoformat(),
+                days_since="0",
+                event="REMOVED FROM PAIR AND MOVED TO SGOV",
+                original_pair=original_pair,
+                current_pair=current_pair,
+                stock=prior["ticker"],
+                from_location="STOCK POSITION" if removed_amount else "PAIR ASSIGNMENT",
+                to_location="SGOV",
+                amount=f"{removed_amount:.2f}",
+                signal="SELL",
+                next_action=f"REPLACED BY {now['ticker']}",
+                reason=f"{prior['ticker']} was removed when the {side}-sleeve changed to {now['ticker']}.",
+                source="paper_state_previous.json -> paper_state.json",
+            ))
+            rows.append(_blank_row(
+                "Pair Changes",
+                activity_date=trading_date.isoformat(),
+                days_since="0",
+                event="ADDED AS REPLACEMENT",
+                original_pair=original_pair,
+                current_pair=current_pair,
+                stock=now["ticker"],
+                from_location="NOT IN CURRENT PAIR",
+                to_location="SGOV" if now["in_sgov"] else "STOCK POSITION",
+                amount=f"{now['market_value']:.2f}",
+                signal=now["signal"],
+                next_action=_next_action(in_sgov=now["in_sgov"], signal=now["signal"]),
+                reason=f"{now['ticker']} replaced {prior['ticker']} in the {side}-sleeve.",
+                source="paper_state_previous.json -> paper_state.json",
+            ))
+    return rows
 
 
 def build_daily_change_rows(
@@ -178,78 +224,122 @@ def build_daily_change_rows(
     for item in executive_framework_rows(
         source_name="daily_change_summary.md", trading_date=trading_date, generated_at=generated
     ):
-        rows.append(_blank_row(item["section"], change_category=item["field"], current_value=str(item["value"])))
+        rows.append(_blank_row(
+            item["section"], event=item["field"], reason=str(item["value"])
+        ))
 
     current_stock, current_sgov = _current_values(state, scale)
     previous_stock, previous_sgov = _current_values(previous, _scale_for(previous)) if previous else (0.0, 0.0)
-    for category, prior, current in (
-        ("CURRENT STOCK MARKET VALUE", previous_stock, current_stock),
-        ("SGOV VALUE", previous_sgov, current_sgov),
-        ("TOTAL TRACKED CAPITAL", previous_stock + previous_sgov, current_stock + current_sgov),
+    for event, prior, current in (
+        ("STOCK VALUE CHANGE", previous_stock, current_stock),
+        ("SGOV VALUE CHANGE", previous_sgov, current_sgov),
+        ("TOTAL TRACKED CAPITAL CHANGE", previous_stock + previous_sgov, current_stock + current_sgov),
     ):
-        delta = current - prior if previous else 0.0
-        pct = (delta / prior * 100.0) if previous and prior else 0.0
+        amount = current - prior if previous else 0.0
         rows.append(_blank_row(
-            "Portfolio Changes", activity_date=trading_date.isoformat(), days_since="0",
-            change_category=category, previous_value=f"{prior:.2f}" if previous else "NOT AVAILABLE",
-            current_value=f"{current:.2f}", change_value=f"{delta:.2f}" if previous else "NOT AVAILABLE",
-            change_pct=f"{pct:.2f}%" if previous else "NOT AVAILABLE",
-            reason="Compared with paper_state_previous.json." if previous else "No prior authoritative snapshot was available; no change was inferred.",
-            source="paper_state.json", priority="INFO",
+            "Portfolio Changes",
+            activity_date=trading_date.isoformat(),
+            days_since="0",
+            event=event,
+            from_location=f"${prior:,.2f}" if previous else "NOT AVAILABLE",
+            to_location=f"${current:,.2f}",
+            amount=f"{amount:.2f}" if previous else "NOT AVAILABLE",
+            reason="Compared with the previous authoritative snapshot." if previous else "No previous snapshot was available; no change was inferred.",
+            source="paper_state.json",
         ))
+
+    rows.extend(_replacement_rows(
+        previous=previous,
+        current=state,
+        trading_date=trading_date,
+        current_scale=scale,
+    ))
 
     pairs = state.get("pairs") if isinstance(state.get("pairs"), dict) else {}
     log_rows = _load_log(root / "paper_trade_log.csv")
-    todays_events = [r for r in log_rows if _parse_date(r.get("Date")) == trading_date]
-    for event in todays_events:
-        original_pair = str(event.get("Pair") or "").strip()
+    todays_events = [row for row in log_rows if _parse_date(row.get("Date")) == trading_date]
+    for activity in todays_events:
+        original_pair = str(activity.get("Pair") or "").strip()
         entry = pairs.get(original_pair) if isinstance(pairs.get(original_pair), dict) else {}
-        current_pair, pair_type = _pair_identity(original_pair, entry) if entry else (original_pair, "UNKNOWN")
-        action = str(event.get("Action") or "").strip().upper()
-        ticker = str(event.get("Ticker") or "").strip()
-        category = _ACTION_CATEGORY.get(action, "TRADING EVENT")
-        amount = _number(event.get("Paper_Value")) * scale
-        state_now = _position_state(entry) if entry else "UNKNOWN"
-        required = _next_action(entry) if entry else "REVIEW_EVENT"
+        current_pair = _pair_name(entry, original_pair)
+        side = str(activity.get("Sleeve") or "").strip().upper()
+        details = _side_details(entry, side, scale) if entry and side in {"A", "B"} else {}
+        action = str(activity.get("Action") or "").strip().upper()
+        stock = str(activity.get("Ticker") or details.get("ticker") or "").strip()
+        event = _ACTION_EVENT.get(action, action.replace("_", " ") or "RECORDED EVENT")
+        amount = _number(activity.get("Paper_Value")) * scale
+        if action in {"PAPER_SELL_TO_SGOV", "PAPER_PARK_IN_SGOV", "EARNINGS_EXIT", "PAPER_EARNINGS_EXIT"}:
+            from_location, to_location = "STOCK POSITION", "SGOV"
+            next_action = "REMAIN IN SGOV"
+        elif action in {"PAPER_BUY_OPEN", "PAPER_BUY_FROM_SGOV"}:
+            from_location, to_location = "SGOV", "STOCK POSITION"
+            next_action = "CONTINUE HOLDING"
+        else:
+            from_location = to_location = "STOCK POSITION" if details and not details.get("in_sgov") else "SGOV"
+            next_action = _next_action(
+                in_sgov=bool(details.get("in_sgov", False)),
+                signal=str(details.get("signal") or activity.get("Signal") or "UNKNOWN"),
+            )
         rows.append(_blank_row(
-            "Daily Events", activity_date=trading_date.isoformat(), days_since="0",
-            change_category=category, current_pair=current_pair, original_pair=original_pair,
-            pair_type=pair_type, stock=ticker, stock_moved=ticker if "SGOV" in action or "EXIT" in action else "",
-            previous_state="", current_state=state_now, signal=str(event.get("Signal") or "").upper(),
-            required_action=required, amount=f"{amount:.2f}", reason=str(event.get("Reason") or "").strip(),
-            next_day_action=required, priority="HIGH" if category in {"PURCHASE", "SGOV MOVEMENT", "PAIR REPLACEMENT", "EARNINGS EVENT"} else "NORMAL",
+            "Today's Activity",
+            activity_date=trading_date.isoformat(),
+            days_since="0",
+            event=event,
+            original_pair=original_pair,
+            current_pair=current_pair,
+            stock=stock,
+            from_location=from_location,
+            to_location=to_location,
+            amount=f"{amount:.2f}",
+            signal=str(activity.get("Signal") or "").upper(),
+            next_action=next_action,
+            reason=str(activity.get("Reason") or "").strip(),
             source="paper_trade_log.csv",
         ))
 
     if not todays_events:
         rows.append(_blank_row(
-            "Daily Events", activity_date=trading_date.isoformat(), days_since="0",
-            change_category="NO NEW TRANSACTION EVENTS", current_state="UNCHANGED",
-            required_action="NO_ACTION", reason="No dated paper-trade events were recorded for this trading date.",
-            next_day_action="FOLLOW_CURRENT_PAIR_RECOMMENDATIONS", priority="INFO", source="paper_trade_log.csv",
+            "Today's Activity",
+            activity_date=trading_date.isoformat(),
+            days_since="0",
+            event="NO NEW TRANSACTION EVENTS",
+            next_action="FOLLOW CURRENT HOLDING PLAN",
+            reason="No dated paper-trade events were recorded for this trading date.",
+            source="paper_trade_log.csv",
         ))
 
-    for original_pair, value in pairs.items():
-        if not isinstance(value, dict):
+    for original_pair, entry in pairs.items():
+        if not isinstance(entry, dict):
             continue
-        current_pair, pair_type = _pair_identity(original_pair, value)
-        signals = value.get("last_signal") if isinstance(value.get("last_signal"), dict) else {}
-        signal = f"A={signals.get('A', 'UNKNOWN')}; B={signals.get('B', 'UNKNOWN')}"
-        next_action = _next_action(value)
-        rows.append(_blank_row(
-            "Next Trading Day", activity_date=str(state.get("as_of_date") or trading_date.isoformat())[:10],
-            days_since=_days_since(str(state.get("as_of_date") or ""), trading_date),
-            change_category="PAIR RECOMMENDATION", current_pair=current_pair, original_pair=original_pair,
-            pair_type=pair_type, current_state=_position_state(value), signal=signal,
-            required_action=next_action, reason="Derived from current paper state and latest validated signals.",
-            next_day_action=next_action, priority="HIGH" if next_action == "SELL_REVIEW" else "NORMAL",
-            source="paper_state.json",
-        ))
+        current_pair = _pair_name(entry, original_pair)
+        for side in ("A", "B"):
+            details = _side_details(entry, side, scale)
+            location = "SGOV" if details["in_sgov"] else "STOCK POSITION"
+            rows.append(_blank_row(
+                "Next Trading Day",
+                activity_date=str(state.get("as_of_date") or trading_date.isoformat())[:10],
+                days_since=_days_since(str(state.get("as_of_date") or ""), trading_date),
+                event="NEXT-DAY PLAN",
+                original_pair=original_pair,
+                current_pair=current_pair,
+                stock=details["ticker"],
+                from_location=location,
+                to_location=location,
+                amount=f"{details['market_value']:.2f}",
+                signal=details["signal"],
+                next_action=_next_action(in_sgov=details["in_sgov"], signal=details["signal"]),
+                reason="One stock, one location, and one next action are reported on this row.",
+                source="paper_state.json",
+            ))
 
     rows.append(_blank_row(
-        "Final Assessment", activity_date=trading_date.isoformat(), days_since="0",
-        change_category="SAFETY STATUS", current_state="PAPER ONLY",
-        required_action="NO_REAL_TRADES", reason="No broker connection or real-order execution is used by this report.",
-        next_day_action="PAPER_VALIDATION_ONLY", priority="LOCKED", source="executive_daily_change_summary.py",
+        "Final Assessment",
+        activity_date=trading_date.isoformat(),
+        days_since="0",
+        event="SAFETY STATUS",
+        to_location="PAPER ONLY",
+        next_action="NO REAL TRADES",
+        reason="No broker connection or real-order execution is used by this report.",
+        source="executive_daily_change_summary.py",
     ))
     return rows
