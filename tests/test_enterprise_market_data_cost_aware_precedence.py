@@ -6,23 +6,32 @@ import refresh_enterprise_market_data_normalized as refresh
 from refresh_robinhood_fallback_handoffs import unresolved_operations
 
 
-def test_routine_market_data_precedence_is_public_cache_then_robinhood(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
+def test_operation_aware_market_data_precedence(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("TWELVE_DATA_API_KEY", "test-key")
     provider = refresh.build_market_data_provider(
         tmp_path / "results",
         tmp_path / "cache",
         lambda *_: {},
     )
-    assert [source.name for source in provider.sources] == [
+    assert [source.name for source in provider.quote_sources] == [
+        "YFINANCE",
+        "TWELVE_DATA",
+        "ROBINHOOD_MCP",
+        "LOCAL_CACHE",
+    ]
+    assert [source.name for source in provider.history_sources] == [
         "YFINANCE",
         "TWELVE_DATA",
         "LOCAL_CACHE",
         "ROBINHOOD_MCP",
     ]
-    assert list(refresh.MARKET_DATA_PROVIDER_ORDER) == [
+    assert list(refresh.QUOTE_PROVIDER_ORDER) == [
+        "YFINANCE",
+        "TWELVE_DATA",
+        "ROBINHOOD_MCP",
+        "LOCAL_CACHE",
+    ]
+    assert list(refresh.HISTORY_PROVIDER_ORDER) == [
         "YFINANCE",
         "TWELVE_DATA",
         "LOCAL_CACHE",
@@ -38,11 +47,9 @@ def test_public_only_pass_has_no_robinhood_source(tmp_path: Path, monkeypatch) -
         lambda *_: {},
         public_only=True,
     )
-    assert [source.name for source in provider.sources] == [
-        "YFINANCE",
-        "TWELVE_DATA",
-        "LOCAL_CACHE",
-    ]
+    expected = ["YFINANCE", "TWELVE_DATA", "LOCAL_CACHE"]
+    assert [source.name for source in provider.quote_sources] == expected
+    assert [source.name for source in provider.history_sources] == expected
 
 
 def test_builder_skips_twelve_data_without_key(tmp_path: Path, monkeypatch) -> None:
@@ -53,7 +60,22 @@ def test_builder_skips_twelve_data_without_key(tmp_path: Path, monkeypatch) -> N
         None,
         public_only=True,
     )
-    assert [source.name for source in provider.sources] == ["YFINANCE", "LOCAL_CACHE"]
+    assert [source.name for source in provider.quote_sources] == ["YFINANCE", "LOCAL_CACHE"]
+    assert [source.name for source in provider.history_sources] == ["YFINANCE", "LOCAL_CACHE"]
+
+
+def test_cache_remains_subject_to_strict_freshness_policy(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("TWELVE_DATA_API_KEY", raising=False)
+    provider = refresh.build_market_data_provider(
+        tmp_path / "results",
+        tmp_path / "cache",
+        None,
+        public_only=True,
+    )
+    assert provider.freshness.quote_max_age_seconds == 900
+    assert provider.freshness.daily_history_max_age_days == 5
+    assert provider.quote_sources[-1].name == "LOCAL_CACHE"
+    assert provider.history_sources[-1].name == "LOCAL_CACHE"
 
 
 def test_robinhood_fallback_skipped_when_public_pass_is_ready() -> None:
@@ -88,4 +110,5 @@ def test_systemd_uses_two_pass_conditional_robinhood_policy() -> None:
 
 
 def test_contract_policy_is_cost_aware() -> None:
-    assert refresh.MARKET_DATA_PROVIDER_ORDER[-1] == "ROBINHOOD_MCP"
+    assert refresh.QUOTE_PROVIDER_ORDER[-2:] == ("ROBINHOOD_MCP", "LOCAL_CACHE")
+    assert refresh.HISTORY_PROVIDER_ORDER[-2:] == ("LOCAL_CACHE", "ROBINHOOD_MCP")
