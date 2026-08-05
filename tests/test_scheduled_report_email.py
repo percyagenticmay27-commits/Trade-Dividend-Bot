@@ -151,6 +151,7 @@ def test_send_scheduled_reports_sends_daily_weekly_and_monthly_together(tmp_path
     daily_message = sent_messages[0][0]
     assert sorted(part.get_filename() for part in daily_message.iter_attachments()) == [
         "dividend_executive_summary.csv",
+        "dividend_performance.csv",
         "dividend_portfolio.csv",
         "dividend_watchlist.csv",
     ]
