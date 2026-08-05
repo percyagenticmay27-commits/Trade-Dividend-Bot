@@ -16,14 +16,14 @@ from src.dividend_bot.daily_dividend_csv_exports import (
 )
 
 
-def sample_state(as_of_date: str) -> dict:
-    return {
+def sample_state(as_of_date: str, *, generated_at: str | None = None, price: float = 25.0) -> dict:
+    state = {
         "as_of_date": as_of_date,
         "pairs": {
             "AMDW / AMDL": {
                 "a_shares": 1.5,
                 "b_shares": 2.0,
-                "last_prices": {"A": 25.0, "B": 10.0},
+                "last_prices": {"A": price, "B": 10.0},
                 "last_signal": {"A": "BUY", "B": "SELL"},
                 "a_in_sgov": False,
                 "b_in_sgov": False,
@@ -34,6 +34,9 @@ def sample_state(as_of_date: str) -> dict:
             }
         },
     }
+    if generated_at is not None:
+        state["generated_at"] = generated_at
+    return state
 
 
 def read_rows(path: Path) -> list[dict[str, str]]:
@@ -119,6 +122,63 @@ def test_stale_state_is_rejected(tmp_path: Path):
 def test_missing_state_is_rejected(tmp_path: Path):
     with pytest.raises(RuntimeError, match="missing"):
         generate_daily_dividend_csv_exports(root_dir=tmp_path)
+
+
+def test_discovers_current_production_paper_state(tmp_path: Path):
+    (tmp_path / "paper_state.json").write_text(
+        json.dumps(sample_state("2026-08-05", generated_at="2026-08-05T20:00:00+00:00")),
+        encoding="utf-8",
+    )
+    executive, _, _, _ = generate_daily_dividend_csv_exports(
+        root_dir=tmp_path, now=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc)
+    )
+    row = read_rows(executive)[0]
+    assert row["state_source"].endswith("paper_state.json")
+
+
+def test_discovers_reports_copy_when_root_state_is_absent(tmp_path: Path):
+    reports = tmp_path / "reports"
+    reports.mkdir()
+    (reports / "paper_state.json").write_text(
+        json.dumps(sample_state("2026-08-05", generated_at="2026-08-05T20:00:00+00:00")),
+        encoding="utf-8",
+    )
+    executive, _, _, _ = generate_daily_dividend_csv_exports(
+        root_dir=tmp_path, now=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc)
+    )
+    assert read_rows(executive)[0]["state_source"].endswith("reports/paper_state.json")
+
+
+def test_selects_newest_valid_candidate_not_filename_priority(tmp_path: Path):
+    (tmp_path / "paper_portfolio_state.json").write_text(
+        json.dumps(sample_state("2026-08-05", generated_at="2026-08-05T18:00:00+00:00", price=20.0)),
+        encoding="utf-8",
+    )
+    (tmp_path / "paper_state.json").write_text(
+        json.dumps(sample_state("2026-08-05", generated_at="2026-08-05T20:00:00+00:00", price=30.0)),
+        encoding="utf-8",
+    )
+    _, portfolio, _, _ = generate_daily_dividend_csv_exports(
+        root_dir=tmp_path, now=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc)
+    )
+    assert float(read_rows(portfolio)[0]["a_current_price"]) == 30.0
+
+
+def test_rejects_stale_candidate_and_uses_fresh_candidate(tmp_path: Path):
+    (tmp_path / "paper_portfolio_state.json").write_text(
+        json.dumps(sample_state("2026-07-01", generated_at="2026-08-05T22:00:00+00:00", price=99.0)),
+        encoding="utf-8",
+    )
+    (tmp_path / "paper_state.json").write_text(
+        json.dumps(sample_state("2026-08-05", generated_at="2026-08-05T20:00:00+00:00", price=25.0)),
+        encoding="utf-8",
+    )
+    _, portfolio, _, _ = generate_daily_dividend_csv_exports(
+        root_dir=tmp_path,
+        now=datetime(2026, 8, 5, 21, 0, tzinfo=timezone.utc),
+        max_state_age_days=5,
+    )
+    assert float(read_rows(portfolio)[0]["a_current_price"]) == 25.0
 
 
 def test_safety_constants_are_locked():
