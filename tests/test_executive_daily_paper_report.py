@@ -105,7 +105,11 @@ def test_last_activity_is_first_and_expanded_audit_fields_are_reported(tmp_path:
     assert parked["last_activity"] == "2026-08-04"
     assert parked["days_since"] == "1"
     assert parked["last_event"] == "SOLD AND MOVED TO SGOV"
-    assert invested["portfolio_pct"] == "12.00%"
-    assert parked["portfolio_pct"] == "4.00%"
+
+    # Portfolio % is pair-level: $6,000 stock value + $2,000 SGOV = $8,000,
+    # which represents 16% of the approved $50,000 portfolio. Both sleeve rows
+    # identify the same pair allocation and therefore carry the same percentage.
+    assert invested["portfolio_pct"] == "16.00%"
+    assert parked["portfolio_pct"] == "16.00%"
     assert "todays_dividend" in invested
     assert "total_dividends" in invested
