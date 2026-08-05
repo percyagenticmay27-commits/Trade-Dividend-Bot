@@ -16,12 +16,14 @@ from typing import Any
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "executive_daily_paper_report"
-MODULE_VERSION = "2.0.0"
+MODULE_VERSION = "2.1.0"
 PAPER_TRADE_MODE = True
 APPROVED_STARTING_CAPITAL = 50_000.0
 LEGACY_STARTING_CAPITAL = 500.0
 
 DAILY_PAPER_FIELDS = [
+    "last_activity",
+    "days_since",
     "report_section",
     "metric",
     "value",
@@ -29,6 +31,7 @@ DAILY_PAPER_FIELDS = [
     "original_pair",
     "current_pair",
     "pair_type",
+    "last_event",
     "active_leg",
     "position_state",
     "signal",
@@ -39,11 +42,13 @@ DAILY_PAPER_FIELDS = [
     "invested_capital",
     "current_price",
     "market_value",
-    "sgov_balance",
-    "realized_gain_loss",
     "unrealized_gain_loss",
     "unrealized_return_pct",
-    "dividends_received",
+    "realized_gain_loss",
+    "todays_dividend",
+    "total_dividends",
+    "sgov_balance",
+    "portfolio_pct",
     "notes",
     "paper_trade_mode",
 ]
@@ -54,6 +59,14 @@ _MONEY_LOG_ACTIONS = {
     "PAPER_SELL_TO_SGOV",
     "PAPER_PARK_IN_SGOV",
     "PAPER_DIVIDEND_RECEIVED",
+}
+
+_EVENT_LABELS = {
+    "PAPER_BUY_OPEN": "POSITION CREATED",
+    "PAPER_BUY_FROM_SGOV": "RE-ENTERED FROM SGOV",
+    "PAPER_SELL_TO_SGOV": "SOLD AND MOVED TO SGOV",
+    "PAPER_PARK_IN_SGOV": "CAPITAL PARKED IN SGOV",
+    "PAPER_DIVIDEND_RECEIVED": "DIVIDEND RECEIVED",
 }
 
 
@@ -101,6 +114,16 @@ def _load_log(path: Path) -> list[dict[str, str]]:
         raise RuntimeError(f"Paper trade log is unreadable: {path}") from exc
 
 
+def _parse_date(value: Any) -> date | None:
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return date.fromisoformat(text[:10])
+    except ValueError:
+        return None
+
+
 def _ledger(log_rows: list[dict[str, str]], scale: float) -> dict[tuple[str, str], dict[str, Any]]:
     ledgers: dict[tuple[str, str], dict[str, Any]] = defaultdict(
         lambda: {
@@ -109,6 +132,9 @@ def _ledger(log_rows: list[dict[str, str]], scale: float) -> dict[tuple[str, str
             "entry_price": 0.0,
             "realized_gain_loss": 0.0,
             "dividends": 0.0,
+            "todays_dividend": 0.0,
+            "last_activity": "",
+            "last_event": "NO RECORDED ACTIVITY",
         }
     )
     for row in log_rows:
@@ -118,11 +144,17 @@ def _ledger(log_rows: list[dict[str, str]], scale: float) -> dict[tuple[str, str
         if not pair or sleeve not in {"A", "B"} or action not in _MONEY_LOG_ACTIONS:
             continue
         item = ledgers[(pair, sleeve)]
+        activity_date = str(row.get("Date") or "").strip()
+        current_activity = _parse_date(item["last_activity"])
+        candidate_activity = _parse_date(activity_date)
+        if candidate_activity and (current_activity is None or candidate_activity >= current_activity):
+            item["last_activity"] = activity_date[:10]
+            item["last_event"] = _EVENT_LABELS.get(action, action.replace("_", " "))
         value = _number(row.get("Paper_Value")) * scale
         price = _number(row.get("Price"))
         if action in {"PAPER_BUY_OPEN", "PAPER_BUY_FROM_SGOV"}:
             item["cost_basis"] = value
-            item["entry_date"] = str(row.get("Date") or "")
+            item["entry_date"] = activity_date[:10]
             item["entry_price"] = price
         elif action == "PAPER_SELL_TO_SGOV":
             item["realized_gain_loss"] += value - item["cost_basis"]
@@ -131,6 +163,7 @@ def _ledger(log_rows: list[dict[str, str]], scale: float) -> dict[tuple[str, str
             item["entry_price"] = 0.0
         elif action == "PAPER_DIVIDEND_RECEIVED":
             item["dividends"] += value
+            item["todays_dividend"] += value
     return ledgers
 
 
@@ -157,6 +190,13 @@ def _recommendation(entry: dict[str, Any], state: str) -> str:
     return "WAITING_FOR_CONFIRMATION"
 
 
+def _days_since(activity: str, trading_date: date) -> str:
+    parsed = _parse_date(activity)
+    if parsed is None:
+        return ""
+    return str(max(0, (trading_date - parsed).days))
+
+
 def build_daily_paper_rows(
     *,
     root_dir: str | Path,
@@ -177,11 +217,7 @@ def build_daily_paper_rows(
         trading_date=trading_date,
         generated_at=generated,
     ):
-        rows.append(
-            _blank_row(
-                item["section"], metric=item["field"], value=item["value"]
-            )
-        )
+        rows.append(_blank_row(item["section"], metric=item["field"], value=item["value"]))
 
     stock_value = 0.0
     sgov_value = 0.0
@@ -197,6 +233,11 @@ def build_daily_paper_rows(
         b_ticker = str(entry.get("b_ticker") or "B").strip()
         current_pair = f"{a_ticker} / {b_ticker}"
         pair_type = "ORIGINAL" if current_pair == original_pair else "REPLACEMENT"
+        replacement_note = (
+            "Current pair differs from the original assignment."
+            if pair_type == "REPLACEMENT"
+            else "Original approved pair assignment."
+        )
         a_in_sgov = bool(entry.get("a_in_sgov", _number(entry.get("a_shares")) == 0))
         b_in_sgov = bool(entry.get("b_in_sgov", _number(entry.get("b_shares")) == 0))
         position_state = _position_state(a_in_sgov, b_in_sgov, a_ticker, b_ticker)
@@ -220,13 +261,20 @@ def build_daily_paper_rows(
             unrealized_pct = (unrealized / cost_basis * 100.0) if cost_basis else 0.0
             realized += _number(ledger["realized_gain_loss"])
             stock_value += market_value
+            activity = str(ledger["last_activity"] or state.get("as_of_date") or trading_date.isoformat())[:10]
+            event = str(ledger["last_event"])
+            if pair_type == "REPLACEMENT" and event == "NO RECORDED ACTIVITY":
+                event = "REPLACEMENT ACTIVE"
             pair_rows.append(
                 _blank_row(
                     "Current Pair Holdings",
+                    last_activity=activity,
+                    days_since=_days_since(activity, trading_date),
                     pair=current_pair,
                     original_pair=original_pair,
                     current_pair=current_pair,
                     pair_type=pair_type,
+                    last_event=event,
                     active_leg=ticker if not in_sgov else "SGOV",
                     position_state=position_state,
                     signal=signal_text,
@@ -237,29 +285,32 @@ def build_daily_paper_rows(
                     invested_capital=f"{cost_basis:.2f}",
                     current_price=f"{current_price:.6f}" if current_price else "",
                     market_value=f"{market_value:.2f}",
-                    sgov_balance=f"{sgov:.2f}" if side == "A" else "",
-                    realized_gain_loss=f"{_number(ledger['realized_gain_loss']):.2f}",
                     unrealized_gain_loss=f"{unrealized:.2f}",
                     unrealized_return_pct=f"{unrealized_pct:.2f}%",
-                    dividends_received=f"{pair_dividends:.2f}" if side == "A" else "",
-                    notes=(
-                        "Current pair differs from the original assignment."
-                        if pair_type == "REPLACEMENT"
-                        else "Original approved pair assignment."
-                    ),
+                    realized_gain_loss=f"{_number(ledger['realized_gain_loss']):.2f}",
+                    todays_dividend=f"{_number(ledger['todays_dividend']):.2f}",
+                    total_dividends=f"{pair_dividends:.2f}" if side == "A" else "",
+                    sgov_balance=f"{sgov:.2f}" if side == "A" else "",
+                    notes=replacement_note,
                 )
             )
 
     total_value = stock_value + sgov_value
     starting = APPROVED_STARTING_CAPITAL if scale != 1.0 else _number(state.get("starting_capital"), APPROVED_STARTING_CAPITAL)
+    cash_reserved = max(0.0, starting - total_value)
+    total_value += cash_reserved
     unrealized_total = sum(_number(row["unrealized_gain_loss"]) for row in pair_rows)
     total_return = total_value + dividends - starting
+
+    for row in pair_rows:
+        row_value = _number(row["market_value"]) + _number(row["sgov_balance"])
+        row["portfolio_pct"] = f"{(row_value / total_value * 100.0) if total_value else 0.0:.2f}%"
 
     summary = [
         ("Starting Capital", starting),
         ("Current Stock Market Value", stock_value),
         ("SGOV Value", sgov_value),
-        ("Cash / Reserved Funds", 0.0),
+        ("Cash / Reserved Funds", cash_reserved),
         ("Total Portfolio Value", total_value),
         ("Realized Gain / Loss", realized),
         ("Unrealized Gain / Loss", unrealized_total),
@@ -272,7 +323,7 @@ def build_daily_paper_rows(
         _blank_row(
             "Portfolio Summary",
             metric="Accounting Reconciliation",
-            value="RECONCILED" if abs(total_value - (stock_value + sgov_value)) < 0.01 else "ERROR",
+            value="RECONCILED" if abs(total_value - (stock_value + sgov_value + cash_reserved)) < 0.01 else "ERROR",
             notes="Total Portfolio Value = Current Stock Market Value + SGOV Value + Cash / Reserved Funds.",
         )
     )
