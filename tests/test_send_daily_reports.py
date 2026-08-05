@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from send_daily_reports import EXPECTED_CSV_NAMES, send_daily_reports
+from src.dividend_bot.executive_daily_paper_report import DAILY_PAPER_FIELDS
 
 
 EXPECTED_EXECUTIVE_FIELDS = [
@@ -19,9 +20,27 @@ EXPECTED_EXECUTIVE_FIELDS = [
 
 
 def _write_inputs(root: Path) -> None:
-    (root / "paper_state.json").write_text(
-        json.dumps({"as_of_date": "2026-08-05"}), encoding="utf-8"
-    )
+    state = {
+        "paper_only": True,
+        "as_of_date": "2026-08-05",
+        "starting_capital": 500.0,
+        "pairs": {
+            "AMDW / AMDL": {
+                "a_ticker": "AMDW",
+                "b_ticker": "AMDL",
+                "a_shares": 1.0,
+                "b_shares": 1.0,
+                "a_in_sgov": False,
+                "b_in_sgov": False,
+                "sgov_balance": 0.0,
+                "last_prices": {"A": 10.0, "B": 5.0},
+                "last_signal": {"A": "BUY", "B": "BUY"},
+                "last_action": "NO_PAPER_TRADE",
+                "total_dividends_received": 0.0,
+            }
+        },
+    }
+    (root / "paper_state.json").write_text(json.dumps(state), encoding="utf-8")
     reports = {
         "daily_paper_report.md": "# Daily Paper Report\n- Status: READY\n",
         "daily_change_summary.md": "# Daily Change Summary\n- Change: NONE\n",
@@ -58,17 +77,24 @@ def test_daily_decision_email_converts_exact_markdown_reports_to_csv(tmp_path: P
         with path.open(newline="", encoding="utf-8") as handle:
             reader = csv.DictReader(handle)
             rows = list(reader)
-            assert reader.fieldnames == EXPECTED_EXECUTIVE_FIELDS
 
         assert rows
         assert all(row["paper_trade_mode"] == "True" for row in rows)
         assert any(row["report_section"] == "Executive Header" for row in rows)
         assert any(row["report_section"] == "What This Report Shows" for row in rows)
         assert any(row["report_section"] == "Why This Report Is Used" for row in rows)
-        assert any(row["source_line"] for row in rows)
         assert "source_file" not in rows[0]
         assert "row_type" not in rows[0]
         assert "label" not in rows[0]
+
+        if path.name == "daily_paper_report.csv":
+            assert reader.fieldnames == DAILY_PAPER_FIELDS
+            assert any(row["report_section"] == "Portfolio Summary" for row in rows)
+            assert any(row["report_section"] == "Current Pair Holdings" for row in rows)
+            assert any(row["metric"] == "Starting Capital" and row["value"] == "$50,000.00" for row in rows)
+        else:
+            assert reader.fieldnames == EXPECTED_EXECUTIVE_FIELDS
+            assert any(row["source_line"] for row in rows)
 
 
 def test_daily_decision_email_duplicate_protection(tmp_path: Path):
