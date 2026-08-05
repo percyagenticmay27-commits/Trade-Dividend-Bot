@@ -1,4 +1,4 @@
-"""Regression tests for the Step 3 Executive Daily Change Summary."""
+"""Regression tests for the simplified Executive Daily Change Summary."""
 from __future__ import annotations
 
 import csv
@@ -6,10 +6,7 @@ import json
 from datetime import date
 from pathlib import Path
 
-from src.dividend_bot.executive_daily_change_summary import (
-    DAILY_CHANGE_FIELDS,
-    build_daily_change_rows,
-)
+from src.dividend_bot.executive_daily_change_summary import DAILY_CHANGE_FIELDS, build_daily_change_rows
 
 
 def _write_evidence(root: Path) -> None:
@@ -38,7 +35,7 @@ def _write_evidence(root: Path) -> None:
         "pairs": {
             "AMDW / AMDL": {
                 "a_ticker": "AMDW",
-                "b_ticker": "BEX",
+                "b_ticker": "AMDL",
                 "a_shares": 2.0,
                 "b_shares": 1.0,
                 "a_in_sgov": False,
@@ -58,8 +55,8 @@ def _write_evidence(root: Path) -> None:
         writer.writeheader()
         writer.writerow({
             "Date": "2026-08-05", "Pair": "AMDW / AMDL", "Sleeve": "B",
-            "Signal": "SELL", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "BEX",
-            "Shares": "1", "Price": "20", "Paper_Value": "20", "Reason": "signal exit",
+            "Signal": "SELL", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "AMDL",
+            "Shares": "1", "Price": "20", "Paper_Value": "20", "Reason": "replacement exit",
         })
         writer.writerow({
             "Date": "2026-08-05", "Pair": "AMDW / AMDL", "Sleeve": "A",
@@ -68,50 +65,60 @@ def _write_evidence(root: Path) -> None:
         })
 
 
-def test_step3_fields_begin_with_activity_audit_columns(tmp_path: Path):
+def test_fields_are_simple_and_stock_level(tmp_path: Path):
     _write_evidence(tmp_path)
-    assert DAILY_CHANGE_FIELDS[:4] == [
-        "activity_date", "days_since", "report_section", "change_category"
+    assert DAILY_CHANGE_FIELDS == [
+        "activity_date", "days_since", "report_section", "event", "original_pair",
+        "current_pair", "stock", "from_location", "to_location", "amount", "signal",
+        "next_action", "reason", "source", "paper_trade_mode",
     ]
 
 
-def test_portfolio_changes_compare_current_and_previous_snapshots(tmp_path: Path):
+def test_replacement_records_removed_and_added_stocks(tmp_path: Path):
     _write_evidence(tmp_path)
     rows = build_daily_change_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
-    changes = {row["change_category"]: row for row in rows if row["report_section"] == "Portfolio Changes"}
-    assert changes["CURRENT STOCK MARKET VALUE"]["previous_value"] == "7600.00"
-    assert changes["CURRENT STOCK MARKET VALUE"]["current_value"] == "6000.00"
-    assert changes["SGOV VALUE"]["previous_value"] == "0.00"
-    assert changes["SGOV VALUE"]["current_value"] == "2000.00"
+    changes = [row for row in rows if row["report_section"] == "Pair Changes"]
+    removed = next(row for row in changes if row["stock"] == "AMDL")
+    added = next(row for row in changes if row["stock"] == "BEX")
+    assert removed["event"] == "REMOVED FROM PAIR AND MOVED TO SGOV"
+    assert removed["from_location"] == "STOCK POSITION"
+    assert removed["to_location"] == "SGOV"
+    assert removed["amount"] == "2000.00"
+    assert removed["next_action"] == "REPLACED BY BEX"
+    assert added["event"] == "ADDED AS REPLACEMENT"
+    assert added["to_location"] == "SGOV"
+    assert added["next_action"] == "REMAIN IN SGOV"
 
 
-def test_daily_events_distinguish_sell_to_sgov_and_dividend(tmp_path: Path):
+def test_activity_rows_do_not_mix_amdw_buy_with_amdl_sale(tmp_path: Path):
     _write_evidence(tmp_path)
     rows = build_daily_change_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
-    events = [row for row in rows if row["report_section"] == "Daily Events"]
-    sold = next(row for row in events if row["change_category"] == "SGOV MOVEMENT")
-    dividend = next(row for row in events if row["change_category"] == "DIVIDEND")
-    assert sold["current_pair"] == "AMDW / BEX"
-    assert sold["original_pair"] == "AMDW / AMDL"
-    assert sold["stock_moved"] == "BEX"
-    assert sold["amount"] == "2000.00"
-    assert sold["required_action"] == "SELL_REVIEW"
+    events = [row for row in rows if row["report_section"] == "Today's Activity"]
+    sold = next(row for row in events if row["event"] == "SOLD TO SGOV")
+    dividend = next(row for row in events if row["event"] == "DIVIDEND RECEIVED")
+    assert sold["stock"] == "AMDL"
+    assert sold["signal"] == "SELL"
+    assert sold["from_location"] == "STOCK POSITION"
+    assert sold["to_location"] == "SGOV"
+    assert sold["next_action"] == "REMAIN IN SGOV"
     assert dividend["stock"] == "AMDW"
-    assert dividend["amount"] == "100.00"
+    assert dividend["signal"] == "BUY"
+    assert dividend["next_action"] == "CONTINUE HOLDING"
 
 
-def test_next_day_rows_use_full_pair_and_noncontradictory_action(tmp_path: Path):
+def test_next_day_plan_has_one_clear_row_per_stock(tmp_path: Path):
     _write_evidence(tmp_path)
     rows = build_daily_change_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
-    next_rows = [row for row in rows if row["report_section"] == "Next Trading Day"]
-    assert len(next_rows) == 1
-    row = next_rows[0]
-    assert row["current_pair"] == "AMDW / BEX"
-    assert row["original_pair"] == "AMDW / AMDL"
-    assert row["signal"] == "A=BUY; B=SELL"
-    assert row["required_action"] == "SELL_REVIEW"
-    assert row["next_day_action"] == "SELL_REVIEW"
-    assert row["current_state"] == "A_INVESTED_IN_AMDW_B_MOVED_TO_SGOV"
+    plans = [row for row in rows if row["report_section"] == "Next Trading Day"]
+    assert len(plans) == 2
+    amdw = next(row for row in plans if row["stock"] == "AMDW")
+    bex = next(row for row in plans if row["stock"] == "BEX")
+    assert amdw["from_location"] == "STOCK POSITION"
+    assert amdw["signal"] == "BUY"
+    assert amdw["next_action"] == "CONTINUE HOLDING"
+    assert bex["from_location"] == "SGOV"
+    assert bex["signal"] == "SELL"
+    assert bex["next_action"] == "REMAIN IN SGOV"
 
 
 def test_missing_previous_snapshot_is_disclosed_not_inferred(tmp_path: Path):
@@ -120,5 +127,5 @@ def test_missing_previous_snapshot_is_disclosed_not_inferred(tmp_path: Path):
     rows = build_daily_change_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
     changes = [row for row in rows if row["report_section"] == "Portfolio Changes"]
     assert changes
-    assert {row["previous_value"] for row in changes} == {"NOT AVAILABLE"}
+    assert {row["from_location"] for row in changes} == {"NOT AVAILABLE"}
     assert all("no change was inferred" in row["reason"].lower() for row in changes)
