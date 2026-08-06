@@ -99,11 +99,16 @@ def test_daily_decision_email_converts_exact_markdown_reports_to_csv(tmp_path: P
             assert any(row["event"] == "No portfolio changes" for row in rows)
         elif path.name == "strategy_health_report.csv":
             assert reader.fieldnames == STRATEGY_HEALTH_FIELDS
-            assert all(row["paper_trade_mode"] == "True" for row in rows)
+            content_rows = [row for row in rows if any(row.values())]
+            assert all(row["paper_trade_mode"] == "True" for row in content_rows)
+            assert any(not any(row.values()) for row in rows)
             assert any(row["report_section"] == "Portfolio Health" for row in rows)
             assert any(row["report_section"] == "Pair Performance" for row in rows)
             assert any(row["report_section"] == "Deployment Gates" for row in rows)
             assert any(row["metric"] == "Starting Capital" and row["value"] == "$50,000.00" for row in rows)
+            assert any(row["metric"] == "Dividends Received" for row in rows)
+            assert any(row["metric"] == "Total Return Amount" for row in rows)
+            assert any(row["metric"] == "Total Portfolio Value" for row in rows)
         else:
             assert reader.fieldnames == EXPECTED_EXECUTIVE_FIELDS
             assert all(row["paper_trade_mode"] == "True" for row in rows)
