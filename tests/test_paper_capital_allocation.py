@@ -9,6 +9,7 @@ import pytest
 from src.dividend_bot.paper_capital_allocation import (
     BROKER_EXECUTION_ENABLED,
     CAPITAL_MOVEMENT_ENABLED,
+    ELIGIBLE_STATUSES,
     LIVE_TRADING_ENABLED,
     PAPER_TRADE_MODE,
     append_allocation_request,
@@ -17,14 +18,37 @@ from src.dividend_bot.paper_capital_allocation import (
     parse_allocation_form,
     render_allocation_html,
 )
-from src.dividend_bot.paper_capital_allocation_server import (available_cash_from_state, create_wsgi_app, render_allocation_page)
+from src.dividend_bot.paper_capital_allocation_server import (
+    available_cash_from_state,
+    create_wsgi_app,
+    render_allocation_page,
+)
 
 
 REGISTRY = {
     "strategy_plugins": [
-        {"strategy_id": "dividend-income", "display_name": "Dividend Income", "status": "ONLINE", "enabled": True, "paper_trade_mode": True, "health": "HEALTHY"},
-        {"strategy_id": "swing", "display_name": "Swing Trading", "status": "DISABLED", "enabled": False, "paper_trade_mode": True},
-        {"strategy_id": "options", "display_name": "Options", "status": "ONLINE", "enabled": True, "paper_trade_mode": False},
+        {
+            "strategy_id": "dividend-income",
+            "display_name": "Dividend Income",
+            "status": "ONLINE",
+            "enabled": True,
+            "paper_trade_mode": True,
+            "health": "HEALTHY",
+        },
+        {
+            "strategy_id": "swing",
+            "display_name": "Swing Trading",
+            "status": "DISABLED",
+            "enabled": False,
+            "paper_trade_mode": True,
+        },
+        {
+            "strategy_id": "options",
+            "display_name": "Options",
+            "status": "ONLINE",
+            "enabled": True,
+            "paper_trade_mode": False,
+        },
     ]
 }
 
@@ -45,40 +69,210 @@ def test_discovers_only_enabled_paper_plugins():
 
 
 def test_service_registry_shape_is_supported():
-    result = discover_strategy_plugins({"services": [{"service_id": "dividend-strategy", "service_type": "STRATEGY", "status": "READY"}]})
+    result = discover_strategy_plugins(
+        {
+            "services": [
+                {
+                    "service_id": "dividend-strategy",
+                    "service_type": "STRATEGY",
+                    "status": "READY",
+                }
+            ]
+        }
+    )
     assert result[0]["strategy_id"] == "dividend-strategy"
 
 
+def test_registered_enabled_paper_compatible_strategy_is_included():
+    result = discover_strategy_plugins(
+        {
+            "strategy_plugins": [
+                {
+                    "strategy_id": "SWING-001",
+                    "display_name": "Trade Swing Bot",
+                    "strategy_plugin": True,
+                    "status": "REGISTERED",
+                    "enabled": True,
+                    "paper_compatible": True,
+                    "paper_trade_mode": True,
+                    "automatic_activation_allowed": False,
+                }
+            ]
+        }
+    )
+    assert [item["strategy_id"] for item in result] == ["SWING-001"]
+    assert result[0]["status"] == "REGISTERED"
+    assert result[0]["paper_trade_mode"] is True
+
+
+def test_disabled_registered_strategy_remains_excluded():
+    result = discover_strategy_plugins(
+        {
+            "strategy_plugins": [
+                {
+                    "strategy_id": "SWING-001",
+                    "strategy_plugin": True,
+                    "status": "REGISTERED",
+                    "enabled": False,
+                    "paper_trade_mode": True,
+                }
+            ]
+        }
+    )
+    assert result == []
+
+
+def test_non_paper_registered_strategy_remains_excluded():
+    result = discover_strategy_plugins(
+        {
+            "strategy_plugins": [
+                {
+                    "strategy_id": "SWING-001",
+                    "strategy_plugin": True,
+                    "status": "REGISTERED",
+                    "enabled": True,
+                    "paper_trade_mode": False,
+                }
+            ]
+        }
+    )
+    assert result == []
+
+
+def test_unknown_status_remains_excluded():
+    result = discover_strategy_plugins(
+        {
+            "strategy_plugins": [
+                {
+                    "strategy_id": "SWING-001",
+                    "strategy_plugin": True,
+                    "status": "UNKNOWN_STATE",
+                    "enabled": True,
+                    "paper_trade_mode": True,
+                }
+            ]
+        }
+    )
+    assert result == []
+
+
+@pytest.mark.parametrize("status", ["ONLINE", "ENABLED", "AVAILABLE", "HEALTHY", "READY", "REGISTERED"])
+def test_all_supported_eligible_statuses_are_preserved(status):
+    result = discover_strategy_plugins(
+        {
+            "strategy_plugins": [
+                {
+                    "strategy_id": f"strategy-{status.lower()}",
+                    "strategy_plugin": True,
+                    "status": status,
+                    "enabled": True,
+                    "paper_trade_mode": True,
+                }
+            ]
+        }
+    )
+    assert len(result) == 1
+    assert result[0]["status"] == status
+    assert status in ELIGIBLE_STATUSES
+
+
+def test_dividend_and_swing_are_both_eligible_for_allocation_page():
+    result = discover_strategy_plugins(
+        {
+            "strategy_plugins": [
+                {
+                    "strategy_id": "DIVIDEND-001",
+                    "display_name": "Dividend Income Strategy",
+                    "strategy_plugin": True,
+                    "status": "ONLINE",
+                    "enabled": True,
+                    "paper_trade_mode": True,
+                },
+                {
+                    "strategy_id": "SWING-001",
+                    "display_name": "Trade Swing Bot",
+                    "strategy_plugin": True,
+                    "status": "REGISTERED",
+                    "enabled": True,
+                    "paper_trade_mode": True,
+                    "automatic_activation_allowed": False,
+                },
+            ]
+        }
+    )
+    assert [item["strategy_id"] for item in result] == ["DIVIDEND-001", "SWING-001"]
+    page = render_allocation_html(available_cash=500.0, strategy_plugins=result)
+    assert "Dividend Income Strategy" in page
+    assert "Trade Swing Bot" in page
+    assert page.count('name="strategy"') == 2
+
+
 def test_request_is_deterministic_with_fixed_timestamp():
-    kwargs = dict(available_cash=1000, requested_cash=250, allocations={"dividend-income": 250}, strategy_plugins=plugins(), created_at_utc="2026-07-25T20:00:00Z")
+    kwargs = dict(
+        available_cash=1000,
+        requested_cash=250,
+        allocations={"dividend-income": 250},
+        strategy_plugins=plugins(),
+        created_at_utc="2026-07-25T20:00:00Z",
+    )
     assert build_allocation_request(**kwargs)["request_id"] == build_allocation_request(**kwargs)["request_id"]
 
 
 def test_request_records_governance_and_remaining_cash():
-    request = build_allocation_request(available_cash=1000, requested_cash=250, allocations={"dividend-income": 250}, strategy_plugins=plugins(), created_at_utc="2026-07-25T20:00:00Z")
+    request = build_allocation_request(
+        available_cash=1000,
+        requested_cash=250,
+        allocations={"dividend-income": 250},
+        strategy_plugins=plugins(),
+        created_at_utc="2026-07-25T20:00:00Z",
+    )
     assert request["status"] == "PENDING_GOVERNANCE_REVIEW"
     assert request["unassigned_cash_after_request"] == 750
     assert request["governance"]["automatic_activation_allowed"] is False
+    assert request["governance"]["live_trading_enabled"] is False
+    assert request["governance"]["broker_execution_enabled"] is False
+    assert request["governance"]["capital_movement_enabled"] is False
 
 
 @pytest.mark.parametrize("requested", [0, -1, 1001])
 def test_invalid_requested_cash_is_rejected(requested):
     with pytest.raises(ValueError):
-        build_allocation_request(available_cash=1000, requested_cash=requested, allocations={"dividend-income": requested}, strategy_plugins=plugins())
+        build_allocation_request(
+            available_cash=1000,
+            requested_cash=requested,
+            allocations={"dividend-income": requested},
+            strategy_plugins=plugins(),
+        )
 
 
 def test_unregistered_strategy_is_rejected():
     with pytest.raises(ValueError, match="not registered"):
-        build_allocation_request(available_cash=1000, requested_cash=100, allocations={"swing": 100}, strategy_plugins=plugins())
+        build_allocation_request(
+            available_cash=1000,
+            requested_cash=100,
+            allocations={"swing": 100},
+            strategy_plugins=plugins(),
+        )
 
 
 def test_allocations_must_equal_requested_cash():
     with pytest.raises(ValueError, match="must equal"):
-        build_allocation_request(available_cash=1000, requested_cash=100, allocations={"dividend-income": 50}, strategy_plugins=plugins())
+        build_allocation_request(
+            available_cash=1000,
+            requested_cash=100,
+            allocations={"dividend-income": 50},
+            strategy_plugins=plugins(),
+        )
 
 
 def test_append_only_log_prevents_duplicate(tmp_path: Path):
-    request = build_allocation_request(available_cash=1000, requested_cash=100, allocations={"dividend-income": 100}, strategy_plugins=plugins(), created_at_utc="2026-07-25T20:00:00Z")
+    request = build_allocation_request(
+        available_cash=1000,
+        requested_cash=100,
+        allocations={"dividend-income": 100},
+        strategy_plugins=plugins(),
+        created_at_utc="2026-07-25T20:00:00Z",
+    )
     path = tmp_path / "requests.jsonl"
     assert append_allocation_request(request, path) is True
     assert append_allocation_request(request, path) is False
@@ -91,7 +285,6 @@ def test_html_contains_cash_registered_strategy_and_safety_text():
     assert "Dividend Income" in page
     assert "PAPER ONLY" in page
     assert "Swing Trading" not in page
-
 
 
 def test_allocation_page_resolves_canonical_dividend_balance_for_legacy_registry_id():
@@ -111,8 +304,11 @@ def test_allocation_page_preserves_exact_swing_balance():
     )
     assert "Currently allocated: $4,500.00" in page
 
+
 def test_form_parser_reads_selected_allocations():
-    requested, allocations = parse_allocation_form(b"requested_cash=200&strategy=dividend-income&amount_dividend-income=200")
+    requested, allocations = parse_allocation_form(
+        b"requested_cash=200&strategy=dividend-income&amount_dividend-income=200"
+    )
     assert requested == 200
     assert allocations == {"dividend-income": 200}
 
@@ -125,9 +321,16 @@ def test_available_cash_flexible_shapes():
 
 def _call_app(app, method, path, body=b""):
     status = {}
+
     def start_response(value, headers):
         status["value"] = value
-    environ = {"REQUEST_METHOD": method, "PATH_INFO": path, "CONTENT_LENGTH": str(len(body)), "wsgi.input": io.BytesIO(body)}
+
+    environ = {
+        "REQUEST_METHOD": method,
+        "PATH_INFO": path,
+        "CONTENT_LENGTH": str(len(body)),
+        "wsgi.input": io.BytesIO(body),
+    }
     payload = b"".join(app(environ, start_response)).decode()
     return status["value"], payload
 
@@ -141,7 +344,12 @@ def test_wsgi_get_and_post_record_request(tmp_path: Path):
     app = create_wsgi_app(registry_path=registry, cash_path=cash, request_log=log)
     status, page = _call_app(app, "GET", "/allocation")
     assert status == "200 OK" and "Dividend Income" in page
-    status, page = _call_app(app, "POST", "/allocation/request", b"requested_cash=200&strategy=dividend-income&amount_dividend-income=200")
+    status, page = _call_app(
+        app,
+        "POST",
+        "/allocation/request",
+        b"requested_cash=200&strategy=dividend-income&amount_dividend-income=200",
+    )
     assert status == "201 Created"
     assert "No cash has been transferred" in page
     assert "Approve and Apply Paper Allocation" in page
@@ -153,6 +361,15 @@ def test_wsgi_rejects_excess_cash(tmp_path: Path):
     cash = tmp_path / "cash.json"
     registry.write_text(json.dumps(REGISTRY))
     cash.write_text(json.dumps({"available_cash": 100}))
-    app = create_wsgi_app(registry_path=registry, cash_path=cash, request_log=tmp_path / "log.jsonl")
-    status, _ = _call_app(app, "POST", "/allocation/request", b"requested_cash=200&strategy=dividend-income&amount_dividend-income=200")
+    app = create_wsgi_app(
+        registry_path=registry,
+        cash_path=cash,
+        request_log=tmp_path / "log.jsonl",
+    )
+    status, _ = _call_app(
+        app,
+        "POST",
+        "/allocation/request",
+        b"requested_cash=200&strategy=dividend-income&amount_dividend-income=200",
+    )
     assert status == "400 Bad Request"
