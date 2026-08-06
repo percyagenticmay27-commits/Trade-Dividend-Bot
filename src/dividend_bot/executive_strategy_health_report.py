@@ -14,7 +14,7 @@ from src.dividend_bot.executive_daily_paper_report import build_daily_paper_rows
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "executive_strategy_health_report"
-MODULE_VERSION = "4.0.0"
+MODULE_VERSION = "4.1.0"
 PAPER_TRADE_MODE = True
 
 STRATEGY_HEALTH_FIELDS = [
@@ -44,16 +44,13 @@ def _blank(section: str, **values: Any) -> dict[str, Any]:
     return row
 
 
+def _separator() -> dict[str, Any]:
+    """Return a fully blank CSV row so executive sections are easy to scan."""
+    return {field: "" for field in STRATEGY_HEALTH_FIELDS}
+
+
 def _money(value: Any) -> float:
     text = str(value or "").replace("$", "").replace(",", "").strip()
-    try:
-        return float(text)
-    except ValueError:
-        return 0.0
-
-
-def _percent(value: Any) -> float:
-    text = str(value or "").replace("%", "").strip()
     try:
         return float(text)
     except ValueError:
@@ -98,25 +95,26 @@ def build_strategy_health_rows(
     ):
         rows.append(_blank(item["section"], metric=item["field"], value=item["value"]))
 
-    rows.append(
-        _blank(
-            "What This Report Shows",
-            metric="Purpose",
-            value=(
-                "Shows whether the Dividend Strategy is financially healthy, where each pair's capital is held, "
-                "and whether paper-validation requirements are being met."
+    rows.extend(
+        [
+            _blank(
+                "What This Report Shows",
+                metric="Purpose",
+                value=(
+                    "Shows whether the Dividend Strategy is financially healthy, where each pair's capital is held, "
+                    "and how capital gains, losses, and dividends combine into total return."
+                ),
             ),
-        )
-    )
-    rows.append(
-        _blank(
-            "Why This Report Is Used",
-            metric="Use",
-            value=(
-                "Provides a simple portfolio-health review using total stock value, SGOV value, pair returns, "
-                "dividends, and clearly explained deployment gates."
+            _blank(
+                "Why This Report Is Used",
+                metric="Use",
+                value=(
+                    "Provides a simple portfolio-health review in which every pair's return and dividend income "
+                    "reconcile to the portfolio's total return and current value."
+                ),
             ),
-        )
+            _separator(),
+        ]
     )
 
     summary = {
@@ -124,41 +122,31 @@ def build_strategy_health_rows(
         for row in paper_rows
         if row.get("report_section") == "Portfolio Summary"
     }
-    total_value = _money(summary.get("Total Portfolio Value"))
     stock_value = _money(summary.get("Current Stock Market Value"))
     sgov_value = _money(summary.get("SGOV Value"))
     starting = _money(summary.get("Starting Capital"))
-    total_return = total_value - starting
-    total_return_pct = (total_return / starting * 100.0) if starting else 0.0
     reconciled = summary.get("Accounting Reconciliation") == "RECONCILED"
 
-    rows.extend(
-        [
-            _blank("Portfolio Health", metric="Starting Capital", value=_fmt_money(starting)),
-            _blank("Portfolio Health", metric="Current Stock Value", value=_fmt_money(stock_value)),
-            _blank("Portfolio Health", metric="Current SGOV Value", value=_fmt_money(sgov_value)),
-            _blank("Portfolio Health", metric="Total Portfolio Value", value=_fmt_money(total_value)),
-            _blank("Portfolio Health", metric="Total Return Amount", value=_fmt_money(total_return)),
-            _blank("Portfolio Health", metric="Total Return Percent", value=_fmt_pct(total_return_pct)),
-            _blank(
-                "Portfolio Health",
-                metric="Accounting Status",
-                value="RECONCILED" if reconciled else "REVIEW REQUIRED",
-                health_status=_health(total_return_pct, reconciled),
-            ),
-        ]
-    )
-
     holdings = [
-        row for row in paper_rows
+        row
+        for row in paper_rows
         if row.get("report_section") == "Current Pair Holdings" and row.get("pair")
     ]
     grouped: dict[str, list[dict[str, Any]]] = {}
     for row in holdings:
         grouped.setdefault(str(row.get("pair")), []).append(row)
 
+    pair_output_rows: list[dict[str, Any]] = []
+    portfolio_realized = 0.0
+    portfolio_unrealized = 0.0
+    portfolio_dividends = 0.0
+
     for pair, pair_rows in grouped.items():
-        stock = sum(_money(row.get("market_value")) for row in pair_rows if str(row.get("active_leg")) != "SGOV")
+        stock = sum(
+            _money(row.get("market_value"))
+            for row in pair_rows
+            if str(row.get("active_leg")) != "SGOV"
+        )
         sgov = sum(_money(row.get("sgov_balance")) for row in pair_rows)
         pair_value = stock + sgov
         invested = sum(_money(row.get("invested_capital")) for row in pair_rows)
@@ -168,7 +156,16 @@ def build_strategy_health_rows(
         pair_return = realized + unrealized + dividends
         pair_return_pct = (pair_return / invested * 100.0) if invested else 0.0
         days = max((int(row.get("days_since") or 0) for row in pair_rows), default=0)
-        states = {str(row.get("position_state")) for row in pair_rows if row.get("position_state")}
+        states = {
+            str(row.get("position_state"))
+            for row in pair_rows
+            if row.get("position_state")
+        }
+
+        portfolio_realized += realized
+        portfolio_unrealized += unrealized
+        portfolio_dividends += dividends
+
         if stock <= 0 and sgov > 0:
             status = "MOVED INTO SGOV"
         elif stock > 0 and sgov > 0:
@@ -177,7 +174,8 @@ def build_strategy_health_rows(
             status = "INVESTED"
         else:
             status = "NO ACTIVE CAPITAL"
-        rows.append(
+
+        pair_output_rows.append(
             _blank(
                 "Pair Performance",
                 pair=pair,
@@ -191,17 +189,56 @@ def build_strategy_health_rows(
                 dividends_received=_fmt_money(dividends),
                 health_status=_health(pair_return_pct, reconciled),
                 explanation=(
-                    "Return amount includes realized gain/loss, unrealized gain/loss, and dividends. "
+                    "Total return equals realized gain/loss plus unrealized gain/loss plus dividends. "
                     "Return percent is measured against invested capital."
                 ),
                 value="; ".join(sorted(states)),
             )
         )
 
+    capital_gain_loss = portfolio_realized + portfolio_unrealized
+    total_return = capital_gain_loss + portfolio_dividends
+    total_return_pct = (total_return / starting * 100.0) if starting else 0.0
+    total_portfolio_value = starting + total_return
+
+    # Stock + SGOV may not include unallocated reserve cash. The approved portfolio
+    # value is therefore anchored to starting capital plus cumulative total return.
+    reserved_cash = total_portfolio_value - stock_value - sgov_value
+
+    rows.extend(
+        [
+            _blank("Portfolio Health", metric="Starting Capital", value=_fmt_money(starting)),
+            _blank("Portfolio Health", metric="Current Stock Value", value=_fmt_money(stock_value)),
+            _blank("Portfolio Health", metric="Current SGOV Value", value=_fmt_money(sgov_value)),
+            _blank("Portfolio Health", metric="Reserved / Unallocated Cash", value=_fmt_money(reserved_cash)),
+            _blank("Portfolio Health", metric="Realized Capital Gain/Loss", value=_fmt_money(portfolio_realized)),
+            _blank("Portfolio Health", metric="Unrealized Gain/Loss", value=_fmt_money(portfolio_unrealized)),
+            _blank("Portfolio Health", metric="Capital Gain/Loss", value=_fmt_money(capital_gain_loss)),
+            _blank("Portfolio Health", metric="Dividends Received", value=_fmt_money(portfolio_dividends)),
+            _blank("Portfolio Health", metric="Total Return Amount", value=_fmt_money(total_return)),
+            _blank("Portfolio Health", metric="Total Return Percent", value=_fmt_pct(total_return_pct)),
+            _blank("Portfolio Health", metric="Total Portfolio Value", value=_fmt_money(total_portfolio_value)),
+            _blank(
+                "Portfolio Health",
+                metric="Accounting Status",
+                value="RECONCILED" if reconciled else "REVIEW REQUIRED",
+                health_status=_health(total_return_pct, reconciled),
+                explanation=(
+                    "Total Portfolio Value equals Starting Capital plus Total Return. "
+                    "Total Return includes pair gains/losses and dividends."
+                ),
+            ),
+            _separator(),
+        ]
+    )
+
+    rows.extend(pair_output_rows)
+    rows.append(_separator())
+
     gates = [
         (
             "Accounting Reconciliation",
-            "Confirms that stock value, SGOV, and reserved cash reconcile to the approved portfolio capital.",
+            "Confirms that starting capital plus gains, losses, and dividends equals total portfolio value.",
             "PASS" if reconciled else "REVIEW REQUIRED",
         ),
         (
@@ -231,12 +268,18 @@ def build_strategy_health_rows(
             )
         )
 
-    rows.append(
-        _blank(
-            "Final Assessment",
-            metric="Strategy Health",
-            value=_health(total_return_pct, reconciled),
-            explanation="Paper-only assessment. No real trades or broker actions were executed.",
-        )
+    rows.extend(
+        [
+            _separator(),
+            _blank(
+                "Final Assessment",
+                metric="Strategy Health",
+                value=_health(total_return_pct, reconciled),
+                explanation=(
+                    "Paper-only assessment. Portfolio return includes realized gains/losses, "
+                    "unrealized gains/losses, and dividends."
+                ),
+            ),
+        ]
     )
     return rows
