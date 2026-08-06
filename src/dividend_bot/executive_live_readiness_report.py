@@ -14,7 +14,7 @@ from src.dividend_bot.executive_reporting_framework import executive_framework_r
 from src.dividend_bot.executive_strategy_health_report import build_strategy_health_rows
 
 MODULE_NAME = "executive_live_readiness_report"
-MODULE_VERSION = "2.0.0"
+MODULE_VERSION = "2.2.0"
 PAPER_TRADE_MODE = True
 
 LIVE_READINESS_FIELDS = [
@@ -63,6 +63,20 @@ def _metric(metrics: dict[str, str], *names: str, default: str = "Not reported")
     return default
 
 
+def _pct(value: Any) -> float:
+    try:
+        return float(str(value or "0").replace("%", "").strip())
+    except ValueError:
+        return 0.0
+
+
+def _portfolio_metric(strategy_rows: list[dict[str, Any]], name: str) -> str:
+    for row in strategy_rows:
+        if row.get("report_section") == "Portfolio Health" and row.get("metric") == name:
+            return str(row.get("value") or "")
+    return ""
+
+
 def build_live_readiness_rows(
     *, root_dir: str | Path, trading_date: date, generated_at: datetime | None = None
 ) -> list[dict[str, Any]]:
@@ -94,14 +108,19 @@ def build_live_readiness_rows(
         _separator(),
     ])
 
+    total_return_pct = _portfolio_metric(strategy_rows, "Total Return Percent")
+    total_return_amount = _portfolio_metric(strategy_rows, "Total Return Amount")
+    portfolio_value = _portfolio_metric(strategy_rows, "Total Portfolio Value")
     summary_items = [
         ("Overall Readiness", _metric(metrics, "overall live readiness", "overall readiness")),
         ("Readiness Level", _metric(metrics, "status", "readiness level")),
         ("Paper Trading Days", _metric(metrics, "paper trading days", "paper trading days completed")),
         ("Required Paper Days", _metric(metrics, "required paper days", default="90")),
         ("Days Remaining", _metric(metrics, "days remaining")),
-        ("Current Portfolio Value", _metric(metrics, "portfolio value", "current portfolio value")),
+        ("Current Portfolio Value", portfolio_value or _metric(metrics, "portfolio value", "current portfolio value")),
+        ("Total % Return", total_return_pct or _metric(metrics, "total % return", "total return percent")),
         ("Maximum Drawdown", _metric(metrics, "maximum drawdown")),
+        ("Total Return", total_return_amount or _metric(metrics, "total return")),
         ("Accounting Status", _metric(metrics, "accounting status", "accounting reconciliation")),
     ]
     for name, value in summary_items:
@@ -110,19 +129,56 @@ def build_live_readiness_rows(
 
     legends = [row for row in strategy_rows if row.get("report_section") == "Current Pair Legend"]
     governance = [row for row in strategy_rows if row.get("report_section") == "Pair Governance"]
-    sgov = next((row for row in legends if row.get("pair") == "SGOV"), None)
-    active = [row for row in legends if row.get("pair") != "SGOV"]
-    warnings = [row for row in legends if row.get("warning") or row.get("explanation")]
+
+    # Only active incomplete allocations require a Next Man Up candidate and
+    # investor veto. Fully parked historical pairs remain visible elsewhere but
+    # do not count as incomplete active pairs.
+    active_governance = [
+        row for row in governance
+        if str(row.get("active_stock") or "").upper() != "SGOV"
+        and "INCOMPLETE" in str(row.get("position_status") or "").upper()
+    ]
+    veto_count = len(active_governance)
+    next_man_up_count = len(active_governance)
+    incomplete_pair_count = len(active_governance)
+
+    sgov = next((row for row in legends if str(row.get("pair") or "").upper() == "SGOV"), None)
+    capital = next((row for row in legends if str(row.get("pair") or "").upper() in {"CAPITAL", "CASH"}), None)
+    active_legends = [
+        row for row in legends
+        if str(row.get("pair") or "").upper() not in {"SGOV", "CAPITAL", "CASH"}
+    ]
+    active_pct = sum(_pct(row.get("portfolio_pct")) for row in active_legends)
+    sgov_pct = _pct((sgov or {}).get("portfolio_pct"))
+    capital_pct = _pct((capital or {}).get("portfolio_pct"))
+    if not capital and active_pct + sgov_pct <= 100.0:
+        capital_pct = max(0.0, 100.0 - active_pct - sgov_pct)
+    total_accounted = active_pct + sgov_pct + capital_pct
 
     governance_items = [
-        ("Income + Growth Compliance", "ACTION REQUIRED" if governance else "PASS"),
-        ("Current Active Holdings", str(len(active))),
-        ("Next Man Up Requirements", str(len(governance))),
-        ("Current SGOV Allocation", str((sgov or {}).get("portfolio_pct") or "0.00%")),
-        ("Current Active Allocation", _metric(metrics, "current active allocation")),
+        ("Income + Growth Compliance", "ACTION REQUIRED" if incomplete_pair_count else "PASS",
+         "One or more active allocations do not have a complete Income + Growth pair." if incomplete_pair_count else "All active allocations have complete Income + Growth pairs."),
+        ("Pairs Requiring Investor Veto", str(veto_count),
+         "Number of proposed replacement purchases currently subject to investor veto."),
+        ("Next Man Up Candidates", str(next_man_up_count),
+         "Number of active incomplete pairs requiring a qualified replacement candidate."),
+        ("Incomplete Income + Growth Pairs", str(incomplete_pair_count),
+         "Counts active incomplete pairs only; fully parked pairs are excluded."),
+        ("Current Active Stock Allocation", f"{active_pct:.2f}%",
+         "Capital currently invested in active stock positions."),
+        ("Current SGOV Allocation", f"{sgov_pct:.2f}%",
+         "Capital currently parked in SGOV."),
+        ("Capital Allocation", f"{capital_pct:.2f}%",
+         "Cash not yet deployed into active stocks or SGOV."),
+        ("Total Accounted Allocation", f"{total_accounted:.2f}%",
+         "Active Stock + SGOV + Capital Allocation."),
+        ("Replacement Status", "NEXT MAN UP REQUIRED" if next_man_up_count else "NO REPLACEMENT REQUIRED",
+         "The system selects replacement candidates from current authoritative evidence."),
+        ("User Governance", "VETO ONLY",
+         "The system proposes replacement purchases automatically; the investor may veto them."),
     ]
-    for name, value in governance_items:
-        rows.append(_row("Governance Readiness", metric=name, value=value))
+    for name, value, notes in governance_items:
+        rows.append(_row("Governance Readiness", metric=name, value=value, notes=notes))
     rows.append(_separator())
 
     for legend in legends:
@@ -147,7 +203,7 @@ def build_live_readiness_rows(
     readiness_status = _metric(metrics, "status", "readiness level", default="IN PROGRESS").upper()
     for gate, requirement in gate_specs:
         if gate == "Income + Growth Governance":
-            status = "ACTION REQUIRED" if governance else "PASS"
+            status = "ACTION REQUIRED" if incomplete_pair_count else "PASS"
         elif gate == "Accounting Reconciliation":
             accounting = _metric(metrics, "accounting status", "accounting reconciliation", default="IN PROGRESS").upper()
             status = "PASS" if accounting in {"PASS", "RECONCILED"} else accounting
@@ -162,16 +218,15 @@ def build_live_readiness_rows(
         ))
     rows.append(_separator())
 
-    if governance:
-        for item in governance:
-            rows.append(_row(
-                "Blocking Issues",
-                metric=item.get("event") or "Governance action required",
-                value=item.get("value") or item.get("position_status") or "ACTION REQUIRED",
-                pair=item.get("pair", ""),
-                warning=item.get("explanation", ""),
-                status="OPEN",
-            ))
+    for item in active_governance:
+        rows.append(_row(
+            "Blocking Issues",
+            metric="Growth Pair Required",
+            value="OPEN",
+            pair=item.get("pair", ""),
+            warning=item.get("explanation", ""),
+            status="OPEN",
+        ))
     days_remaining = _metric(metrics, "days remaining", default="")
     if days_remaining and days_remaining not in {"0", "0 days"}:
         rows.append(_row(
@@ -179,11 +234,11 @@ def build_live_readiness_rows(
             value=f"{days_remaining} remaining", status="OPEN",
             warning="Minimum observation period is not complete.",
         ))
-    if not governance and not days_remaining:
+    if not active_governance and not days_remaining:
         rows.append(_row("Blocking Issues", metric="No blocking issues reported", value="NONE", status="CLEAR"))
     rows.append(_separator())
 
-    ready = not governance and readiness_status in {"READY", "ELIGIBLE", "PASS"}
+    ready = not active_governance and readiness_status in {"READY", "ELIGIBLE", "PASS"}
     rows.extend([
         _row("Final Assessment", metric="Overall Status", value="READY" if ready else "NOT READY"),
         _row("Final Assessment", metric="Ready for Limited Deployment", value="YES" if ready else "NO"),
