@@ -8,17 +8,8 @@ from pathlib import Path
 from send_daily_reports import EXPECTED_CSV_NAMES, send_daily_reports
 from src.dividend_bot.executive_daily_change_summary import DAILY_CHANGE_FIELDS
 from src.dividend_bot.executive_daily_paper_report import DAILY_PAPER_FIELDS
+from src.dividend_bot.executive_live_readiness_report import LIVE_READINESS_FIELDS
 from src.dividend_bot.executive_strategy_health_report import STRATEGY_HEALTH_FIELDS
-
-
-EXPECTED_EXECUTIVE_FIELDS = [
-    "report_section",
-    "field",
-    "value",
-    "report_text",
-    "source_line",
-    "paper_trade_mode",
-]
 
 
 def _write_inputs(root: Path) -> None:
@@ -47,7 +38,17 @@ def _write_inputs(root: Path) -> None:
         "daily_paper_report.md": "# Daily Paper Report\n- Status: READY\n",
         "daily_change_summary.md": "# Daily Change Summary\n- Change: NONE\n",
         "strategy_health_report.md": "# Strategy Health Report\n- Health: GOOD\n",
-        "live_readiness_report.md": "# Live Readiness Report\n- Ready: NO\n",
+        "live_readiness_report.md": (
+            "# Live Readiness Report\n"
+            "- Overall Readiness: 5.56%\n"
+            "- Status: IN PROGRESS\n"
+            "- Paper Trading Days: 5\n"
+            "- Required Paper Days: 90\n"
+            "- Days Remaining: 85\n"
+            "- Portfolio Value: $50,000.00\n"
+            "- Maximum Drawdown: 0.00%\n"
+            "- Accounting Status: RECONCILED\n"
+        ),
     }
     for name, content in reports.items():
         (root / name).write_text(content, encoding="utf-8")
@@ -109,13 +110,22 @@ def test_daily_decision_email_converts_exact_markdown_reports_to_csv(tmp_path: P
             assert any(row["metric"] == "Dividends Received" for row in rows)
             assert any(row["metric"] == "Total Return Amount" for row in rows)
             assert any(row["metric"] == "Total Portfolio Value" for row in rows)
-        else:
-            assert reader.fieldnames == EXPECTED_EXECUTIVE_FIELDS
-            assert all(row["paper_trade_mode"] == "True" for row in rows)
+        elif path.name == "live_readiness_report.csv":
+            assert reader.fieldnames == LIVE_READINESS_FIELDS
+            content_rows = [row for row in rows if any(row.values())]
+            assert all(row["paper_trade_mode"] == "True" for row in content_rows)
+            assert any(not any(row.values()) for row in rows)
             assert any(row["report_section"] == "Executive Header" for row in rows)
-            assert any(row["report_section"] == "What This Report Shows" for row in rows)
-            assert any(row["report_section"] == "Why This Report Is Used" for row in rows)
-            assert any(row["source_line"] for row in rows)
+            assert any(row["report_section"] == "Current Readiness Summary" for row in rows)
+            assert any(row["report_section"] == "Governance Readiness" for row in rows)
+            assert any(row["report_section"] == "Current Pair Legend" for row in rows)
+            assert any(row["report_section"] == "Deployment Gates" for row in rows)
+            assert any(row["report_section"] == "Blocking Issues" for row in rows)
+            assert any(row["report_section"] == "Final Assessment" for row in rows)
+            assert any(row["metric"] == "Paper Trading Days" and row["value"] == "5" for row in rows)
+            assert any(row["metric"] == "Overall Status" and row["value"] == "NOT READY" for row in rows)
+        else:
+            raise AssertionError(f"Unexpected attachment: {path.name}")
 
 
 def test_daily_decision_email_duplicate_protection(tmp_path: Path):
