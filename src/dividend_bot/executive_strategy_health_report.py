@@ -14,10 +14,11 @@ from src.dividend_bot.executive_daily_paper_report import build_daily_paper_rows
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "executive_strategy_health_report"
-MODULE_VERSION = "4.1.0"
+MODULE_VERSION = "4.2.0"
 PAPER_TRADE_MODE = True
 
 STRATEGY_HEALTH_FIELDS = [
+    "activity_date",
     "report_section",
     "metric",
     "value",
@@ -73,6 +74,16 @@ def _health(return_pct: float, reconciled: bool) -> str:
     if return_pct < 0.0:
         return "WATCH"
     return "HEALTHY"
+
+
+def _latest_activity_date(pair_rows: list[dict[str, Any]], fallback: date) -> str:
+    """Return the latest date that established the displayed pair position status."""
+    candidates = [
+        str(row.get("last_activity") or row.get("activity_date") or "").strip()
+        for row in pair_rows
+    ]
+    candidates = [value for value in candidates if value]
+    return max(candidates) if candidates else fallback.isoformat()
 
 
 def build_strategy_health_rows(
@@ -178,6 +189,7 @@ def build_strategy_health_rows(
         pair_output_rows.append(
             _blank(
                 "Pair Performance",
+                activity_date=_latest_activity_date(pair_rows, trading_date),
                 pair=pair,
                 position_status=status,
                 stock_value=_fmt_money(stock),
@@ -189,6 +201,7 @@ def build_strategy_health_rows(
                 dividends_received=_fmt_money(dividends),
                 health_status=_health(pair_return_pct, reconciled),
                 explanation=(
+                    "Date is the latest activity that established the displayed position status. "
                     "Total return equals realized gain/loss plus unrealized gain/loss plus dividends. "
                     "Return percent is measured against invested capital."
                 ),
@@ -200,9 +213,6 @@ def build_strategy_health_rows(
     total_return = capital_gain_loss + portfolio_dividends
     total_return_pct = (total_return / starting * 100.0) if starting else 0.0
     total_portfolio_value = starting + total_return
-
-    # Stock + SGOV may not include unallocated reserve cash. The approved portfolio
-    # value is therefore anchored to starting capital plus cumulative total return.
     reserved_cash = total_portfolio_value - stock_value - sgov_value
 
     rows.extend(
