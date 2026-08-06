@@ -14,7 +14,7 @@ from src.dividend_bot.executive_daily_paper_report import build_daily_paper_rows
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "executive_strategy_health_report"
-MODULE_VERSION = "4.2.0"
+MODULE_VERSION = "4.2.1"
 PAPER_TRADE_MODE = True
 
 STRATEGY_HEALTH_FIELDS = [
@@ -208,6 +208,11 @@ def build_strategy_health_rows(
                 value="; ".join(sorted(states)),
             )
         )
+
+    pair_output_rows.sort(
+        key=lambda row: (str(row.get("activity_date") or ""), str(row.get("pair") or "")),
+        reverse=True,
+    )
 
     capital_gain_loss = portfolio_realized + portfolio_unrealized
     total_return = capital_gain_loss + portfolio_dividends
