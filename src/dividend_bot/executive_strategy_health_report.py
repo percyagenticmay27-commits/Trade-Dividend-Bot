@@ -14,7 +14,7 @@ from src.dividend_bot.executive_daily_paper_report import build_daily_paper_rows
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "executive_strategy_health_report"
-MODULE_VERSION = "4.2.1"
+MODULE_VERSION = "4.3.0"
 PAPER_TRADE_MODE = True
 
 STRATEGY_HEALTH_FIELDS = [
@@ -201,18 +201,35 @@ def build_strategy_health_rows(
                 dividends_received=_fmt_money(dividends),
                 health_status=_health(pair_return_pct, reconciled),
                 explanation=(
-                    "Date is the latest activity that established the displayed position status. "
-                    "Total return equals realized gain/loss plus unrealized gain/loss plus dividends. "
-                    "Return percent is measured against invested capital."
+                    "Date is the activity that established the displayed position status. "
+                    "Rows are grouped by pair and ordered oldest to newest so the pair's development is easy to follow. "
+                    "Total return equals realized gain/loss plus unrealized gain/loss plus dividends."
                 ),
                 value="; ".join(sorted(states)),
             )
         )
 
+    # Keep each pair together, then show its activity chronologically from oldest
+    # to newest. This is intentionally not a newest-first executive activity sort.
     pair_output_rows.sort(
-        key=lambda row: (str(row.get("activity_date") or ""), str(row.get("pair") or "")),
-        reverse=True,
+        key=lambda row: (str(row.get("pair") or ""), str(row.get("activity_date") or ""))
     )
+
+    current_pair_legend = [
+        _blank(
+            "Current Pair Legend",
+            activity_date=str(row.get("activity_date") or ""),
+            metric="Current Pair",
+            value=str(row.get("position_status") or ""),
+            pair=str(row.get("pair") or ""),
+            position_status=str(row.get("position_status") or ""),
+            stock_value=str(row.get("stock_value") or ""),
+            sgov_value=str(row.get("sgov_value") or ""),
+            total_pair_value=str(row.get("total_pair_value") or ""),
+            explanation="This is the pair currently assigned and its present capital location before reviewing its performance history.",
+        )
+        for row in sorted(pair_output_rows, key=lambda item: str(item.get("pair") or ""))
+    ]
 
     capital_gain_loss = portfolio_realized + portfolio_unrealized
     total_return = capital_gain_loss + portfolio_dividends
@@ -247,6 +264,8 @@ def build_strategy_health_rows(
         ]
     )
 
+    rows.extend(current_pair_legend)
+    rows.append(_separator())
     rows.extend(pair_output_rows)
     rows.append(_separator())
 
