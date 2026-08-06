@@ -58,7 +58,10 @@ def test_strategy_health_fields_are_stable() -> None:
         "metric",
         "value",
         "pair",
+        "active_stock",
+        "event",
         "position_status",
+        "portfolio_pct",
         "stock_value",
         "sgov_value",
         "total_pair_value",
@@ -76,9 +79,6 @@ def test_strategy_health_reports_total_capital_pair_status_and_units(tmp_path: P
     _write_state(tmp_path)
     rows = build_strategy_health_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
 
-    assert any(row["report_section"] == "What This Report Shows" for row in rows)
-    assert any(row["report_section"] == "Why This Report Is Used" for row in rows)
-
     metrics = _portfolio_metrics(rows)
     assert metrics["Starting Capital"] == "$50,000.00"
     assert metrics["Dividends Received"] == "$100.00"
@@ -86,37 +86,52 @@ def test_strategy_health_reports_total_capital_pair_status_and_units(tmp_path: P
     assert metrics["Total Return Percent"] == "6.20%"
     assert metrics["Total Portfolio Value"] == "$53,100.00"
 
-    pair = next(row for row in rows if row["report_section"] == "Pair Performance")
-    assert pair["activity_date"] == "2026-08-04"
-    assert pair["pair"] == "AMDW / BEX"
-    assert pair["position_status"] == "PARTIALLY INVESTED / PARTIALLY IN SGOV"
-    assert pair["stock_value"] == "$6,000.00"
-    assert pair["sgov_value"] == "$2,000.00"
-    assert pair["total_pair_value"] == "$8,000.00"
-    assert pair["total_return_amount"] == "$3,100.00"
-    assert pair["total_return_pct"] == "62.00%"
-    assert pair["dividends_received"] == "$100.00"
-    assert "latest activity" in pair["explanation"]
-    assert pair["paper_trade_mode"] is True
+    legend = next(row for row in rows if row["report_section"] == "Current Pair Legend")
+    assert legend["activity_date"] == "2026-08-05"
+    assert legend["pair"] == "AMDW / BEX"
+    assert legend["portfolio_pct"] == "16.00%"
+    assert legend["total_pair_value"] == "$8,000.00"
+    assert legend["active_stock"] == ""
+    assert legend["position_status"] == ""
+
+    history = [row for row in rows if row["report_section"] == "Pair Performance"]
+    assert [row["activity_date"] for row in history] == [
+        "2026-08-01",
+        "2026-08-04",
+        "2026-08-05",
+    ]
+    assert history[0]["pair"] == "AMDW / BEX"
+    assert history[0]["active_stock"] == "AMDW"
+    assert history[1]["active_stock"] == "SGOV"
+    assert history[2]["active_stock"] == "AMDW"
+    assert all(row["paper_trade_mode"] is True for row in history)
 
 
-def test_pair_returns_and_dividends_reconcile_to_portfolio_return(tmp_path: Path) -> None:
+def test_legend_is_concise_and_history_has_no_state_column(tmp_path: Path) -> None:
     _write_state(tmp_path)
     rows = build_strategy_health_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
-    metrics = _portfolio_metrics(rows)
-    pair_rows = [row for row in rows if row["report_section"] == "Pair Performance"]
+    legend = next(row for row in rows if row["report_section"] == "Current Pair Legend")
 
-    pair_returns = sum(float(row["total_return_amount"].replace("$", "").replace(",", "")) for row in pair_rows)
-    portfolio_return = float(metrics["Total Return Amount"].replace("$", "").replace(",", ""))
-    assert pair_returns == portfolio_return
-    assert float(metrics["Total Portfolio Value"].replace("$", "").replace(",", "")) == 50_000.0 + portfolio_return
+    populated = {
+        key for key, value in legend.items()
+        if value not in {"", False}
+    }
+    assert populated == {
+        "activity_date",
+        "report_section",
+        "pair",
+        "portfolio_pct",
+        "total_pair_value",
+        "paper_trade_mode",
+    }
+    assert "state" not in STRATEGY_HEALTH_FIELDS
 
 
-def test_blank_rows_separate_executive_sections(tmp_path: Path) -> None:
+def test_blank_rows_separate_executive_sections_and_pair_groups(tmp_path: Path) -> None:
     _write_state(tmp_path)
     rows = build_strategy_health_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
     separators = [row for row in rows if not any(str(value) for value in row.values())]
-    assert len(separators) >= 4
+    assert len(separators) >= 5
 
 
 def test_deployment_gates_are_plain_english(tmp_path: Path) -> None:
