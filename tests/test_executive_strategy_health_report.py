@@ -53,6 +53,7 @@ def _portfolio_metrics(rows: list[dict]) -> dict[str, str]:
 
 def test_strategy_health_fields_are_stable() -> None:
     assert STRATEGY_HEALTH_FIELDS == [
+        "activity_date",
         "report_section",
         "metric",
         "value",
@@ -86,6 +87,7 @@ def test_strategy_health_reports_total_capital_pair_status_and_units(tmp_path: P
     assert metrics["Total Portfolio Value"] == "$53,100.00"
 
     pair = next(row for row in rows if row["report_section"] == "Pair Performance")
+    assert pair["activity_date"] == "2026-08-04"
     assert pair["pair"] == "AMDW / BEX"
     assert pair["position_status"] == "PARTIALLY INVESTED / PARTIALLY IN SGOV"
     assert pair["stock_value"] == "$6,000.00"
@@ -94,7 +96,7 @@ def test_strategy_health_reports_total_capital_pair_status_and_units(tmp_path: P
     assert pair["total_return_amount"] == "$3,100.00"
     assert pair["total_return_pct"] == "62.00%"
     assert pair["dividends_received"] == "$100.00"
-    assert "plus dividends" in pair["explanation"]
+    assert "latest activity" in pair["explanation"]
     assert pair["paper_trade_mode"] is True
 
 
