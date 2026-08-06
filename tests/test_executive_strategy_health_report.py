@@ -65,15 +65,23 @@ def test_strategy_health_fields_are_stable() -> None:
     ]
 
 
-def test_current_legend_contains_only_currently_invested_symbols(tmp_path: Path) -> None:
+def test_current_legend_shows_active_symbol_warning_and_consolidated_sgov(tmp_path: Path) -> None:
     _write_state(tmp_path)
     rows = build_strategy_health_rows(root_dir=tmp_path, trading_date=date(2026, 8, 5))
     legends = [row for row in rows if row["report_section"] == "Current Pair Legend"]
 
-    assert len(legends) == 1
-    assert legends[0]["pair"] == "AMDW"
-    assert legends[0]["portfolio_pct"] == "12.00%"
-    assert legends[0]["total_pair_value"] == "$6,000.00"
+    assert {row["pair"] for row in legends} == {"AMDW", "SGOV"}
+
+    amd = next(row for row in legends if row["pair"] == "AMDW")
+    assert amd["portfolio_pct"] == "12.00%"
+    assert amd["total_pair_value"] == "$6,000.00"
+    assert amd["value"] == "GROWTH PAIR REQUIRED — NEXT MAN UP"
+
+    sgov = next(row for row in legends if row["pair"] == "SGOV")
+    assert sgov["portfolio_pct"] == "8.00%"
+    assert sgov["total_pair_value"] == "$4,000.00"
+    assert sgov["value"] == "PARKED CAPITAL — AWAITING NEXT MAN UP"
+
     assert all(row["pair"] != "MSTY / NVDY" for row in legends)
     assert all("BEX" not in row["pair"] for row in legends)
 
@@ -85,8 +93,8 @@ def test_next_man_up_governance_flags_partial_and_fully_parked_pairs(tmp_path: P
 
     amd = next(row for row in governance if row["pair"] == "AMDW")
     assert amd["event"] == "NEXT MAN UP REQUIRED"
+    assert amd["value"] == "GROWTH PAIR REQUIRED"
     assert amd["position_status"] == "INCOMPLETE INCOME + GROWTH PAIR"
-    assert "replacement symbol" in amd["explanation"]
 
     closed = next(row for row in governance if row["pair"] == "MSTY / NVDY")
     assert closed["active_stock"] == "SGOV"
