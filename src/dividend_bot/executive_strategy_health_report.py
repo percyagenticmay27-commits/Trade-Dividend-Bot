@@ -1,10 +1,8 @@
 """Build the executive Strategy Health Report from paper-only evidence.
 
-The report preserves complete portfolio health, shows only currently invested
-symbols in the Current Pair Legend, and presents pair activity grouped by the
-historical pair from oldest to newest. Fully parked pairs remain in history but
-are excluded from the current legend. Reporting only: no broker actions or
-capital movement.
+The report shows complete portfolio health, a concise current-exposure legend,
+governance warnings, and pair activity grouped by historical pair from oldest
+to newest. Reporting only: no broker actions or capital movement.
 """
 from __future__ import annotations
 
@@ -17,7 +15,7 @@ from src.dividend_bot.executive_daily_paper_report import build_daily_paper_rows
 from src.dividend_bot.executive_reporting_framework import executive_framework_rows
 
 MODULE_NAME = "executive_strategy_health_report"
-MODULE_VERSION = "4.6.0"
+MODULE_VERSION = "4.7.0"
 PAPER_TRADE_MODE = True
 
 STRATEGY_HEALTH_FIELDS = [
@@ -123,10 +121,10 @@ def build_strategy_health_rows(
 
     rows.extend([
         _blank("What This Report Shows", metric="Purpose", value=(
-            "Shows portfolio health, symbols currently invested today, governance replacement requirements, and grouped chronological pair history."
+            "Shows portfolio health, current invested symbols, total SGOV exposure, replacement warnings, and grouped chronological pair history."
         )),
         _blank("Why This Report Is Used", metric="Use", value=(
-            "Prevents fully parked or sold pairs from appearing as current holdings while preserving their complete performance history."
+            "Lets the investor see current exposure and whether Next Man Up is required before reviewing detailed pair performance."
         )),
         _separator(),
     ])
@@ -164,7 +162,7 @@ def build_strategy_health_rows(
             if str(row.get("active_leg") or "").strip()
         })
         active_stock_value = sum(_money(row.get("market_value")) for row in invested_rows)
-        sgov = sum(_money(row.get("sgov_balance")) for row in pair_rows)
+        pair_sgov = sum(_money(row.get("sgov_balance")) for row in pair_rows)
         invested = sum(_money(row.get("invested_capital")) for row in pair_rows)
         realized = sum(_money(row.get("realized_gain_loss")) for row in pair_rows)
         unrealized = sum(_money(row.get("unrealized_gain_loss")) for row in pair_rows)
@@ -180,11 +178,11 @@ def build_strategy_health_rows(
             "current_display": current_display,
             "active_stock": current_display if current_display else "SGOV",
             "active_count": len(active_stocks),
-            "position_status": _status(active_stock_value, sgov),
+            "position_status": _status(active_stock_value, pair_sgov),
             "portfolio_pct": _fmt_pct((active_stock_value / starting * 100.0) if starting else 0.0),
             "stock_value": _fmt_money(active_stock_value),
-            "sgov_value": _fmt_money(sgov),
-            "total_pair_value": _fmt_money(active_stock_value + sgov),
+            "sgov_value": _fmt_money(pair_sgov),
+            "total_pair_value": _fmt_money(active_stock_value + pair_sgov),
             "legend_total_value": _fmt_money(active_stock_value),
             "total_return_amount": _fmt_money(pair_return),
             "total_return_pct": _fmt_pct(pair_return_pct),
@@ -222,55 +220,67 @@ def build_strategy_health_rows(
         _separator(),
     ])
 
-    # Only currently invested symbols belong in the current legend.
+    # Current invested symbols, plus warning when an Income + Growth pair is incomplete.
     for historical_pair in sorted(snapshots):
         snap = snapshots[historical_pair]
         if not snap["current_display"]:
             continue
+        warning = ""
+        if snap["active_count"] == 1:
+            warning = "GROWTH PAIR REQUIRED — NEXT MAN UP"
         rows.append(_blank(
             "Current Pair Legend",
             activity_date=snap["activity_date"],
             pair=snap["current_display"],
+            value=warning,
             portfolio_pct=snap["portfolio_pct"],
             total_pair_value=snap["legend_total_value"],
         ))
+
+    # Consolidated SGOV exposure gives the investor an immediate portfolio-level view.
+    if sgov_value > 0:
+        sgov_dates = [
+            snap["activity_date"] for snap in snapshots.values()
+            if _money(snap["sgov_value"]) > 0
+        ]
+        rows.append(_blank(
+            "Current Pair Legend",
+            activity_date=max(sgov_dates) if sgov_dates else trading_date.isoformat(),
+            pair="SGOV",
+            value="PARKED CAPITAL — AWAITING NEXT MAN UP",
+            portfolio_pct=_fmt_pct((sgov_value / starting * 100.0) if starting else 0.0),
+            total_pair_value=_fmt_money(sgov_value),
+        ))
     rows.append(_separator())
 
-    # Income + Growth governance: a one-symbol holding requires Next Man Up.
     for historical_pair in sorted(snapshots):
         snap = snapshots[historical_pair]
         if snap["active_count"] == 1:
             rows.append(_blank(
-                "Pair Governance",
-                activity_date=snap["activity_date"],
-                pair=snap["current_display"],
-                active_stock=snap["active_stock"],
+                "Pair Governance", activity_date=snap["activity_date"],
+                pair=snap["current_display"], active_stock=snap["active_stock"],
                 event="NEXT MAN UP REQUIRED",
                 position_status="INCOMPLETE INCOME + GROWTH PAIR",
-                value="REPLACEMENT REQUIRED",
-                health_status="ACTION REQUIRED",
+                value="GROWTH PAIR REQUIRED", health_status="ACTION REQUIRED",
                 explanation=(
                     f"{historical_pair} currently has only {snap['active_stock']} invested. "
-                    "Governance requires an Income + Growth structure, so a qualified replacement symbol must be selected from fresh evidence."
+                    "A qualified Growth replacement must be selected from fresh evidence."
                 ),
             ))
         elif snap["active_count"] == 0:
             rows.append(_blank(
-                "Pair Governance",
-                activity_date=snap["activity_date"],
-                pair=historical_pair,
-                active_stock="SGOV",
+                "Pair Governance", activity_date=snap["activity_date"],
+                pair=historical_pair, active_stock="SGOV",
                 event="NEXT MAN UP REQUIRED",
                 position_status="PAIR FULLY PARKED IN SGOV",
                 value="NEW INCOME + GROWTH PAIR REQUIRED",
                 health_status="ACTION REQUIRED",
                 explanation=(
-                    "Both sleeves are in SGOV. The historical pair is closed for current-holdings purposes and a new Income + Growth pair must be selected from fresh evidence."
+                    "Both sleeves are in SGOV. The historical pair is no longer a current holding and a new Income + Growth pair is required."
                 ),
             ))
     rows.append(_separator())
 
-    # Preserve all historical pairs and order each group oldest to newest.
     history_by_pair: dict[str, list[dict[str, Any]]] = {pair: [] for pair in snapshots}
     for log in _load_log(root):
         historical_pair = str(log.get("Pair") or "").strip()
@@ -306,16 +316,11 @@ def build_strategy_health_rows(
         if not group:
             snap = snapshots[historical_pair]
             group = [_blank(
-                "Pair Performance",
-                activity_date=snap["activity_date"],
-                pair=historical_pair,
-                active_stock=snap["active_stock"],
-                event="CURRENT SNAPSHOT",
-                position_status=snap["position_status"],
-                portfolio_pct=snap["portfolio_pct"],
-                stock_value=snap["stock_value"],
-                sgov_value=snap["sgov_value"],
-                total_pair_value=snap["total_pair_value"],
+                "Pair Performance", activity_date=snap["activity_date"],
+                pair=historical_pair, active_stock=snap["active_stock"],
+                event="CURRENT SNAPSHOT", position_status=snap["position_status"],
+                portfolio_pct=snap["portfolio_pct"], stock_value=snap["stock_value"],
+                sgov_value=snap["sgov_value"], total_pair_value=snap["total_pair_value"],
                 total_return_amount=snap["total_return_amount"],
                 total_return_pct=snap["total_return_pct"],
                 days_invested=snap["days_invested"],
@@ -331,7 +336,7 @@ def build_strategy_health_rows(
         ("Paper-Trading Safety", "PASS", "Paper-only safeguards verified; no real orders are enabled."),
         ("Income + Growth Pair Governance", (
             "PASS" if all(snap["active_count"] == 2 for snap in snapshots.values()) else "ACTION REQUIRED"
-        ), "Every active strategy allocation must maintain an Income + Growth pair; fully parked or single-symbol allocations require Next Man Up."),
+        ), "Every strategy allocation must maintain an Income + Growth pair; SGOV and one-symbol allocations require Next Man Up."),
         ("Minimum Observation History", "IN PROGRESS", "Additional paper-trading history is still being collected."),
         ("Risk and Drawdown Review", "PASS" if total_return_pct > -10.0 else "REVIEW REQUIRED", "Losses and drawdown remain within validation limits."),
     ]
@@ -346,7 +351,7 @@ def build_strategy_health_rows(
         _blank("Final Assessment", metric="Strategy Health", value=_health(
             total_return_pct, reconciled
         ), explanation=(
-            "Paper-only assessment. Current holdings exclude fully parked pairs, while governance identifies all Next Man Up replacement requirements."
+            "Paper-only assessment. The legend shows active holdings, consolidated SGOV exposure, and all Next Man Up warnings."
         )),
     ])
     return rows
