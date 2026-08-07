@@ -17,7 +17,7 @@ from market_data_provider import MarketDataService
 from yahoo_finance_provider import MarketDataProviderError
 
 MODULE_NAME = "market_data_integration_engine"
-MODULE_VERSION = "1.1.0"
+MODULE_VERSION = "1.2.0"
 SCHEMA_VERSION = "1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -150,6 +150,15 @@ def _safe_number(value: Any) -> float:
         return 0.0
 
 
+def _optional_number(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _history_rows(history: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     rows = (
         history.get("rows")
@@ -220,6 +229,36 @@ def _derived_dividend_growth(dividends: Mapping[str, Any]) -> float | None:
     return round((annual[latest] / annual[prior]) - 1.0, 6)
 
 
+def _normalized_income_fields(quote: Mapping[str, Any]) -> dict[str, Any]:
+    """Expose provider-known income semantics with explicit Enterprise field names.
+
+    Yahoo's normalized ``dividend_yield`` field is a ratio (for example 0.025 for
+    2.5%). This provider boundary is the correct place to convert that known
+    semantic into an explicit percentage field. Downstream consumers therefore do
+    not have to guess whether a generic yield value is a ratio or a percent.
+    """
+    result: dict[str, Any] = {}
+    name = quote.get("short_name") or quote.get("long_name") or quote.get("name")
+    if name not in (None, ""):
+        result["name"] = str(name)
+
+    yield_ratio = _optional_number(quote.get("dividend_yield"))
+    if yield_ratio is not None and yield_ratio >= 0:
+        result["dividend_yield_percent"] = round(yield_ratio * 100.0, 6)
+
+    annual_rate = _optional_number(quote.get("dividend_rate"))
+    if annual_rate is not None and annual_rate >= 0:
+        result["annual_dividend_rate"] = round(annual_rate, 6)
+
+    ex_date = quote.get("ex_dividend_date") or quote.get("next_ex_dividend_date")
+    if ex_date not in (None, ""):
+        result["next_ex_dividend_date"] = str(ex_date)
+
+    if result:
+        result["income_normalization_source"] = str(quote.get("provider") or quote.get("data_source") or "MARKET_PROVIDER")
+    return result
+
+
 def refresh_market_data_snapshot(
     symbols: Iterable[str],
     service: MarketDataService,
@@ -258,7 +297,8 @@ def refresh_market_data_snapshot(
             )
             if price == 0.0:
                 price = _latest_history_close(history)
-            records.append({
+            income_fields = _normalized_income_fields(enriched_quote)
+            record = {
                 "symbol": symbol,
                 "price": price,
                 "previous_close": _safe_number(enriched_quote.get("previous_close", 0.0)),
@@ -284,7 +324,9 @@ def refresh_market_data_snapshot(
                 "quote": enriched_quote,
                 "history": dict(history),
                 "dividends": dict(dividends),
-            })
+            }
+            record.update(income_fields)
+            records.append(record)
         except (MarketDataProviderError, OSError, RuntimeError, TypeError, ValueError) as exc:
             errors.append(f"{symbol}: {exc}")
 
@@ -366,11 +408,12 @@ def write_market_data_snapshot(
 
     (root / files["json"]).write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     fieldnames = [
-        "symbol", "price", "previous_close", "market_cap", "dividend_yield",
+        "symbol", "name", "price", "previous_close", "market_cap", "dividend_yield",
+        "dividend_yield_percent", "annual_dividend_rate", "next_ex_dividend_date",
         "beta", "volume", "fifty_two_week_high", "fifty_two_week_low", "sector",
         "industry", "quote_type", "dividend_record_count", "dividend_total",
         "derived_dividend_growth", "history_row_count", "quote_source",
-        "history_source", "dividend_source", "is_stale",
+        "history_source", "dividend_source", "income_normalization_source", "is_stale",
     ]
     with (root / files["csv"]).open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
