@@ -1,8 +1,10 @@
 """Read-only strategy-discovery metadata for Enterprise dashboard consumers.
 
 This module enriches already-built dashboard payloads with registry-discovery
-metadata. It does not change dashboard calculations, allocations, governance,
-capital state, broker state, or strategy execution.
+metadata. It does not change allocations, governance, capital state, broker state,
+or strategy execution. When normalized per-strategy holdings evidence is already
+available, it also publishes a read-only Enterprise holdings view so legacy
+investor consumers do not fall back to UNKNOWN/$0 rows.
 """
 from __future__ import annotations
 
@@ -18,6 +20,15 @@ LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
 REPORTING_ONLY = True
+
+
+def _number(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def build_dashboard_strategy_discovery(
@@ -61,15 +72,87 @@ def attach_dashboard_strategy_discovery(
     dashboard: Mapping[str, Any],
     discovery: Mapping[str, Any],
 ) -> dict[str, Any]:
-    """Return a copied dashboard with the canonical discovery document attached.
-
-    The existing dashboard object is not mutated. Existing builder fields and
-    calculations remain authoritative and unchanged. Every consumer receives
-    the same complete discovery contract rather than a reconstructed subset.
-    """
+    """Return a copied dashboard with the canonical discovery document attached."""
     enriched = dict(dashboard)
     enriched["strategy_discovery"] = dict(discovery)
     return enriched
+
+
+def build_enterprise_strategy_holdings_allocation(
+    strategy_kpis: Sequence[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    """Build a read-only Enterprise holdings view from normalized strategy KPIs.
+
+    This is a consumer projection only. It never changes strategy allocations or
+    holdings calculations. Rows without an authoritative symbol or market value
+    are skipped rather than converted into UNKNOWN/$0 placeholders.
+    """
+    rows: list[dict[str, Any]] = []
+    total_value = 0.0
+
+    for strategy in strategy_kpis:
+        if not isinstance(strategy, Mapping):
+            continue
+        strategy_id = str(strategy.get("strategy_id") or "").strip()
+        holdings = strategy.get("holdings")
+        if not isinstance(holdings, list):
+            continue
+        for holding in holdings:
+            if not isinstance(holding, Mapping):
+                continue
+            symbol = str(
+                holding.get("symbol")
+                or holding.get("ticker")
+                or holding.get("asset")
+                or ""
+            ).strip().upper()
+            market_value = _number(
+                holding.get("market_value")
+                if holding.get("market_value") is not None
+                else holding.get("position_value")
+            )
+            if not symbol or market_value is None or market_value < 0:
+                continue
+            row = dict(holding)
+            row["symbol"] = symbol
+            row["market_value"] = round(market_value, 2)
+            row["strategy_id"] = strategy_id
+            row["strategy_display_name"] = strategy.get("display_name")
+            row["sector"] = str(
+                holding.get("sector")
+                or holding.get("theme")
+                or holding.get("category")
+                or "Unclassified"
+            ).strip()
+            rows.append(row)
+            total_value += market_value
+
+    if not rows:
+        return None
+
+    for row in rows:
+        value = float(row["market_value"])
+        row["allocation_percent"] = (
+            round((value / total_value) * 100.0, 4) if total_value > 0 else 0.0
+        )
+
+    rows.sort(
+        key=lambda row: (
+            -float(row.get("market_value", 0.0)),
+            str(row.get("strategy_id", "")),
+            str(row.get("symbol", "")),
+        )
+    )
+    return {
+        "holding_count": len(rows),
+        "total_position_value": round(total_value, 2),
+        "largest_position_symbol": rows[0]["symbol"] if rows else None,
+        "largest_position_percent": rows[0]["allocation_percent"] if rows else 0.0,
+        "holdings": rows,
+        "source": "NORMALIZED_STRATEGY_KPIS",
+        "scope": "ALL_REGISTERED_STRATEGIES_WITH_HOLDINGS_EVIDENCE",
+        "read_only": True,
+    }
 
 
 def build_dashboard_refresh_consumer_payloads(
@@ -82,10 +165,9 @@ def build_dashboard_refresh_consumer_payloads(
 ) -> tuple[dict[str, Any], list[str]]:
     """Build identical registry-discovery metadata for all refresh consumers.
 
-    Dashboard calculations are accepted as already complete and are copied
-    unchanged. The function creates one discovery document and publishes that
-    same reporting view to the Executive Dashboard, Investor Dashboard, KPI
-    artifact payload, and refresh summary.
+    Dashboard calculations are accepted as already complete. The function creates
+    one discovery document and, when available, projects existing normalized
+    strategy holdings into the legacy Enterprise investor allocation consumer.
     """
     discovery, discovery_warnings = build_dashboard_strategy_discovery(registry)
     summary = discovery.get("summary")
@@ -100,6 +182,12 @@ def build_dashboard_refresh_consumer_payloads(
         investor_dashboard,
         discovery,
     )
+    enterprise_allocation = build_enterprise_strategy_holdings_allocation(
+        normalized_kpis
+    )
+    if enterprise_allocation is not None:
+        investor["allocation"] = enterprise_allocation
+
     kpi_document = {
         "scope": "ALL_REGISTERED_STRATEGIES",
         "strategy_count": len(normalized_kpis),
