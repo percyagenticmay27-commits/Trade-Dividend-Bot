@@ -198,7 +198,6 @@ def test_adapter_is_read_only(tmp_path: Path) -> None:
     assert artifact.read_text(encoding="utf-8") == original
 
 
-
 def test_dividend_snapshot_csv_maps_legacy_headers_to_enterprise_kpis(
     tmp_path: Path,
 ) -> None:
@@ -225,3 +224,53 @@ def test_dividend_snapshot_csv_maps_legacy_headers_to_enterprise_kpis(
     assert rows[0]["portfolio_value"] == 5125.5
     assert rows[0]["position_count"] == 3
     assert rows[0]["evidence_status"] == "AVAILABLE"
+
+
+def test_dividend_alias_uses_canonical_allocation_and_blocks_cross_strategy_kpi_leakage(
+    tmp_path: Path,
+) -> None:
+    dashboard = tmp_path / "enterprise_dashboard.json"
+    dashboard.write_text(
+        json.dumps(
+            {
+                "enterprise_summary": {"allocated_capital": 9500.0},
+                "strategy_kpis": [
+                    {
+                        "strategy_id": "SWING-001",
+                        "allocated_capital": 4500.0,
+                        "opportunity_quality": 91.0,
+                        "watchlist_count": 3,
+                        "win_rate_percent": 45.0,
+                    },
+                    {
+                        "strategy_id": "dividend",
+                        "allocated_capital": 9500.0,
+                        "opportunity_quality": 88.0,
+                        "watchlist_count": 9,
+                        "win_rate_percent": 67.0,
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    registry = {
+        "strategy_plugins": [
+            _plugin("dividend", "Dividend Income Strategy", str(dashboard)),
+        ]
+    }
+
+    rows, warnings = build_strategy_kpis(
+        registry=registry,
+        strategy_allocations={"DIVIDEND-001": 5000.0, "SWING-001": 4500.0},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["strategy_id"] == "DIVIDEND-001"
+    assert row["allocated_capital"] == 5000.0
+    assert row["opportunity_quality"] is None
+    assert row["watchlist_count"] is None
+    assert row["win_rate_percent"] is None
