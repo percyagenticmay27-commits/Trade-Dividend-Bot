@@ -6,6 +6,7 @@ places orders, changes allocations, or enables broker execution.
 """
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -18,22 +19,36 @@ AUTOMATIC_ACTIVATION_ALLOWED = False
 REPORTING_ONLY = True
 
 
+def _read_mapping(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
 def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any]:
     """Generate Dividend intelligence evidence and canonical Enterprise KPI evidence.
 
     Execution order matters:
-    1. Run the approved Dividend intelligence stages so ranking and pairing
-       artifacts exist.
-    2. Build candidate discovery after those reports are available.
-    3. Reconstruct realized DIVIDEND-001 paper performance from the authoritative
-       operational paper_trade_log.csv.
-    4. Publish canonical DIVIDEND-001 KPI evidence for Enterprise dashboards.
+    1. Run the approved Dividend intelligence stages and refresh the shared read-only
+       market snapshot.
+    2. Replace the legacy deterministic momentum placeholder with per-symbol momentum
+       derived from that same snapshot.
+    3. Rebuild Dividend Ranking so Opportunity Quality consumes the real momentum.
+    4. Build candidate discovery after the refreshed ranking exists.
+    5. Reconstruct realized DIVIDEND-001 paper performance from paper_trade_log.csv.
+    6. Publish canonical DIVIDEND-001 KPI evidence for Enterprise dashboards.
 
     The routine is reporting-only. Existing paper state and allocations are not
     modified by this bridge.
     """
     from run_daily_dividend_cycle import run_daily_dividend_cycle
     from candidate_discovery_engine import write_candidate_discovery
+    from dividend_ranking_engine import build_dividend_ranking_report
+    from src.dividend_bot.market_momentum_evidence import write_market_momentum_report
     from src.dividend_bot.dividend_paper_trade_performance import (
         write_dividend_paper_trade_performance,
     )
@@ -43,6 +58,19 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
 
     root = Path(root_dir)
     cycle = run_daily_dividend_cycle(root_path=str(root))
+
+    market_snapshot = _read_mapping(root / "market_data_snapshot.json")
+    momentum_path = write_market_momentum_report(
+        market_snapshot,
+        root_dir=root,
+        output_path="momentum_score_report.json",
+    )
+    ranking = build_dividend_ranking_report(root_path=str(root))
+    (root / "dividend_rankings.json").write_text(
+        json.dumps(ranking, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
     candidate = write_candidate_discovery(root_path=str(root))
     performance_path = write_dividend_paper_trade_performance(
         root_dir=root,
@@ -50,11 +78,15 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
     )
     evidence_path = write_dividend_strategy_kpi_evidence(root_dir=root)
 
+    momentum_entries = _read_mapping(momentum_path).get("entries", [])
     return {
         "status": "COMPLETE" if not cycle.get("errors") else "PARTIAL",
         "daily_dividend_cycle_status": cycle.get("run_status"),
         "candidate_count": int(candidate.get("candidate_count", 0) or 0),
         "watchlist_count": int(candidate.get("watchlist_count", 0) or 0),
+        "momentum_symbol_count": len(momentum_entries) if isinstance(momentum_entries, list) else 0,
+        "ranking_count": int(ranking.get("ranking_count", 0) or 0),
+        "momentum_evidence_path": str(momentum_path),
         "performance_evidence_path": str(performance_path),
         "kpi_evidence_path": str(evidence_path),
         "errors": list(cycle.get("errors", [])),
