@@ -147,11 +147,23 @@ def next_day_recommendations(state: dict) -> list[str]:
 
 
 def append_snapshot(path: Path, row: dict[str, object]) -> bool:
+    """Append a new market-date snapshot or refresh the existing latest date.
+
+    Paper state can be repriced on a same-market-date rerun even though no new
+    trade events are recorded. The health dashboard requires the latest
+    snapshot to describe that same current state, so a duplicate date must be
+    refreshed in place rather than left stale.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         existing = pd.read_csv(path)
         if not existing.empty and str(existing.iloc[-1]["Date"]) == str(row["Date"]):
+            latest_index = existing.index[-1]
+            for column in SNAPSHOT_COLUMNS:
+                existing.loc[latest_index, column] = row[column]
+            existing.to_csv(path, index=False)
             return False
-    path.parent.mkdir(parents=True, exist_ok=True)
+
     exists = path.exists()
     with path.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=SNAPSHOT_COLUMNS)
