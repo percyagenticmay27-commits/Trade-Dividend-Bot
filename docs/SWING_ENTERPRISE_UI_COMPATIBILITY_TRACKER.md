@@ -76,14 +76,8 @@ Dividend-side development added canonical strategy-ID handling so strategy alloc
 Swing compatibility requirement:
 
 - Publish the canonical ID exactly as `SWING-001`.
-- Do not use alternate IDs such as `swing`, `SWING`, or repository names in strategy-owned KPI rows unless the registration adapter explicitly canonicalizes them.
-- Allocation evidence must remain strategy-specific. SWING-001 should report/use its own allocation value and must never emit the Enterprise total as its strategy allocation.
-
-Current expected Enterprise allocation relationship:
-
-- DIVIDEND-001: strategy-specific allocation.
-- SWING-001: strategy-specific allocation.
-- Enterprise total: host-owned aggregate only.
+- Allocation evidence must remain strategy-specific.
+- SWING-001 should report/use its own allocation value and must never emit the Enterprise total as its strategy allocation.
 
 ### 2026-08-07 — Opportunity Quality evidence
 
@@ -93,82 +87,37 @@ Swing compatibility requirement:
 
 - Publish a numeric Opportunity Quality value in the Swing Enterprise evidence artifact.
 - Keep the score bounded to the Swing strategy's authoritative Opportunity Quality contract.
-- The host must not recalculate Swing Opportunity Quality from Dividend evidence.
-- SWING-001 should preserve provenance to the Swing-owned Opportunity Quality artifact.
+- Preserve provenance to the Swing-owned Opportunity Quality artifact.
 
-Known Swing artifact expectation currently declared by the host:
-
-- `main/results/opportunity_quality_report.json`
-
-If Swing uses a different canonical file name, its Enterprise registry declaration must point to the actual artifact path and schema.
+Known declared host path: `main/results/opportunity_quality_report.json`.
 
 ### 2026-08-07 — Detailed Holdings evidence
 
-Dividend-side development added a normalized detailed Holdings contract and a professional table renderer.
-
-The host renderer expects `holdings` or `positions` to be a list of strategy-owned mappings. The professional table can use these fields per row when available:
-
-- `symbol`
-- `name` / `security_name` / `display_name` / `instrument_name`
-- `pair`
-- `sleeve`
-- `position_status`
-- `shares`
-- `price`
-- `market_value`
-- `source`
+The host renderer accepts strategy-owned `holdings` or `positions` rows using fields such as `symbol`, security name aliases, `pair`, `sleeve`, `position_status`, `shares`, `price`, `market_value`, and `source`.
 
 Swing compatibility requirement:
 
-- Publish actual SWING-001 open positions/holdings as structured rows rather than only a position count.
-- `position_count` should match the number of holdings rows the strategy wants represented in the workspace.
-- Each row should identify symbol, quantity/shares, current price, market value, status, and evidence source when those values exist.
-- Do not fabricate shares, price, market value, P/L, or cost basis if Swing does not have authoritative evidence.
-- Reserve/cash rows may be represented explicitly if Swing treats reserve capital as a strategy-owned holding.
-- Use strategy-owned evidence paths only.
+- Publish actual SWING-001 positions as structured rows rather than only a count.
+- Do not fabricate shares, price, market value, P/L, cost basis, or names if Swing does not have authoritative evidence.
+- Reserve/cash rows may be explicit if Swing owns them.
 
-Current host behavior:
+### 2026-08-07 — Professional Holdings renderer wired into live workspace
 
-- `OPEN` renders as an open-position badge.
-- `PARKED`/`CASH`/`RESERVE` renders as a reserve badge.
-- Lock statuses render as warnings.
-- Missing analytics remain `Not reported`.
-
-### 2026-08-07 — Professional Holdings renderer wired into the live Enterprise workspace
-
-The Enterprise workspace now calls the host-owned professional Holdings renderer directly for every registered strategy. The host no longer uses the generic bullet-list renderer for the Holdings tab.
-
-Swing compatibility requirement:
-
-- No Swing HTML or CSS change is required for this host UI change.
-- SWING-001 only needs to publish a compatible `holdings` or `positions` array.
-- The same host renderer will display Swing rows automatically once those rows are present in the normalized Enterprise KPI payload.
-- The host UI must remain presentation-only and read-only.
+The host now calls a dedicated professional Holdings renderer for every registered strategy. Swing does not need duplicate HTML or CSS; compatible structured evidence is sufficient.
 
 ### 2026-08-07 — Capital reconciliation and expanded Holdings analytics
 
-The Holdings UI now distinguishes Enterprise strategy allocation from visible deployed holdings so allocated capital cannot silently disappear from the investor view.
+The Holdings UI distinguishes:
 
-Host presentation now separates:
+- `Allocated Capital`
+- `Deployed Holdings`
+- `Invested Positions`
+- `Cash Reserve (SGOV)` or another explicit reserve row
+- `Available / Undeployed Cash`
 
-- `Allocated Capital` — authoritative strategy allocation from the Enterprise allocation layer.
-- `Deployed Holdings` — sum of strategy-owned visible holding market values.
-- `Invested Positions` — visible non-reserve positions.
-- `Cash Reserve (SGOV)` — explicit reserve/cash holding value.
-- `Available / Undeployed Cash` — explicit strategy cash when supplied, otherwise read-only arithmetic derived as allocated capital minus visible holdings.
+If authoritative strategy cash is not published, the host may derive display-only undeployed cash as `allocated_capital - sum(visible holding market_value)`. Inconsistencies remain warnings.
 
-The host displays a reconciliation banner. If explicit cash plus visible holdings does not match allocated capital, the UI reports a warning instead of forcing the numbers to balance.
-
-Swing compatibility requirement:
-
-- Publish canonical `allocated_capital` for SWING-001 through the existing Enterprise allocation contract.
-- If Swing owns an authoritative undeployed-cash value, expose one of: `available_cash`, `undeployed_cash`, `unallocated_cash`, `remaining_cash`, or `cash_available` for normalization.
-- If Swing does not publish explicit undeployed cash, the host may derive it strictly as `allocated_capital - sum(visible holding market_value)` for display/reconciliation only.
-- If SWING-001 has a reserve instrument or cash row, publish it explicitly with `position_status`/`status` such as `PARKED`, `CASH`, or `RESERVE`, or a reserve/cash sleeve.
-- Do not report Enterprise-wide cash as SWING-001 cash.
-- A negative or inconsistent reconciliation must remain a visible warning and must not be silently corrected.
-
-The Holdings table now exposes these optional strategy-owned analytics when authoritative evidence exists:
+Supported optional position analytics include:
 
 - `cost_basis` / `total_cost` / `cost_basis_value`
 - `average_cost` / `avg_cost` / `cost_per_share`
@@ -179,70 +128,53 @@ The Holdings table now exposes these optional strategy-owned analytics when auth
 - `annual_income` / `projected_annual_income` / `annual_dividend_income`
 - `next_ex_dividend_date` / `next_ex_date` / `ex_dividend_date`
 
-Swing compatibility requirement for expanded columns:
+Missing values remain `Not reported`.
 
-- Swing may publish any supported canonical/alias field above from its authoritative position analytics.
-- Unsupported or absent analytics are displayed as `Not reported`.
-- The host does not synthesize a fake P/L, return, yield, cost basis, or ex-dividend date.
-- `% Allocation` is calculated by the host as each holding's `market_value / SWING-001 allocated_capital`, not against Enterprise-wide capital.
-- The table is horizontally scrollable because the full professional position contract is intentionally richer than the original compact table.
+### 2026-08-07 — Holdings UI 2.0 grouped presentation and dual weights
+
+The host now separates the former ultra-wide Holdings table into three professional strategy-scoped sections:
+
+1. **Holdings Overview** — identity, sleeve, status, shares, price, market value, strategy allocation weight, and deployed-portfolio weight.
+2. **Position Analytics** — cost basis, average cost, unrealized P/L, total return, and daily change.
+3. **Income** — yield, projected annual income, next ex-dividend date, and evidence provenance.
+
+The host now displays two distinct percentages for every holding when calculable:
+
+- `% Strategy Allocation` = `holding.market_value / strategy.allocated_capital`.
+- `% Deployed Portfolio` = `holding.market_value / sum(visible strategy holding market_value)`.
+
+These values must not be conflated. The first shows how much of SWING-001's investor allocation the position consumes; the second shows composition of currently deployed SWING-001 holdings.
+
+Additional presentation rules relevant to Swing:
+
+- Missing optional analytics render as a neutral `Not reported` badge rather than a fabricated zero.
+- Positive and negative performance values receive presentation-only gain/loss styling when authoritative values exist.
+- Security names should be published through `name`, `security_name`, `display_name`, or `instrument_name` if Swing wants a professional named-instrument row.
+- Swing does not need to publish logo/image assets for this host change.
+- The Holdings CSS is host-owned and self-contained; Swing must not copy the styling layer.
+- Reserve/cash holdings remain part of deployed-portfolio composition if explicitly published as a visible holding row.
 
 ### 2026-08-07 — Watchlist detail
 
-The Enterprise host supports both `watchlist_count` and structured `watchlist` rows.
+The Enterprise host supports both `watchlist_count` and structured `watchlist` rows. Swing should continue publishing authoritative Swing watchlist evidence with symbol/status and may preserve rank, score, committee decision, market-data state, or source.
 
-Swing compatibility requirement:
-
-- Continue publishing the authoritative Swing watchlist artifact.
-- Normalize candidate/watchlist rows so the host can identify at minimum `symbol` and status.
-- Additional strategy-owned fields may be preserved, such as rank, score, committee decision, market-data state, or evidence source.
-- Do not rely only on `watchlist_count`; detailed rows are required for a professional Watchlist tab.
-
-Known Swing artifact currently readable by the host:
-
-- `main/results/watchlist_report.json`
+Known readable Swing path: `main/results/watchlist_report.json`.
 
 ### 2026-08-07 — Performance detail contract
 
-The Enterprise host supports scalar performance KPIs and a nested `performance_detail` structure.
+Where authoritative Swing evidence exists, publish or make discoverable trade counts, wins/losses/flats, win rate, open/closed trades, realized gain, and unrealized gain.
 
-Swing compatibility requirement:
-
-Where authoritative Swing evidence exists, publish or make discoverable:
-
-- `trade_count`
-- `closed_trade_count`
-- `open_trade_count`
-- `win_count`
-- `loss_count`
-- `flat_count`
-- `win_rate_percent`
-- `closed_trades`
-- `open_trades`
-- `realized_gain`
-- `unrealized_gain`
-
-The host should display only evidence actually supplied by Swing.
-
-Known Swing evidence currently declared by the host includes:
+Known declared Swing evidence includes:
 
 - `main/results/stock_performance_report.json`
 - `main/results/weekly_stock_report.json`
 - `main/results/monthly_command_center.json`
 
-These declared paths must exist at runtime or be corrected in the Swing Enterprise registration to the actual canonical paths.
-
 ### 2026-08-07 — Alerts and risk flags
 
-The Enterprise host accepts strategy-scoped `alerts` and `risk_flags` arrays.
+The host accepts strategy-scoped `alerts` and `risk_flags`. Swing should publish structured lifecycle, earnings, market-data, portfolio-risk, or governance warnings when authoritative and must not convert missing evidence into a false all-clear.
 
-Swing compatibility requirement:
-
-- Publish structured Swing alerts/risk flags if the strategy has authoritative lifecycle, earnings, market-data, portfolio-risk, or governance warnings.
-- Each alert should be strategy-scoped and should include a type/category, severity/status, and human-readable evidence where available.
-- Do not convert missing evidence into a false all-clear status.
-
-Known Swing artifacts currently declared by the host that may supply this information:
+Potential sources include:
 
 - `main/results/portfolio_risk.json`
 - `main/results/position_lifecycle.json`
@@ -251,26 +183,11 @@ Known Swing artifacts currently declared by the host that may supply this inform
 
 ### 2026-08-07 — Decision Journal
 
-The Enterprise host has a dedicated Decision Journal renderer and rejects cross-strategy journals.
-
-Swing compatibility requirement:
-
-- Publish a SWING-001-owned Decision Journal using the Enterprise decision-journal contract expected by the host.
-- The journal's `strategy_id` must equal `SWING-001`.
-- Preserve paper-only/read-only safety flags.
-- Committee evidence, decision sequence, vote/reason, and supporting evidence may be exposed when authoritative.
-- Do not point SWING-001 to a Dividend journal.
-
-Current host fields:
-
-- `decision_journal`
-- `decision_journal_status`
-- `decision_journal_path`
-- `decision_count`
+The Enterprise host has a dedicated Decision Journal renderer and rejects cross-strategy journals. A Swing journal must use `strategy_id = SWING-001` and preserve paper-only/read-only safety rules.
 
 ## Current known Swing runtime gaps observed by the Enterprise host
 
-The Dividend-host dashboard has recently reported the following SWING-001 declared artifacts as missing on the DigitalOcean runtime:
+The host has recently reported these SWING-001 declared artifacts as missing:
 
 - `main/results/market_data_refresh_status.json`
 - `main/results/monthly_command_center.json`
@@ -281,13 +198,11 @@ The Dividend-host dashboard has recently reported the following SWING-001 declar
 - `main/results/swing_daily_cycle_report.json`
 - `main/results/weekly_stock_report.json`
 
-These should not be manually copied into the Dividend repository. Swing should either generate them at its declared canonical paths or update its Enterprise registration so the host resolves the correct existing paths relative to the Swing repository.
+These should not be manually copied into the Dividend repository. Swing should generate them at its declared canonical paths or update its Enterprise registration to the actual paths relative to the Swing repository.
 
 ## UI 2.0 compatibility principle
 
-The professional UI is host-owned. Swing does not need to duplicate CSS or HTML from the Dividend repository.
-
-For each UI 2.0 development step, Swing only needs to ensure its published Enterprise evidence supplies the same semantic contract. For example, the new professional Holdings table is reusable for SWING-001 automatically once the host receives structured SWING-001 holdings rows.
+The professional UI is host-owned. Swing does not duplicate CSS or HTML. For each UI 2.0 step, Swing only needs to ensure its published Enterprise evidence supplies the same semantic contract.
 
 ## Next updates to this tracker
 
@@ -299,7 +214,7 @@ As UI 2.0 development continues, append Swing compatibility notes for:
 4. Detailed Performance dashboard.
 5. Alerts and risk presentation.
 6. Decision Journal presentation.
-7. Position Analytics fields not already covered by Holdings.
+7. Position Analytics evidence generation.
 8. Any new Enterprise contract or schema field introduced by the host.
 
 ## Handoff rule
