@@ -33,6 +33,14 @@ _CONTAINER_KEYS = {
     "artifacts", "outputs", "reports", "evidence", "evidence_paths",
     "dashboard_artifacts", "published_artifacts", "reporting_contracts",
 }
+_STRATEGY_ID_ALIASES = {
+    "dividend": "DIVIDEND-001",
+    "dividend-001": "DIVIDEND-001",
+    "dividend_001": "DIVIDEND-001",
+    "swing": "SWING-001",
+    "swing-001": "SWING-001",
+    "swing_001": "SWING-001",
+}
 
 
 def _number(value: Any) -> float | None:
@@ -40,6 +48,11 @@ def _number(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _canonical_strategy_id(value: Any) -> str:
+    raw = str(value).strip()
+    return _STRATEGY_ID_ALIASES.get(raw.lower(), raw)
 
 
 def _first(mapping: Mapping[str, Any], keys: Sequence[str], default: Any = None) -> Any:
@@ -172,10 +185,10 @@ def _append_host_dividend_evidence(
     root: Path,
     payloads: list[Any],
     accepted_paths: list[str],
-) -> None:
+) -> Mapping[str, Any] | None:
     """Add normalized host-owned Dividend evidence without fabricating metrics."""
     if strategy_id != "DIVIDEND-001":
-        return
+        return None
     evidence = build_dividend_strategy_kpi_evidence(root)
     payloads.append(evidence)
     sources = evidence.get("metric_sources")
@@ -183,6 +196,7 @@ def _append_host_dividend_evidence(
         for value in sources.values():
             if isinstance(value, str) and value.strip():
                 accepted_paths.append(value.strip())
+    return evidence
 
 
 def build_strategy_kpis(
@@ -211,7 +225,7 @@ def build_strategy_kpis(
             )
             continue
 
-        strategy_id = str(strategy["strategy_id"])
+        strategy_id = _canonical_strategy_id(strategy["strategy_id"])
         display_name = str(strategy["display_name"])
         capability_names = _capability_names(plugin)
         artifact_declarations = _artifact_declarations(plugin)
@@ -232,7 +246,7 @@ def build_strategy_kpis(
             except (OSError, UnicodeError, json.JSONDecodeError, csv.Error) as exc:
                 warnings.append(f"{strategy_id}: invalid evidence {path}: {exc}")
 
-        _append_host_dividend_evidence(
+        host_dividend_evidence = _append_host_dividend_evidence(
             strategy_id=strategy_id,
             root=root,
             payloads=payloads,
@@ -261,10 +275,21 @@ def build_strategy_kpis(
             payloads,
             ("dividend_income", "income_received", "total_income", "projected_annual_income"),
         )
-        watchlist = _count(
-            payloads,
-            ("watchlist", "watchlist_count", "candidate_count", "candidates"),
-        )
+        if host_dividend_evidence is not None:
+            host_watchlist = _number(host_dividend_evidence.get("watchlist_count"))
+            watchlist = int(host_watchlist) if host_watchlist is not None else None
+            opportunity = _number(host_dividend_evidence.get("opportunity_quality"))
+            win_rate = _number(host_dividend_evidence.get("win_rate_percent"))
+        else:
+            watchlist = _count(
+                payloads,
+                ("watchlist", "watchlist_count", "candidate_count", "candidates"),
+            )
+            opportunity = _metric(
+                payloads,
+                ("opportunity_quality", "opportunity_quality_score", "average_opportunity_score"),
+            )
+            win_rate = _metric(payloads, ("win_rate", "win_rate_percent", "win_rate_pct"))
         positions = _count(
             payloads,
             (
@@ -276,11 +301,6 @@ def build_strategy_kpis(
                 "holding_count",
             ),
         )
-        opportunity = _metric(
-            payloads,
-            ("opportunity_quality", "opportunity_quality_score", "average_opportunity_score"),
-        )
-        win_rate = _metric(payloads, ("win_rate", "win_rate_percent", "win_rate_pct"))
 
         rows.append({
             "strategy_id": strategy_id,
