@@ -154,6 +154,41 @@ Additional presentation rules relevant to Swing:
 - The Holdings CSS is host-owned and self-contained; Swing must not copy the styling layer.
 - Reserve/cash holdings remain part of deployed-portfolio composition if explicitly published as a visible holding row.
 
+### 2026-08-07 — Dividend Position Analytics evidence generation
+
+The Dividend host now reconstructs open-paper position analytics from strategy-owned paper trade history and enriches current holdings before Enterprise publication. The current Dividend implementation uses buy/sell history to derive an active average-cost basis and may use the strategy's market-data snapshot for instrument identity and daily change.
+
+The host may now receive these per-position fields from strategy evidence:
+
+- `name` / `security_name` / `display_name` / `instrument_name`
+- `cost_basis`
+- `average_cost`
+- `unrealized_pnl`
+- `total_return_percent`
+- `daily_change_percent`
+- `analytics_source`
+
+Dividend calculation rules introduced in this milestone:
+
+- Open cost basis is reconstructed only from recorded paper buy evidence.
+- A paper sell reduces the active cost basis proportionally using average cost; a full exit clears the old lot so a later re-entry starts a new cost basis.
+- `unrealized_pnl = current market value - open cost basis` only when both values are authoritative.
+- `total_return_percent = unrealized_pnl / cost_basis * 100` only when cost basis is positive.
+- Daily change may be read directly from authoritative market evidence or derived from current price and previous close when both are present.
+- Reserve/cash rows are not assigned fabricated trade cost-basis analytics.
+- Missing trade or market evidence remains `Not reported`.
+
+Swing compatibility requirement:
+
+- Swing does **not** need to reproduce the Dividend trade-log reconstruction algorithm.
+- SWING-001 should publish its own authoritative position analytics from Swing-owned lifecycle/performance artifacts whenever those values exist.
+- Preferred semantic fields are `cost_basis`, `average_cost`, `unrealized_pnl`, `total_return_percent`, and `daily_change_percent`; the existing aliases remain accepted by the host renderer.
+- Include a strategy-owned provenance field such as `analytics_source` or an equivalent evidence path so the Enterprise host can explain where the metric came from.
+- A closed Swing position must not leak stale cost basis or unrealized P/L into a later re-entry.
+- Missing Swing analytics must remain missing rather than defaulting to zero.
+
+Potential Swing sources include `main/results/position_lifecycle.json`, `main/results/stock_performance_report.json`, and market-data evidence once the declared paths are available.
+
 ### 2026-08-07 — Watchlist detail
 
 The Enterprise host supports both `watchlist_count` and structured `watchlist` rows. Swing should continue publishing authoritative Swing watchlist evidence with symbol/status and may preserve rank, score, committee decision, market-data state, or source.
@@ -214,8 +249,7 @@ As UI 2.0 development continues, append Swing compatibility notes for:
 4. Detailed Performance dashboard.
 5. Alerts and risk presentation.
 6. Decision Journal presentation.
-7. Position Analytics evidence generation.
-8. Any new Enterprise contract or schema field introduced by the host.
+7. Any new Enterprise contract or schema field introduced by the host.
 
 ## Handoff rule
 
