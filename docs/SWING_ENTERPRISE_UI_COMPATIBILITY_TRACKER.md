@@ -132,62 +132,41 @@ Missing values remain `Not reported`.
 
 ### 2026-08-07 — Holdings UI 2.0 grouped presentation and dual weights
 
-The host now separates the former ultra-wide Holdings table into three professional strategy-scoped sections:
-
-1. **Holdings Overview** — identity, sleeve, status, shares, price, market value, strategy allocation weight, and deployed-portfolio weight.
-2. **Position Analytics** — cost basis, average cost, unrealized P/L, total return, and daily change.
-3. **Income** — yield, projected annual income, next ex-dividend date, and evidence provenance.
-
-The host now displays two distinct percentages for every holding when calculable:
-
-- `% Strategy Allocation` = `holding.market_value / strategy.allocated_capital`.
-- `% Deployed Portfolio` = `holding.market_value / sum(visible strategy holding market_value)`.
-
-These values must not be conflated. The first shows how much of SWING-001's investor allocation the position consumes; the second shows composition of currently deployed SWING-001 holdings.
-
-Additional presentation rules relevant to Swing:
-
-- Missing optional analytics render as a neutral `Not reported` badge rather than a fabricated zero.
-- Positive and negative performance values receive presentation-only gain/loss styling when authoritative values exist.
-- Security names should be published through `name`, `security_name`, `display_name`, or `instrument_name` if Swing wants a professional named-instrument row.
-- Swing does not need to publish logo/image assets for this host change.
-- The Holdings CSS is host-owned and self-contained; Swing must not copy the styling layer.
-- Reserve/cash holdings remain part of deployed-portfolio composition if explicitly published as a visible holding row.
+The host separates Holdings into three strategy-scoped sections: Holdings Overview, Position Analytics, and Income. The host displays `% Strategy Allocation` and `% Deployed Portfolio` as distinct metrics. Missing optional analytics render as neutral `Not reported` values rather than fabricated zeroes. Swing does not duplicate the host CSS or HTML.
 
 ### 2026-08-07 — Dividend Position Analytics evidence generation
 
-The Dividend host now reconstructs open-paper position analytics from strategy-owned paper trade history and enriches current holdings before Enterprise publication. The current Dividend implementation uses buy/sell history to derive an active average-cost basis and may use the strategy's market-data snapshot for instrument identity and daily change.
-
-The host may now receive these per-position fields from strategy evidence:
-
-- `name` / `security_name` / `display_name` / `instrument_name`
-- `cost_basis`
-- `average_cost`
-- `unrealized_pnl`
-- `total_return_percent`
-- `daily_change_percent`
-- `analytics_source`
-
-Dividend calculation rules introduced in this milestone:
-
-- Open cost basis is reconstructed only from recorded paper buy evidence.
-- A paper sell reduces the active cost basis proportionally using average cost; a full exit clears the old lot so a later re-entry starts a new cost basis.
-- `unrealized_pnl = current market value - open cost basis` only when both values are authoritative.
-- `total_return_percent = unrealized_pnl / cost_basis * 100` only when cost basis is positive.
-- Daily change may be read directly from authoritative market evidence or derived from current price and previous close when both are present.
-- Reserve/cash rows are not assigned fabricated trade cost-basis analytics.
-- Missing trade or market evidence remains `Not reported`.
+The Dividend host reconstructs open-paper position analytics from strategy-owned paper trade history and enriches current holdings before Enterprise publication. Supported per-position fields include security name aliases, `cost_basis`, `average_cost`, `unrealized_pnl`, `total_return_percent`, `daily_change_percent`, and provenance.
 
 Swing compatibility requirement:
 
-- Swing does **not** need to reproduce the Dividend trade-log reconstruction algorithm.
-- SWING-001 should publish its own authoritative position analytics from Swing-owned lifecycle/performance artifacts whenever those values exist.
-- Preferred semantic fields are `cost_basis`, `average_cost`, `unrealized_pnl`, `total_return_percent`, and `daily_change_percent`; the existing aliases remain accepted by the host renderer.
-- Include a strategy-owned provenance field such as `analytics_source` or an equivalent evidence path so the Enterprise host can explain where the metric came from.
+- Swing does not reproduce the Dividend trade-log reconstruction algorithm.
+- SWING-001 should publish its own authoritative position analytics from Swing-owned lifecycle/performance artifacts.
 - A closed Swing position must not leak stale cost basis or unrealized P/L into a later re-entry.
 - Missing Swing analytics must remain missing rather than defaulting to zero.
 
-Potential Swing sources include `main/results/position_lifecycle.json`, `main/results/stock_performance_report.json`, and market-data evidence once the declared paths are available.
+Potential Swing sources include `main/results/position_lifecycle.json`, `main/results/stock_performance_report.json`, and market-data evidence once declared paths are available.
+
+### 2026-08-07 — Enterprise investor holdings consumer normalized to strategy KPIs
+
+The legacy Enterprise Investor Dashboard allocation/holdings section previously depended on a separate reconstructed investor payload that could produce `UNKNOWN`, `$0.00`, and `Unclassified` rows even when normalized strategy holdings were already available. The host now prefers a read-only projection of the normalized `strategy_kpis[].holdings` evidence for this Enterprise-wide holdings table.
+
+Host behavior:
+
+- Only holdings with a real symbol and numeric market value are published into the Enterprise allocation view.
+- Missing/invalid rows are skipped rather than converted into `UNKNOWN/$0` placeholders.
+- Each row preserves its originating `strategy_id` and strategy display name.
+- Enterprise allocation percentage is calculated only for presentation as `holding.market_value / total visible Enterprise holding market value`.
+- The projection is marked `source = NORMALIZED_STRATEGY_KPIS` and remains read-only.
+- Existing strategy allocation values, capital state, execution state, and governance are not modified.
+
+Swing compatibility requirement:
+
+- Once SWING-001 publishes structured holdings into its normalized Enterprise KPI row, those positions will automatically participate in the Enterprise Investor Dashboard holdings table.
+- Swing must publish a usable `symbol` and numeric `market_value` for each visible holding.
+- Optional `sector`, `theme`, or `category` improves Enterprise classification; otherwise the host displays `Unclassified` without inventing a sector.
+- Swing should not publish placeholder holdings such as `UNKNOWN` solely to satisfy a schema.
+- Swing does not need a separate investor-holdings HTML implementation or a duplicate Enterprise allocation report for this UI path.
 
 ### 2026-08-07 — Watchlist detail
 
@@ -241,15 +220,7 @@ The professional UI is host-owned. Swing does not duplicate CSS or HTML. For eac
 
 ## Next updates to this tracker
 
-As UI 2.0 development continues, append Swing compatibility notes for:
-
-1. Portfolio summary and attribution.
-2. Professional Watchlist table.
-3. Income/cash-flow presentation where applicable to Swing.
-4. Detailed Performance dashboard.
-5. Alerts and risk presentation.
-6. Decision Journal presentation.
-7. Any new Enterprise contract or schema field introduced by the host.
+As UI 2.0 development continues, append Swing compatibility notes for Portfolio summary/attribution, Professional Watchlist, Income/cash-flow presentation where applicable, detailed Performance, Alerts/risk presentation, Decision Journal presentation, and any new Enterprise contract introduced by the host.
 
 ## Handoff rule
 
