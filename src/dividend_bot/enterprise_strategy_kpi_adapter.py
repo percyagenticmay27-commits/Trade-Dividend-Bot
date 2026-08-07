@@ -11,6 +11,9 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from src.dividend_bot.dividend_dashboard_evidence import (
+    build_dividend_dashboard_evidence,
+)
 from src.dividend_bot.dividend_strategy_kpi_evidence import (
     build_dividend_strategy_kpi_evidence,
 )
@@ -186,7 +189,7 @@ def _append_host_dividend_evidence(
     payloads: list[Any],
     accepted_paths: list[str],
 ) -> Mapping[str, Any] | None:
-    """Add normalized host-owned Dividend evidence without fabricating metrics."""
+    """Add normalized host-owned Dividend KPI evidence without fabricating metrics."""
     if strategy_id != "DIVIDEND-001":
         return None
     evidence = build_dividend_strategy_kpi_evidence(root)
@@ -199,6 +202,33 @@ def _append_host_dividend_evidence(
     return evidence
 
 
+def _host_dividend_dashboard_evidence(
+    *,
+    strategy_id: str,
+    root: Path,
+    accepted_paths: list[str],
+) -> Mapping[str, Any] | None:
+    """Return detailed host-owned Dividend dashboard evidence when source files exist."""
+    if strategy_id != "DIVIDEND-001":
+        return None
+    evidence = build_dividend_dashboard_evidence(root)
+    sources = evidence.get("evidence_sources")
+    if isinstance(sources, list):
+        for value in sources:
+            if isinstance(value, str) and value.strip():
+                accepted_paths.append(value.strip())
+    return evidence
+
+
+def _detail_list(evidence: Mapping[str, Any] | None, key: str) -> list[dict[str, Any]]:
+    if not isinstance(evidence, Mapping):
+        return []
+    value = evidence.get(key)
+    if not isinstance(value, list):
+        return []
+    return [dict(item) for item in value if isinstance(item, Mapping)]
+
+
 def build_strategy_kpis(
     *,
     registry: Mapping[str, Any],
@@ -209,7 +239,7 @@ def build_strategy_kpis(
 
     Discovery owns strategy enumeration, identity normalization, duplicate handling,
     and deterministic ordering. This adapter reads declared evidence and the
-    canonical host-owned Dividend KPI normalization layer for DIVIDEND-001.
+    canonical host-owned Dividend normalization layers for DIVIDEND-001.
     """
     root = Path(root_dir)
     allocations = dict(strategy_allocations or {})
@@ -252,6 +282,15 @@ def build_strategy_kpis(
             payloads=payloads,
             accepted_paths=accepted_paths,
         )
+        dashboard_evidence = _host_dividend_dashboard_evidence(
+            strategy_id=strategy_id,
+            root=root,
+            accepted_paths=accepted_paths,
+        )
+        dashboard_sources_available = bool(
+            isinstance(dashboard_evidence, Mapping)
+            and dashboard_evidence.get("evidence_sources")
+        )
 
         allocated = _number(allocations.get(strategy_id))
         if allocated is None:
@@ -259,22 +298,55 @@ def build_strategy_kpis(
                 payloads,
                 ("allocated_cash", "allocated_capital", "paper_value", "allocation_value"),
             ) or 0.0
-        portfolio_value = _metric(
-            payloads,
-            ("portfolio_value", "market_value", "current_value", "total_value"),
+
+        dashboard_portfolio = (
+            _number(dashboard_evidence.get("portfolio_value"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
         )
-        realized = _metric(
-            payloads,
-            ("realized_gain", "realized_profit", "realized_pnl", "net_profit"),
+        portfolio_value = dashboard_portfolio
+        if portfolio_value is None:
+            portfolio_value = _metric(
+                payloads,
+                ("portfolio_value", "market_value", "current_value", "total_value"),
+            )
+
+        dashboard_realized = (
+            _number(dashboard_evidence.get("realized_gain"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
         )
-        unrealized = _metric(
-            payloads,
-            ("unrealized_gain", "unrealized_profit", "unrealized_pnl"),
+        realized = dashboard_realized
+        if realized is None:
+            realized = _metric(
+                payloads,
+                ("realized_gain", "realized_profit", "realized_pnl", "net_profit"),
+            )
+
+        dashboard_unrealized = (
+            _number(dashboard_evidence.get("unrealized_gain"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
         )
-        income = _metric(
-            payloads,
-            ("dividend_income", "income_received", "total_income", "projected_annual_income"),
+        unrealized = dashboard_unrealized
+        if unrealized is None:
+            unrealized = _metric(
+                payloads,
+                ("unrealized_gain", "unrealized_profit", "unrealized_pnl"),
+            )
+
+        dashboard_income = (
+            _number(dashboard_evidence.get("income"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
         )
+        income = dashboard_income
+        if income is None:
+            income = _metric(
+                payloads,
+                ("dividend_income", "income_received", "total_income", "projected_annual_income"),
+            )
+
         if host_dividend_evidence is not None:
             host_watchlist = _number(host_dividend_evidence.get("watchlist_count"))
             watchlist = int(host_watchlist) if host_watchlist is not None else None
@@ -290,16 +362,34 @@ def build_strategy_kpis(
                 ("opportunity_quality", "opportunity_quality_score", "average_opportunity_score"),
             )
             win_rate = _metric(payloads, ("win_rate", "win_rate_percent", "win_rate_pct"))
-        positions = _count(
-            payloads,
-            (
-                "positions",
-                "holdings",
-                "open_positions",
-                "open_buckets",
-                "position_count",
-                "holding_count",
-            ),
+
+        if dashboard_sources_available and isinstance(dashboard_evidence, Mapping):
+            dashboard_positions = _number(dashboard_evidence.get("position_count"))
+            positions = int(dashboard_positions) if dashboard_positions is not None else None
+        else:
+            positions = _count(
+                payloads,
+                (
+                    "positions",
+                    "holdings",
+                    "open_positions",
+                    "open_buckets",
+                    "position_count",
+                    "holding_count",
+                ),
+            )
+
+        holdings = _detail_list(dashboard_evidence, "holdings")
+        watchlist_detail = _detail_list(dashboard_evidence, "watchlist")
+        income_events = _detail_list(dashboard_evidence, "income_events")
+        alerts = _detail_list(dashboard_evidence, "alerts")
+        risk_flags = _detail_list(dashboard_evidence, "risk_flags")
+        performance_detail = (
+            dict(dashboard_evidence.get("performance_detail"))
+            if dashboard_sources_available
+            and isinstance(dashboard_evidence, Mapping)
+            and isinstance(dashboard_evidence.get("performance_detail"), Mapping)
+            else {}
         )
 
         rows.append({
@@ -328,6 +418,13 @@ def build_strategy_kpis(
             "position_count": positions,
             "opportunity_quality": round(opportunity, 2) if opportunity is not None else None,
             "win_rate_percent": round(win_rate, 2) if win_rate is not None else None,
+            "holdings": holdings,
+            "positions": holdings,
+            "watchlist": watchlist_detail,
+            "income_events": income_events,
+            "performance_detail": performance_detail,
+            "alerts": alerts,
+            "risk_flags": risk_flags,
             "evidence_paths": sorted(set(accepted_paths)),
             "evidence_status": "AVAILABLE" if accepted_paths else "REGISTRY_ONLY",
         })
