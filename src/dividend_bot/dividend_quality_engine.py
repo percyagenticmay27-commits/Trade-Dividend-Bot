@@ -5,7 +5,9 @@ The engine never contacts a provider, moves capital, or enables execution.
 """
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Mapping
 
 MODULE_NAME = "dividend_quality_engine"
@@ -20,6 +22,9 @@ ORDER_PLACEMENT_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
 AUTOMATIC_ACTIVATION_ALLOWED = False
 REPORTING_ONLY = True
+
+DEFAULT_JSON_OUTPUT = Path("dividend_quality_report.json")
+DEFAULT_MARKDOWN_OUTPUT = Path("dividend_quality_report.md")
 
 QUALITY_METRICS = (
     "return_on_equity",
@@ -137,3 +142,43 @@ def build_dividend_quality_report(
         "warnings": warnings,
         "errors": [],
     }
+
+
+def format_dividend_quality_markdown(report: Mapping[str, Any]) -> str:
+    lines = ["# Dividend Quality Report", "", f"Generated: {report.get('generated_at_utc', '')}", ""]
+    entries = report.get("entries") if isinstance(report.get("entries"), list) else []
+    if not entries:
+        lines.append("No quality evidence records were available.")
+    for row in entries:
+        if not isinstance(row, Mapping):
+            continue
+        lines.extend([
+            f"## {row.get('symbol', 'UNKNOWN')}",
+            f"- Quality Score: {row.get('quality_score', 0)}",
+            f"- Evidence Status: {row.get('evidence_status', 'NOT_REPORTED')}",
+            f"- Missing Metrics: {', '.join(row.get('missing_metrics', [])) or 'None'}",
+            "",
+        ])
+    return "\n".join(lines).rstrip() + "\n"
+
+
+def write_dividend_quality_report(
+    market_data_snapshot: Mapping[str, Any] | None = None,
+    *,
+    root_dir: str | Path = ".",
+    json_output: str | Path = DEFAULT_JSON_OUTPUT,
+    markdown_output: str | Path = DEFAULT_MARKDOWN_OUTPUT,
+) -> dict[str, Any]:
+    root = Path(root_dir)
+    report = build_dividend_quality_report(market_data_snapshot)
+    json_path = Path(json_output)
+    md_path = Path(markdown_output)
+    if not json_path.is_absolute():
+        json_path = root / json_path
+    if not md_path.is_absolute():
+        md_path = root / md_path
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    md_path.parent.mkdir(parents=True, exist_ok=True)
+    json_path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    md_path.write_text(format_dividend_quality_markdown(report), encoding="utf-8")
+    return report
