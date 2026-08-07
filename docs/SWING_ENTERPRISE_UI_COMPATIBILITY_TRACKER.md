@@ -108,32 +108,11 @@ The host now calls a dedicated professional Holdings renderer for every register
 
 ### 2026-08-07 — Capital reconciliation and expanded Holdings analytics
 
-The Holdings UI distinguishes:
-
-- `Allocated Capital`
-- `Deployed Holdings`
-- `Invested Positions`
-- `Cash Reserve (SGOV)` or another explicit reserve row
-- `Available / Undeployed Cash`
-
-If authoritative strategy cash is not published, the host may derive display-only undeployed cash as `allocated_capital - sum(visible holding market_value)`. Inconsistencies remain warnings.
-
-Supported optional position analytics include:
-
-- `cost_basis` / `total_cost` / `cost_basis_value`
-- `average_cost` / `avg_cost` / `cost_per_share`
-- `unrealized_pnl` / `unrealized_gain` / `unrealized_pl`
-- `total_return_percent` / `total_return_pct` / `return_percent` / `return_pct`
-- `daily_change_percent` / `daily_change_pct` / `day_change_percent` / `day_change_pct`
-- `dividend_yield_percent` / `yield_percent` / `distribution_yield_percent`
-- `annual_income` / `projected_annual_income` / `annual_dividend_income`
-- `next_ex_dividend_date` / `next_ex_date` / `ex_dividend_date`
-
-Missing values remain `Not reported`.
+The Holdings UI distinguishes Allocated Capital, Deployed Holdings, Invested Positions, explicit reserve/cash, and Available / Undeployed Cash. Supported optional position analytics include cost basis, average cost, unrealized P/L, total return, daily change, dividend yield, annual income, and next ex-dividend date. Missing values remain `Not reported`.
 
 ### 2026-08-07 — Holdings UI 2.0 grouped presentation and dual weights
 
-The host separates Holdings into three strategy-scoped sections: Holdings Overview, Position Analytics, and Income. The host displays `% Strategy Allocation` and `% Deployed Portfolio` as distinct metrics. Missing optional analytics render as neutral `Not reported` values rather than fabricated zeroes. Swing does not duplicate the host CSS or HTML.
+The host separates Holdings into Holdings Overview, Position Analytics, and Income. `% Strategy Allocation` and `% Deployed Portfolio` are distinct metrics. Missing optional analytics render as neutral `Not reported` values rather than fabricated zeroes. Swing does not duplicate the host CSS or HTML.
 
 ### 2026-08-07 — Dividend Position Analytics evidence generation
 
@@ -150,52 +129,52 @@ Potential Swing sources include `main/results/position_lifecycle.json`, `main/re
 
 ### 2026-08-07 — Enterprise investor holdings consumer normalized to strategy KPIs
 
-The legacy Enterprise Investor Dashboard allocation/holdings section previously depended on a separate reconstructed investor payload that could produce `UNKNOWN`, `$0.00`, and `Unclassified` rows even when normalized strategy holdings were already available. The host now prefers a read-only projection of the normalized `strategy_kpis[].holdings` evidence for this Enterprise-wide holdings table.
-
-Host behavior:
-
-- Only holdings with a real symbol and numeric market value are published into the Enterprise allocation view.
-- Missing/invalid rows are skipped rather than converted into `UNKNOWN/$0` placeholders.
-- Each row preserves its originating `strategy_id` and strategy display name.
-- Enterprise allocation percentage is calculated only for presentation as `holding.market_value / total visible Enterprise holding market value`.
-- The projection is marked `source = NORMALIZED_STRATEGY_KPIS` and remains read-only.
-- Existing strategy allocation values, capital state, execution state, and governance are not modified.
+The legacy Enterprise Investor Dashboard allocation/holdings section now prefers a read-only projection of normalized `strategy_kpis[].holdings` evidence. Placeholder `UNKNOWN/$0` holdings are no longer fabricated when valid strategy holdings exist.
 
 Swing compatibility requirement:
 
-- Once SWING-001 publishes structured holdings into its normalized Enterprise KPI row, those positions will automatically participate in the Enterprise Investor Dashboard holdings table.
-- Swing must publish a usable `symbol` and numeric `market_value` for each visible holding.
-- Optional `sector`, `theme`, or `category` improves Enterprise classification; otherwise the host displays `Unclassified` without inventing a sector.
-- Swing should not publish placeholder holdings such as `UNKNOWN` solely to satisfy a schema.
-- Swing does not need a separate investor-holdings HTML implementation or a duplicate Enterprise allocation report for this UI path.
+- Once SWING-001 publishes structured holdings into its normalized Enterprise KPI row, those positions automatically participate in the Enterprise Investor Dashboard holdings table.
+- Publish a usable `symbol` and numeric `market_value` for each visible holding.
+- Optional `sector`, `theme`, or `category` improves Enterprise classification.
+- Swing does not need a separate investor-holdings HTML implementation.
 
 ### 2026-08-07 — Dividend income analytics evidence generation
 
-The Dividend host now enriches current strategy holdings with authoritative income-oriented evidence when it exists. The host can populate the Holdings Income section with:
+The Dividend host enriches current strategy holdings with authoritative income-oriented evidence when it exists. The host can populate `dividend_yield_percent`, `annual_income`, `next_ex_dividend_date`, `payment_frequency`, and `income_analytics_source`. Strategy-level evidence may expose `projected_annual_income` by summing only reported or safely derived per-position annual-income values.
 
-- `dividend_yield_percent`
-- `annual_income`
-- `next_ex_dividend_date`
-- `payment_frequency`
-- `income_analytics_source`
+Dividend evidence rules:
 
-The strategy-level evidence may also expose `projected_annual_income`, calculated only by summing per-position annual-income values that were actually reported or safely derived from an authoritative annual dividend/distribution rate and current paper shares.
-
-Dividend evidence rules introduced in this milestone:
-
-- Yield is accepted only from source fields whose names explicitly identify percent semantics. Ambiguous decimal fields such as a generic `dividendYield` are not silently multiplied by 100 or otherwise guessed.
-- Annual income may be read directly from authoritative per-position annual-income evidence.
-- When direct annual income is unavailable, the Dividend host may derive it as `annual_dividend_rate_per_share * current paper shares` only when both values are available.
-- Next ex-dividend date is copied from authoritative strategy/market evidence; it is never forecast from payment frequency.
-- SGOV/reserve rows are not assigned Dividend-strategy income analytics by this enrichment step.
+- Ambiguous generic yield fields are not interpreted by downstream analytics.
+- Annual income may be derived as an authoritative annual dividend/distribution rate per share multiplied by current paper shares.
+- Next ex-dividend date is copied from authoritative evidence; it is never forecast from payment frequency.
+- Reserve rows are not assigned Dividend-strategy income analytics by this enrichment step.
 - Missing income evidence remains `Not reported`.
 
 Swing compatibility requirement:
 
-- Swing does not need to implement Dividend-specific yield or ex-dividend logic when those concepts are not applicable to the Swing strategy.
-- If a Swing-held instrument has authoritative distribution/income evidence and the Swing strategy chooses to publish it, use the same semantic fields so the host can render them automatically.
-- For non-income Swing positions, omit these fields rather than publishing zeroes solely to satisfy the UI.
-- Any published Swing income metric must remain `SWING-001` scoped and include Swing-owned provenance.
+- Swing does not need Dividend-specific yield logic when it is not applicable.
+- If a Swing-held instrument has authoritative distribution/income evidence, publish the same semantic fields for automatic host rendering.
+- Omit non-applicable fields rather than publishing zero solely to satisfy the UI.
+
+### 2026-08-07 — Provider-normalized income market evidence
+
+Production validation showed the Income renderer and analytics were working but the existing `market_data_snapshot.json` did not expose explicit income semantics. The host market-data boundary now normalizes provider-known fields before downstream strategy analytics consume them.
+
+Dividend host behavior:
+
+- Yahoo `dividend_yield` is treated at the provider/integration boundary as a decimal ratio and is published separately as explicit `dividend_yield_percent`; downstream strategy code still does not guess generic yield semantics.
+- Provider `dividend_rate` is exposed as `annual_dividend_rate` so annual income can be derived from current paper shares.
+- Provider security identity is exposed as `name` when available.
+- Provider ex-dividend date is normalized to `next_ex_dividend_date` when reported. The host does not manufacture a future ex-date.
+- Missing provider fields remain absent rather than becoming fabricated zeroes.
+- Existing raw quote/history/dividend evidence remains preserved in the market snapshot for provenance.
+
+Swing compatibility requirement:
+
+- SWING-001 may publish already-normalized percent/rate/date fields from its own market-data layer and does not need to reproduce Yahoo-specific conversion logic.
+- Prefer explicit semantic names such as `dividend_yield_percent`, `annual_dividend_rate`, `next_ex_dividend_date`, and `name` when those values are applicable and authoritative.
+- If Swing consumes a provider whose yield units differ, normalization belongs at the Swing provider boundary, not in the Enterprise UI.
+- Do not publish an ex-dividend date as "next" unless the source actually reports that date; stale or historical dates should retain their actual semantics.
 
 ### 2026-08-07 — Watchlist detail
 
@@ -207,22 +186,13 @@ Known readable Swing path: `main/results/watchlist_report.json`.
 
 Where authoritative Swing evidence exists, publish or make discoverable trade counts, wins/losses/flats, win rate, open/closed trades, realized gain, and unrealized gain.
 
-Known declared Swing evidence includes:
-
-- `main/results/stock_performance_report.json`
-- `main/results/weekly_stock_report.json`
-- `main/results/monthly_command_center.json`
+Known declared Swing evidence includes `main/results/stock_performance_report.json`, `main/results/weekly_stock_report.json`, and `main/results/monthly_command_center.json`.
 
 ### 2026-08-07 — Alerts and risk flags
 
 The host accepts strategy-scoped `alerts` and `risk_flags`. Swing should publish structured lifecycle, earnings, market-data, portfolio-risk, or governance warnings when authoritative and must not convert missing evidence into a false all-clear.
 
-Potential sources include:
-
-- `main/results/portfolio_risk.json`
-- `main/results/position_lifecycle.json`
-- `main/results/market_data_refresh_status.json`
-- `main/results/swing_daily_cycle_report.json`
+Potential sources include `main/results/portfolio_risk.json`, `main/results/position_lifecycle.json`, `main/results/market_data_refresh_status.json`, and `main/results/swing_daily_cycle_report.json`.
 
 ### 2026-08-07 — Decision Journal
 
