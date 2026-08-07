@@ -23,6 +23,7 @@ def _report() -> dict:
                 "holdings": [
                     {
                         "symbol": "AVGW",
+                        "name": "Avantis U.S. Large Cap Value ETF",
                         "pair": "AVGW / AVGX",
                         "sleeve": "A",
                         "position_status": "OPEN",
@@ -33,6 +34,7 @@ def _report() -> dict:
                     },
                     {
                         "symbol": "SGOV",
+                        "name": "iShares 0-3 Month Treasury Bond ETF",
                         "pair": "CASH RESERVE",
                         "sleeve": "RESERVE",
                         "position_status": "PARKED",
@@ -52,19 +54,25 @@ def test_workspace_uses_professional_holdings_renderer() -> None:
 
     assert "class='holdings-pro'" in output
     assert "class='holdings-table'" in output
-    assert "Symbol / Pair" in output
-    assert "Market Price" in output
-    assert "% Portfolio" in output
+    assert "Allocated Capital" in output
+    assert "Available / Undeployed Cash" in output
+    assert "Capital Reconciliation" in output
+    assert "Position Status" in output
+    assert "Cost Basis" in output
+    assert "Unrealized P&amp;L" in output
+    assert "Total Return" in output
     assert "Cash Reserve (SGOV)" in output
     assert "✓ Verified" in output
     assert "AVGW: Pair:" not in output
 
 
-def test_workspace_holds_missing_pnl_as_unreported() -> None:
+def test_workspace_keeps_missing_position_analytics_unreported() -> None:
     output = render_strategy_workspace(_report(), audience="executive")
 
-    assert "Unrealized P/L" not in output
-    assert "Total Return" not in output
+    assert "Unrealized P&amp;L" in output
+    assert "Total Return" in output
+    assert "Not reported" in output
+    assert "+2.00%" not in output
 
 
 def test_strategy_css_includes_professional_holdings_styles() -> None:
@@ -72,5 +80,6 @@ def test_strategy_css_includes_professional_holdings_styles() -> None:
 
     assert ".holdings-summary-grid" in css
     assert ".holdings-table-wrap" in css
+    assert ".capital-reconciliation" in css
     assert ".holding-status.status-open" in css
     assert "@media(max-width:850px)" in css
