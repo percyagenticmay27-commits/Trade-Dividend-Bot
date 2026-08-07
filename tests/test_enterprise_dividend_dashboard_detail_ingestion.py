@@ -107,7 +107,8 @@ def test_dividend_detail_evidence_is_attached_to_enterprise_kpi_row(tmp_path: Pa
     row = rows[0]
     assert row["strategy_id"] == "DIVIDEND-001"
     assert row["allocated_capital"] == 5000.0
-    assert row["portfolio_value"] == 90.0
+    # 2*10 AVGW + 1*20 AVGX + 30 SGOV reserve = 70.
+    assert row["portfolio_value"] == 70.0
     assert row["position_count"] == 3
     assert {item["symbol"] for item in row["holdings"]} == {"AVGW", "AVGX", "SGOV"}
     assert row["positions"] == row["holdings"]
