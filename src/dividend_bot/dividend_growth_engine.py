@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Mapping
 
 MODULE_NAME = "dividend_growth_engine"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 SCHEMA_VERSION = "1.0"
 GENERATED_BY = "Agentic-Robin-Dividend.bot"
 PAPER_TRADE_MODE = True
@@ -16,7 +16,8 @@ ORDER_PLACEMENT_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
 AUTOMATIC_ACTIVATION_ALLOWED = False
 
-GROWTH_METRICS = ("revenue_growth", "earnings_growth", "quarterly_earnings_growth", "dividend_growth")
+COMPANY_GROWTH_METRICS = ("revenue_growth", "earnings_growth", "quarterly_earnings_growth", "dividend_growth")
+ETF_GROWTH_METRICS = ("dividend_growth", "three_year_average_return", "five_year_average_return", "ytd_return")
 
 
 def _now() -> str:
@@ -70,6 +71,11 @@ def _records(snapshot: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
     return [row for row in rows if isinstance(row, Mapping)] if isinstance(rows, list) else []
 
 
+def _is_fund(record: Mapping[str, Any], quote: Mapping[str, Any]) -> bool:
+    quote_type = str(quote.get("quote_type") or record.get("quote_type") or "").upper()
+    return quote_type in {"ETF", "MUTUALFUND", "MONEYMARKET"}
+
+
 def build_dividend_growth_report(
     market_data_snapshot: Mapping[str, Any] | None = None,
     **_: Any,
@@ -81,25 +87,43 @@ def build_dividend_growth_report(
         if not symbol:
             continue
         quote = record.get("quote") if isinstance(record.get("quote"), Mapping) else {}
-        values = {
-            "revenue_growth": _ratio(_first(quote, "revenue_growth", "revenueGrowth")),
-            "earnings_growth": _ratio(_first(quote, "earnings_growth", "earningsGrowth")),
-            "quarterly_earnings_growth": _ratio(_first(quote, "earnings_quarterly_growth", "earningsQuarterlyGrowth")),
-            "dividend_growth": _ratio(_first(quote, "dividend_growth", "dividendGrowth", "dividend_growth_rate")),
-        }
+        dividend_growth = _ratio(_first(quote, "dividend_growth", "dividendGrowth", "dividend_growth_rate"))
+        if dividend_growth is None:
+            dividend_growth = _ratio(_number(record.get("derived_dividend_growth")))
+
+        if _is_fund(record, quote):
+            values = {
+                "dividend_growth": dividend_growth,
+                "three_year_average_return": _ratio(_first(quote, "three_year_average_return", "threeYearAverageReturn")),
+                "five_year_average_return": _ratio(_first(quote, "five_year_average_return", "fiveYearAverageReturn")),
+                "ytd_return": _ratio(_first(quote, "ytd_return", "ytdReturn")),
+            }
+            metrics = ETF_GROWTH_METRICS
+            model = "ETF_DISTRIBUTION_AND_RETURN_GROWTH"
+        else:
+            values = {
+                "revenue_growth": _ratio(_first(quote, "revenue_growth", "revenueGrowth")),
+                "earnings_growth": _ratio(_first(quote, "earnings_growth", "earningsGrowth")),
+                "quarterly_earnings_growth": _ratio(_first(quote, "earnings_quarterly_growth", "earningsQuarterlyGrowth")),
+                "dividend_growth": dividend_growth,
+            }
+            metrics = COMPANY_GROWTH_METRICS
+            model = "COMPANY_FUNDAMENTAL_GROWTH"
+
         scores = {name: _score(value) for name, value in values.items()}
         missing = [name for name, value in values.items() if value is None]
-        growth_score = round(sum(scores.values()) / len(GROWTH_METRICS), 2)
+        growth_score = round(sum(scores.values()) / len(metrics), 2)
         if missing:
             warnings.append(f"{symbol}: missing growth evidence defaults to 0: {', '.join(missing)}")
         entries.append({
             "symbol": symbol,
             "growth_score": growth_score,
             "dividend_growth_score": growth_score,
+            "evidence_model": model,
             "metric_values": values,
             "metric_scores": scores,
             "missing_metrics": missing,
-            "evidence_status": "AVAILABLE" if not missing else ("PARTIAL" if len(missing) < len(GROWTH_METRICS) else "NOT_REPORTED"),
+            "evidence_status": "AVAILABLE" if not missing else ("PARTIAL" if len(missing) < len(metrics) else "NOT_REPORTED"),
         })
     return {
         "module_name": MODULE_NAME,
