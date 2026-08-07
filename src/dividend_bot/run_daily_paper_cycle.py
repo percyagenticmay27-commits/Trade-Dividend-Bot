@@ -364,6 +364,28 @@ def main() -> int:
     print(f"Change summary: {CHANGE_SUMMARY_PATH}")
     print("Strategy health dashboard refreshed")
     print("Live readiness tracker refreshed")
+
+    try:
+        from src.dividend_bot.dividend_daily_evidence_refresh import (
+            refresh_dividend_daily_evidence,
+        )
+
+        evidence = refresh_dividend_daily_evidence(".")
+        print(f"Dividend evidence refresh: {evidence['status']}")
+        print(f"Dividend intelligence cycle: {evidence['daily_dividend_cycle_status']}")
+        print(f"Candidate count: {evidence['candidate_count']}")
+        print(f"Watchlist count: {evidence['watchlist_count']}")
+        print(f"Dividend KPI evidence: {evidence['kpi_evidence_path']}")
+        for warning in evidence["warnings"]:
+            print(f"EVIDENCE WARNING: {warning}")
+        for error in evidence["errors"]:
+            print(f"EVIDENCE ERROR: {error}")
+    except (ImportError, OSError, RuntimeError, TypeError, ValueError) as exc:
+        # Preserve the operational paper cycle while making missing dashboard
+        # evidence explicit. Email/report delivery can still proceed, but the
+        # Enterprise dashboard will correctly remain partial until repaired.
+        print(f"Dividend evidence refresh: PARTIAL ({exc})")
+
     return 0
 
 
