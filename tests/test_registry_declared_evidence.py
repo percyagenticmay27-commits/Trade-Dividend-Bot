@@ -3,7 +3,10 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from src.dividend_bot.registry_declared_evidence import load_registry_declared_evidence
+from src.dividend_bot.registry_declared_evidence import (
+    MAX_INLINE_ARTIFACT_BYTES,
+    load_registry_declared_evidence,
+)
 
 
 def _write_json(path: Path, payload: object) -> None:
@@ -53,6 +56,7 @@ def test_reads_declared_json_without_importing_plugin_code(tmp_path: Path) -> No
     assert swing["evidence_status"] == "AVAILABLE"
     assert swing["available_artifact_count"] == 1
     assert swing["artifacts"][0]["payload"]["rows"][0]["symbol"] == "AMD"
+    assert swing["artifacts"][0]["payload_policy"] == "INLINE"
     assert swing["artifacts"][0]["provenance"]["source_type"] == "PUBLISHED_ARTIFACT"
     assert swing["artifacts"][0]["provenance"]["authoritative"] is True
 
@@ -148,3 +152,68 @@ def test_deterministic_strategy_and_artifact_order(tmp_path: Path) -> None:
     assert warnings == []
     assert [item["strategy_id"] for item in strategies] == ["A-STRATEGY", "Z-STRATEGY"]
     assert [item["artifact_id"] for item in strategies[1]["artifacts"]] == ["a", "z"]
+
+
+def test_enterprise_scope_dashboard_is_metadata_only_to_prevent_recursive_growth(tmp_path: Path) -> None:
+    artifact = tmp_path / "results" / "ai_cio_executive_dashboard.json"
+    _write_json(artifact, {"strategy_kpis": [{"strategy_id": "DIVIDEND-001"}], "nested": {"large": "payload"}})
+    registry = {
+        "strategy_plugins": [
+            {
+                "strategy_id": "DIVIDEND-001",
+                "dashboard_artifacts": [
+                    {
+                        "artifact_id": "ai_cio_executive_dashboard",
+                        "artifact_type": "EXECUTIVE_DASHBOARD",
+                        "path": str(artifact),
+                        "format": "JSON",
+                        "scope": "ENTERPRISE",
+                        "authoritative": True,
+                        "required": False,
+                    }
+                ],
+            }
+        ]
+    }
+
+    strategies, warnings = load_registry_declared_evidence(registry, root_dir=tmp_path)
+
+    assert warnings == []
+    record = strategies[0]["artifacts"][0]
+    assert strategies[0]["evidence_status"] == "AVAILABLE"
+    assert record["available"] is True
+    assert record["payload"] is None
+    assert record["payload_policy"] == "METADATA_ONLY_ENTERPRISE_SCOPE"
+    assert record["size_bytes"] == artifact.stat().st_size
+
+
+def test_oversized_strategy_artifact_is_metadata_only(tmp_path: Path) -> None:
+    artifact = tmp_path / "large.json"
+    artifact.write_bytes(b" " * (MAX_INLINE_ARTIFACT_BYTES + 1))
+    registry = {
+        "strategy_plugins": [
+            {
+                "strategy_id": "DIVIDEND-001",
+                "dashboard_artifacts": [
+                    {
+                        "artifact_id": "large_strategy_report",
+                        "artifact_type": "PORTFOLIO",
+                        "path": str(artifact),
+                        "format": "JSON",
+                        "scope": "STRATEGY",
+                        "authoritative": True,
+                        "required": False,
+                    }
+                ],
+            }
+        ]
+    }
+
+    strategies, warnings = load_registry_declared_evidence(registry, root_dir=tmp_path)
+
+    assert warnings == []
+    record = strategies[0]["artifacts"][0]
+    assert record["available"] is True
+    assert record["payload"] is None
+    assert record["payload_policy"] == "METADATA_ONLY_SIZE_LIMIT"
+    assert record["size_bytes"] == MAX_INLINE_ARTIFACT_BYTES + 1
