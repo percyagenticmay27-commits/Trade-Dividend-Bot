@@ -12,6 +12,10 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from .dividend_income_analytics import (
+    enrich_holdings_with_income_analytics,
+    total_projected_annual_income,
+)
 from .dividend_position_analytics import (
     enrich_holdings_with_position_analytics,
     total_unrealized_pnl,
@@ -177,6 +181,18 @@ def _alerts(
     return alerts[:100]
 
 
+def _income_snapshot(root: Path) -> tuple[Any, str | None]:
+    for relative in (
+        "dividend_income_snapshot.json",
+        "results/dividend_income_snapshot.json",
+    ):
+        path = root / relative
+        payload = _read_json(path)
+        if payload is not None:
+            return payload, relative
+    return None, None
+
+
 def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, Any]:
     root = Path(root_dir)
     state = _read_json(root / "paper_state.json")
@@ -186,14 +202,32 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     performance = _read_json(root / "results" / "dividend_paper_trade_performance.json")
     performance = performance if isinstance(performance, Mapping) else {}
     market_snapshot = _read_json(root / "market_data_snapshot.json")
+    income_snapshot, income_snapshot_path = _income_snapshot(root)
     log_rows = _read_csv(root / "paper_trade_log.csv")
 
     holdings, portfolio_value, state_income = _holdings_from_state(state)
     holdings = enrich_holdings_with_position_analytics(holdings, log_rows, market_snapshot)
+    holdings = enrich_holdings_with_income_analytics(
+        holdings,
+        market_snapshot=market_snapshot,
+        income_snapshot=income_snapshot,
+    )
     watchlist = _watchlist_from_candidates(candidate_payload)
     income_events = _income_events(log_rows)
+    projected_annual_income = total_projected_annual_income(holdings)
     realized_gain = round(sum(_number(item.get("pnl"), 0.0) or 0.0 for item in performance.get("closed_trades", []) if isinstance(item, Mapping)), 2) if isinstance(performance.get("closed_trades"), list) else None
     unrealized_gain = total_unrealized_pnl(holdings)
+
+    evidence_sources = [
+        path for path in (
+            "paper_state.json" if (root / "paper_state.json").is_file() else None,
+            "paper_trade_log.csv" if (root / "paper_trade_log.csv").is_file() else None,
+            "candidate_discovery.json" if (root / "candidate_discovery.json").is_file() else None,
+            "market_data_snapshot.json" if (root / "market_data_snapshot.json").is_file() else None,
+            income_snapshot_path,
+            "results/dividend_paper_trade_performance.json" if (root / "results" / "dividend_paper_trade_performance.json").is_file() else None,
+        ) if path is not None
+    ]
 
     return {
         "strategy_id": STRATEGY_ID,
@@ -204,6 +238,7 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "watchlist_count": len(watchlist),
         "watchlist": watchlist,
         "income": state_income,
+        "projected_annual_income": projected_annual_income,
         "income_events": income_events,
         "realized_gain": realized_gain,
         "unrealized_gain": unrealized_gain,
@@ -220,15 +255,7 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
             "closed_trades": list(performance.get("closed_trades", [])) if isinstance(performance.get("closed_trades"), list) else [],
             "open_trades": list(performance.get("open_trades", [])) if isinstance(performance.get("open_trades"), list) else [],
         },
-        "evidence_sources": [
-            path for path in (
-                "paper_state.json" if (root / "paper_state.json").is_file() else None,
-                "paper_trade_log.csv" if (root / "paper_trade_log.csv").is_file() else None,
-                "candidate_discovery.json" if (root / "candidate_discovery.json").is_file() else None,
-                "market_data_snapshot.json" if (root / "market_data_snapshot.json").is_file() else None,
-                "results/dividend_paper_trade_performance.json" if (root / "results" / "dividend_paper_trade_performance.json").is_file() else None,
-            ) if path is not None
-        ],
+        "evidence_sources": evidence_sources,
         "paper_trade_mode": True,
         "reporting_only": True,
         "live_trading_enabled": False,
