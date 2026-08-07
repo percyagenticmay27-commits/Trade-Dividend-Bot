@@ -1,7 +1,8 @@
 """Build read-only per-strategy KPI evidence from Enterprise discovery.
 
-The host consumes declared JSON/CSV artifacts only. It does not import strategy code,
-change allocations, move capital, or execute broker actions.
+The host consumes declared JSON/CSV artifacts plus canonical host-owned Dividend
+KPI evidence. It does not import external strategy code, change allocations, move
+capital, or execute broker actions.
 """
 from __future__ import annotations
 
@@ -10,6 +11,9 @@ import json
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from src.dividend_bot.dividend_strategy_kpi_evidence import (
+    build_dividend_strategy_kpi_evidence,
+)
 from src.dividend_bot.enterprise_strategy_discovery import (
     discover_registered_strategies,
 )
@@ -162,6 +166,25 @@ def _count(payloads: Sequence[Any], keys: Sequence[str]) -> int | None:
     return None
 
 
+def _append_host_dividend_evidence(
+    *,
+    strategy_id: str,
+    root: Path,
+    payloads: list[Any],
+    accepted_paths: list[str],
+) -> None:
+    """Add normalized host-owned Dividend evidence without fabricating metrics."""
+    if strategy_id != "DIVIDEND-001":
+        return
+    evidence = build_dividend_strategy_kpi_evidence(root)
+    payloads.append(evidence)
+    sources = evidence.get("metric_sources")
+    if isinstance(sources, Mapping):
+        for value in sources.values():
+            if isinstance(value, str) and value.strip():
+                accepted_paths.append(value.strip())
+
+
 def build_strategy_kpis(
     *,
     registry: Mapping[str, Any],
@@ -171,8 +194,8 @@ def build_strategy_kpis(
     """Return KPI rows for every strategy discovered from the registry.
 
     Discovery owns strategy enumeration, identity normalization, duplicate handling,
-    and deterministic ordering. This adapter only reads each discovered plugin's
-    declared evidence and derives presentation KPIs.
+    and deterministic ordering. This adapter reads declared evidence and the
+    canonical host-owned Dividend KPI normalization layer for DIVIDEND-001.
     """
     root = Path(root_dir)
     allocations = dict(strategy_allocations or {})
@@ -208,6 +231,13 @@ def build_strategy_kpis(
                 accepted_paths.append(str(path))
             except (OSError, UnicodeError, json.JSONDecodeError, csv.Error) as exc:
                 warnings.append(f"{strategy_id}: invalid evidence {path}: {exc}")
+
+        _append_host_dividend_evidence(
+            strategy_id=strategy_id,
+            root=root,
+            payloads=payloads,
+            accepted_paths=accepted_paths,
+        )
 
         allocated = _number(allocations.get(strategy_id))
         if allocated is None:
@@ -250,7 +280,7 @@ def build_strategy_kpis(
             payloads,
             ("opportunity_quality", "opportunity_quality_score", "average_opportunity_score"),
         )
-        win_rate = _metric(payloads, ("win_rate", "win_rate_percent"))
+        win_rate = _metric(payloads, ("win_rate", "win_rate_percent", "win_rate_pct"))
 
         rows.append({
             "strategy_id": strategy_id,
