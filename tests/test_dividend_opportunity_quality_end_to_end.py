@@ -5,6 +5,7 @@ from src.dividend_bot.dividend_strategy_kpi_evidence import build_dividend_strat
 
 
 def _write(path, payload):
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload), encoding="utf-8")
 
 
