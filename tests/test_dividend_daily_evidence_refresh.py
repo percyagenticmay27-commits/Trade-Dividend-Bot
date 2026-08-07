@@ -1,22 +1,36 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import candidate_discovery_engine
+import dividend_ranking_engine
 import run_daily_dividend_cycle
 from src.dividend_bot import dividend_paper_trade_performance
 from src.dividend_bot import dividend_strategy_kpi_evidence
+from src.dividend_bot import market_momentum_evidence
 from src.dividend_bot.dividend_daily_evidence_refresh import (
     refresh_dividend_daily_evidence,
 )
 
 
-def test_refresh_runs_intelligence_candidate_performance_and_kpi_evidence(monkeypatch, tmp_path: Path) -> None:
+def test_refresh_runs_intelligence_momentum_ranking_candidate_performance_and_kpi_evidence(monkeypatch, tmp_path: Path) -> None:
     calls: list[str] = []
+    (tmp_path / "market_data_snapshot.json").write_text(json.dumps({"records": []}), encoding="utf-8")
 
     def fake_cycle(*, root_path: str):
         calls.append(f"cycle:{root_path}")
         return {"run_status": "COMPLETE", "warnings": [], "errors": []}
+
+    def fake_momentum(snapshot, *, root_dir: str | Path, output_path):
+        calls.append(f"momentum:{root_dir}")
+        path = Path(root_dir) / output_path
+        path.write_text(json.dumps({"entries": [{"symbol": "AAA", "momentum_score": 75.0}]}), encoding="utf-8")
+        return path
+
+    def fake_ranking(*, root_path: str):
+        calls.append(f"ranking:{root_path}")
+        return {"ranking_count": 1, "rankings": [{"symbol": "AAA", "overall_score": 70.0}]}
 
     def fake_candidate(*, root_path: str):
         calls.append(f"candidate:{root_path}")
@@ -31,6 +45,8 @@ def test_refresh_runs_intelligence_candidate_performance_and_kpi_evidence(monkey
         return Path(root_dir) / output_path
 
     monkeypatch.setattr(run_daily_dividend_cycle, "run_daily_dividend_cycle", fake_cycle)
+    monkeypatch.setattr(market_momentum_evidence, "write_market_momentum_report", fake_momentum)
+    monkeypatch.setattr(dividend_ranking_engine, "build_dividend_ranking_report", fake_ranking)
     monkeypatch.setattr(candidate_discovery_engine, "write_candidate_discovery", fake_candidate)
     monkeypatch.setattr(dividend_paper_trade_performance, "write_dividend_paper_trade_performance", fake_performance)
     monkeypatch.setattr(dividend_strategy_kpi_evidence, "write_dividend_strategy_kpi_evidence", fake_evidence)
@@ -39,6 +55,8 @@ def test_refresh_runs_intelligence_candidate_performance_and_kpi_evidence(monkey
 
     assert calls == [
         f"cycle:{tmp_path}",
+        f"momentum:{tmp_path}",
+        f"ranking:{tmp_path}",
         f"candidate:{tmp_path}",
         f"performance:{tmp_path}",
         f"evidence:{tmp_path}",
@@ -47,15 +65,30 @@ def test_refresh_runs_intelligence_candidate_performance_and_kpi_evidence(monkey
     assert report["daily_dividend_cycle_status"] == "COMPLETE"
     assert report["candidate_count"] == 8
     assert report["watchlist_count"] == 3
+    assert report["momentum_symbol_count"] == 1
+    assert report["ranking_count"] == 1
+    assert report["momentum_evidence_path"].endswith("momentum_score_report.json")
     assert report["performance_evidence_path"].endswith("results/strategy_performance_analytics.json")
     assert report["kpi_evidence_path"].endswith("results/dividend_strategy_kpi_evidence.json")
 
 
 def test_refresh_preserves_governance_and_execution_locks(monkeypatch, tmp_path: Path) -> None:
+    (tmp_path / "market_data_snapshot.json").write_text(json.dumps({"records": []}), encoding="utf-8")
     monkeypatch.setattr(
         run_daily_dividend_cycle,
         "run_daily_dividend_cycle",
         lambda **_: {"run_status": "PARTIAL", "warnings": ["evidence incomplete"], "errors": ["stage failed"]},
+    )
+    monkeypatch.setattr(
+        market_momentum_evidence,
+        "write_market_momentum_report",
+        lambda snapshot, **_: (tmp_path / "momentum_score_report.json"),
+    )
+    (tmp_path / "momentum_score_report.json").write_text(json.dumps({"entries": []}), encoding="utf-8")
+    monkeypatch.setattr(
+        dividend_ranking_engine,
+        "build_dividend_ranking_report",
+        lambda **_: {"ranking_count": 0, "rankings": []},
     )
     monkeypatch.setattr(
         candidate_discovery_engine,
