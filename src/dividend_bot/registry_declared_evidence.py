@@ -8,9 +8,10 @@ from __future__ import annotations
 import csv
 import json
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Mapping
 
 SUPPORTED_FORMATS = {"JSON", "CSV", "JSONL", "MARKDOWN", "HTML"}
+MAX_INLINE_ARTIFACT_BYTES = 10 * 1024 * 1024
 
 
 def _text(value: Any) -> str:
@@ -85,6 +86,24 @@ def _read_artifact(path: Path, artifact_format: str) -> Any:
     raise ValueError(f"unsupported artifact format: {artifact_format}")
 
 
+def _metadata_only_reason(*, scope: str, path: Path) -> str | None:
+    """Return why an artifact must not be inlined into registry evidence.
+
+    Enterprise-scope dashboards are host aggregate outputs. Inlining them into
+    registry evidence creates a recursive cycle when the next dashboard refresh
+    embeds that registry evidence back into the same Enterprise dashboards.
+    Oversized artifacts are also kept metadata-only to bound refresh memory.
+    """
+    if scope == "ENTERPRISE":
+        return "ENTERPRISE_SCOPE"
+    try:
+        if path.stat().st_size > MAX_INLINE_ARTIFACT_BYTES:
+            return "SIZE_LIMIT"
+    except OSError:
+        return None
+    return None
+
+
 def load_registry_declared_evidence(
     registry: Mapping[str, Any],
     *,
@@ -96,6 +115,11 @@ def load_registry_declared_evidence(
     the returned strategy record. Required artifact failures mark the strategy
     evidence status as ``REQUIRED_EVIDENCE_MISSING`` but do not remove any other
     strategy from the result.
+
+    Host-owned Enterprise-scope aggregate dashboards are intentionally metadata-only
+    and are never inlined. This prevents recursive dashboard -> registry evidence ->
+    dashboard growth across refresh cycles. Large artifacts are also metadata-only
+    to keep refresh memory bounded while preserving their availability/provenance.
     """
     root = Path(root_dir)
     strategies: list[dict[str, Any]] = []
@@ -116,11 +140,12 @@ def load_registry_declared_evidence(
             authoritative = bool(artifact.get("authoritative", True))
             declared_path = _text(artifact.get("path") or artifact.get("report_path") or artifact.get("artifact_path"))
             path = _resolve_path(declared_path, root_dir=root)
+            scope = _text(artifact.get("scope") or "STRATEGY").upper()
             record: dict[str, Any] = {
                 "artifact_id": artifact_id,
                 "artifact_type": artifact_type,
                 "format": artifact_format,
-                "scope": _text(artifact.get("scope") or "STRATEGY").upper(),
+                "scope": scope,
                 "declared_path": declared_path,
                 "resolved_path": str(path),
                 "required": required,
@@ -128,6 +153,7 @@ def load_registry_declared_evidence(
                 "read_only": True,
                 "available": False,
                 "payload": None,
+                "payload_policy": "INLINE",
                 "provenance": {
                     "source_type": "PUBLISHED_ARTIFACT",
                     "source_id": str(path),
@@ -147,14 +173,23 @@ def load_registry_declared_evidence(
                 warnings.append(warning)
                 required_failure = required_failure or required
             else:
-                try:
-                    record["payload"] = _read_artifact(path, artifact_format)
+                metadata_reason = _metadata_only_reason(scope=scope, path=path)
+                if metadata_reason:
                     record["available"] = True
-                except (OSError, UnicodeError, json.JSONDecodeError, csv.Error, ValueError) as exc:
-                    warning = f"{strategy_id}:{artifact_id}: invalid declared artifact {path}: {exc}"
-                    record["error"] = warning
-                    warnings.append(warning)
-                    required_failure = required_failure or required
+                    record["payload_policy"] = f"METADATA_ONLY_{metadata_reason}"
+                    try:
+                        record["size_bytes"] = path.stat().st_size
+                    except OSError:
+                        pass
+                else:
+                    try:
+                        record["payload"] = _read_artifact(path, artifact_format)
+                        record["available"] = True
+                    except (OSError, UnicodeError, json.JSONDecodeError, csv.Error, ValueError) as exc:
+                        warning = f"{strategy_id}:{artifact_id}: invalid declared artifact {path}: {exc}"
+                        record["error"] = warning
+                        warnings.append(warning)
+                        required_failure = required_failure or required
             records.append(record)
 
         available_count = sum(bool(item["available"]) for item in records)
