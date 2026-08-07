@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, Mapping, Optional
 
 MODULE_NAME = "master_portfolio_orchestrator"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 SCHEMA_VERSION = "1.0"
 GENERATED_BY = "Agentic-Robin-Dividend.bot"
 PAPER_TRADE_MODE = True
@@ -28,6 +28,7 @@ STAGE_ORDER = [
     "momentum_score",
     "entry_score",
     "conviction",
+    "dividend_quality",
     "dividend_ranking",
     "opportunity_pairing",
     "portfolio_decision",
@@ -48,6 +49,7 @@ DEFAULT_INPUT_FILES = {
     "momentum_score": "momentum_score_report.json",
     "entry_score": "entry_score_report.json",
     "conviction": "conviction_report.json",
+    "dividend_quality": "dividend_quality_report.json",
     "dividend_ranking": "dividend_rankings.json",
     "opportunity_pairing": "opportunity_pairing_report.json",
     "portfolio_decision": "portfolio_decision_report.json",
