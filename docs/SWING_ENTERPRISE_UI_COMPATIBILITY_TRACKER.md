@@ -134,6 +134,30 @@ Current host behavior:
 - Lock statuses render as warnings.
 - Missing P/L remains unreported.
 
+### 2026-08-07 — Professional Holdings renderer wired into the live Enterprise workspace
+
+The Enterprise workspace now calls the host-owned professional Holdings renderer directly for every registered strategy. The host no longer uses the generic bullet-list renderer for the Holdings tab.
+
+Swing compatibility requirement:
+
+- No Swing HTML or CSS change is required for this host UI change.
+- SWING-001 only needs to publish a compatible `holdings` or `positions` array.
+- The same host renderer will display Swing rows automatically once those rows are present in the normalized Enterprise KPI payload.
+- For the cleanest presentation, Swing rows should provide `symbol`, `pair` or another strategy grouping label, `sleeve` when applicable, `position_status`, `shares`, `price`, `market_value`, and `source`.
+- The host derives `% Portfolio` from the strategy-scoped `portfolio_value`; Swing must therefore publish the SWING-001 portfolio value rather than an Enterprise aggregate.
+- Missing P/L, total return, or cost basis remains intentionally absent until Swing supplies authoritative position analytics. The UI must not fabricate these values.
+
+Host presentation behavior now shared by Dividend and Swing:
+
+- Portfolio Value summary card.
+- Cash/Reserve summary card when a reserve row exists.
+- Invested summary card.
+- Position count summary card.
+- Professional sortable-style financial table structure.
+- OPEN/PARKED/lock/closed status badges.
+- Verified evidence/source presentation.
+- Responsive table layout on smaller screens.
+
 ### 2026-08-07 — Watchlist detail
 
 The Enterprise host supports both `watchlist_count` and structured `watchlist` rows.
