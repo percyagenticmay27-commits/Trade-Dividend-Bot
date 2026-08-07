@@ -5,6 +5,7 @@ import html
 from typing import Any, Mapping
 from urllib.parse import quote
 
+from .enterprise_holdings_ui import holdings_ui_css, render_holdings_panel
 from .strategy_decision_journal_renderer import render_strategy_decision_journal
 
 
@@ -73,7 +74,6 @@ def _capability_list(row: Mapping[str, Any]) -> str:
     ) + "</ul>"
 
 
-
 def _decision_journal(row: Mapping[str, Any]) -> str:
     journal = row.get("decision_journal")
     strategy_id = str(row.get("strategy_id") or "").strip()
@@ -108,6 +108,7 @@ def _decision_journal(row: Mapping[str, Any]) -> str:
         f"{rendered}"
         "</section>"
     )
+
 
 def _list_rows(value: Any, *, empty: str) -> str:
     if not isinstance(value, list) or not value:
@@ -241,14 +242,7 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
                 empty="No strategy-owned watchlist detail is currently reported.",
             )
         )
-        holdings_body = (
-            "<h3>Holdings</h3>"
-            + _metric_table((("Position / Holding Count", _value(row.get("position_count"))),))
-            + _list_rows(
-                row.get("holdings") or row.get("positions"),
-                empty="No strategy-owned holdings detail is currently reported.",
-            )
-        )
+        holdings_body = render_holdings_panel(row)
         income_body = (
             "<h3>Income</h3>"
             + _metric_table((("Reported Strategy Income", _money(row.get("income"))),))
@@ -397,8 +391,9 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
 </script>
 """
 
+
 def strategy_ui_css() -> str:
-    return """
+    base_css = """
 <style>
 .portal-frame{display:grid;grid-template-columns:230px minmax(0,1fr);gap:20px;align-items:start}
 .enterprise-sidebar{position:sticky;top:16px;background:#0b1d3a;color:#fff;border-radius:14px;padding:18px;min-height:520px}
@@ -423,3 +418,4 @@ def strategy_ui_css() -> str:
 .empty-state{padding:18px;border:1px dashed #b8c5d9;border-radius:10px;background:#f8fafc;color:#64748b;text-align:center}
 @media(max-width:700px){.data-availability{display:block}.data-availability strong{margin-bottom:6px}.portal-frame{padding:10px}}
 </style>"""
+    return base_css + holdings_ui_css()
