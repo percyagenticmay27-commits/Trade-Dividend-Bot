@@ -158,23 +158,39 @@ Swing compatibility requirement:
 
 ### 2026-08-07 — Provider-normalized income market evidence
 
-Production validation showed the Income renderer and analytics were working but the existing `market_data_snapshot.json` did not expose explicit income semantics. The host market-data boundary now normalizes provider-known fields before downstream strategy analytics consume them.
+The market-data boundary exposes security identity and provider income fields when available. Production validation demonstrated that provider yield-unit assumptions must not be hard-coded downstream: values returned by the deployed Yahoo/yfinance path were already expressed in percent-like units for several ETFs, so blindly multiplying them by 100 produced invalid values such as 6871% and 13879%.
 
-Dividend host behavior:
+Permanent rule:
 
-- Yahoo `dividend_yield` is treated at the provider/integration boundary as a decimal ratio and is published separately as explicit `dividend_yield_percent`; downstream strategy code still does not guess generic yield semantics.
-- Provider `dividend_rate` is exposed as `annual_dividend_rate` so annual income can be derived from current paper shares.
-- Provider security identity is exposed as `name` when available.
-- Provider ex-dividend date is normalized to `next_ex_dividend_date` when reported. The host does not manufacture a future ex-date.
-- Missing provider fields remain absent rather than becoming fabricated zeroes.
-- Existing raw quote/history/dividend evidence remains preserved in the market snapshot for provenance.
+- Do not infer provider yield units merely from the generic field name `dividend_yield`.
+- Preserve raw provider evidence for provenance.
+- Prefer semantically explicit fields or a calculation whose units are independently known.
+- Provider ex-dividend dates remain optional; do not manufacture a future date when the provider does not report one.
 
 Swing compatibility requirement:
 
-- SWING-001 may publish already-normalized percent/rate/date fields from its own market-data layer and does not need to reproduce Yahoo-specific conversion logic.
-- Prefer explicit semantic names such as `dividend_yield_percent`, `annual_dividend_rate`, `next_ex_dividend_date`, and `name` when those values are applicable and authoritative.
-- If Swing consumes a provider whose yield units differ, normalization belongs at the Swing provider boundary, not in the Enterprise UI.
-- Do not publish an ex-dividend date as "next" unless the source actually reports that date; stale or historical dates should retain their actual semantics.
+- If Swing consumes provider yield fields, establish and test the provider's actual unit contract before publishing `dividend_yield_percent`.
+- Provider-specific normalization belongs in the Swing market-data layer, never in the Enterprise renderer.
+
+### 2026-08-07 — Observed trailing-distribution income fallback
+
+Production evidence showed that the current ETF provider frequently supplies neither `annual_dividend_rate` nor a future ex-dividend date. The Dividend income layer now prefers the already-fetched distribution payment history because those payments have unambiguous dollar-per-share semantics.
+
+Dividend host behavior:
+
+- Sum positive distribution payments observed during the trailing 365 days, anchored to the latest market-history date, to produce `trailing_12m_distribution_rate`.
+- Derive `dividend_yield_percent` as `trailing_12m_distribution_rate / current_price * 100`.
+- Derive per-position `annual_income` as `trailing_12m_distribution_rate * current paper shares` when no explicit annual-income value is available.
+- Publish `trailing_12m_payment_count` and an observed frequency label such as `WEEKLY_OBSERVED`, `MONTHLY_OBSERVED`, or `QUARTERLY_OBSERVED`.
+- Prefer this observed-payment calculation over ambiguous provider yield fields.
+- Continue leaving `next_ex_dividend_date` missing unless a source actually reports a future ex-dividend date.
+- SGOV/reserve remains excluded from Dividend-strategy income analytics.
+
+Swing compatibility requirement:
+
+- Swing does not need to reproduce this Dividend-specific fallback.
+- If SWING-001 chooses to publish income for an instrument, it may use its own authoritative observed-distribution history and should preserve calculation provenance.
+- Never turn a historical payment cadence into a claimed future ex-dividend date.
 
 ### 2026-08-07 — Watchlist detail
 
