@@ -49,6 +49,7 @@ For the host dashboard to render a strategy cleanly, the normalized strategy row
 - `watchlist_count`
 - `watchlist`
 - `income`
+- `projected_annual_income`
 - `income_events`
 - `realized_gain`
 - `unrealized_gain`
@@ -168,6 +169,34 @@ Swing compatibility requirement:
 - Swing should not publish placeholder holdings such as `UNKNOWN` solely to satisfy a schema.
 - Swing does not need a separate investor-holdings HTML implementation or a duplicate Enterprise allocation report for this UI path.
 
+### 2026-08-07 — Dividend income analytics evidence generation
+
+The Dividend host now enriches current strategy holdings with authoritative income-oriented evidence when it exists. The host can populate the Holdings Income section with:
+
+- `dividend_yield_percent`
+- `annual_income`
+- `next_ex_dividend_date`
+- `payment_frequency`
+- `income_analytics_source`
+
+The strategy-level evidence may also expose `projected_annual_income`, calculated only by summing per-position annual-income values that were actually reported or safely derived from an authoritative annual dividend/distribution rate and current paper shares.
+
+Dividend evidence rules introduced in this milestone:
+
+- Yield is accepted only from source fields whose names explicitly identify percent semantics. Ambiguous decimal fields such as a generic `dividendYield` are not silently multiplied by 100 or otherwise guessed.
+- Annual income may be read directly from authoritative per-position annual-income evidence.
+- When direct annual income is unavailable, the Dividend host may derive it as `annual_dividend_rate_per_share * current paper shares` only when both values are available.
+- Next ex-dividend date is copied from authoritative strategy/market evidence; it is never forecast from payment frequency.
+- SGOV/reserve rows are not assigned Dividend-strategy income analytics by this enrichment step.
+- Missing income evidence remains `Not reported`.
+
+Swing compatibility requirement:
+
+- Swing does not need to implement Dividend-specific yield or ex-dividend logic when those concepts are not applicable to the Swing strategy.
+- If a Swing-held instrument has authoritative distribution/income evidence and the Swing strategy chooses to publish it, use the same semantic fields so the host can render them automatically.
+- For non-income Swing positions, omit these fields rather than publishing zeroes solely to satisfy the UI.
+- Any published Swing income metric must remain `SWING-001` scoped and include Swing-owned provenance.
+
 ### 2026-08-07 — Watchlist detail
 
 The Enterprise host supports both `watchlist_count` and structured `watchlist` rows. Swing should continue publishing authoritative Swing watchlist evidence with symbol/status and may preserve rank, score, committee decision, market-data state, or source.
@@ -220,7 +249,7 @@ The professional UI is host-owned. Swing does not duplicate CSS or HTML. For eac
 
 ## Next updates to this tracker
 
-As UI 2.0 development continues, append Swing compatibility notes for Portfolio summary/attribution, Professional Watchlist, Income/cash-flow presentation where applicable, detailed Performance, Alerts/risk presentation, Decision Journal presentation, and any new Enterprise contract introduced by the host.
+As UI 2.0 development continues, append Swing compatibility notes for Portfolio summary/attribution, Professional Watchlist, detailed Performance, Alerts/risk presentation, Decision Journal presentation, and any new Enterprise contract introduced by the host.
 
 ## Handoff rule
 
