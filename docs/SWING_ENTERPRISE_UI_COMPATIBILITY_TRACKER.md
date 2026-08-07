@@ -42,6 +42,7 @@ For the host dashboard to render a strategy cleanly, the normalized strategy row
 - `reporting_only`
 - `allocated_capital`
 - `portfolio_value`
+- `available_cash` / `undeployed_cash` / `unallocated_cash` when authoritative
 - `position_count`
 - `holdings`
 - `positions`
@@ -108,6 +109,7 @@ Dividend-side development added a normalized detailed Holdings contract and a pr
 The host renderer expects `holdings` or `positions` to be a list of strategy-owned mappings. The professional table can use these fields per row when available:
 
 - `symbol`
+- `name` / `security_name` / `display_name` / `instrument_name`
 - `pair`
 - `sleeve`
 - `position_status`
@@ -115,8 +117,6 @@ The host renderer expects `holdings` or `positions` to be a list of strategy-own
 - `price`
 - `market_value`
 - `source`
-
-The host calculates `% Portfolio` from `market_value / portfolio_value` for display only.
 
 Swing compatibility requirement:
 
@@ -132,7 +132,7 @@ Current host behavior:
 - `OPEN` renders as an open-position badge.
 - `PARKED`/`CASH`/`RESERVE` renders as a reserve badge.
 - Lock statuses render as warnings.
-- Missing P/L remains unreported.
+- Missing analytics remain `Not reported`.
 
 ### 2026-08-07 — Professional Holdings renderer wired into the live Enterprise workspace
 
@@ -143,20 +143,49 @@ Swing compatibility requirement:
 - No Swing HTML or CSS change is required for this host UI change.
 - SWING-001 only needs to publish a compatible `holdings` or `positions` array.
 - The same host renderer will display Swing rows automatically once those rows are present in the normalized Enterprise KPI payload.
-- For the cleanest presentation, Swing rows should provide `symbol`, `pair` or another strategy grouping label, `sleeve` when applicable, `position_status`, `shares`, `price`, `market_value`, and `source`.
-- The host derives `% Portfolio` from the strategy-scoped `portfolio_value`; Swing must therefore publish the SWING-001 portfolio value rather than an Enterprise aggregate.
-- Missing P/L, total return, or cost basis remains intentionally absent until Swing supplies authoritative position analytics. The UI must not fabricate these values.
+- The host UI must remain presentation-only and read-only.
 
-Host presentation behavior now shared by Dividend and Swing:
+### 2026-08-07 — Capital reconciliation and expanded Holdings analytics
 
-- Portfolio Value summary card.
-- Cash/Reserve summary card when a reserve row exists.
-- Invested summary card.
-- Position count summary card.
-- Professional sortable-style financial table structure.
-- OPEN/PARKED/lock/closed status badges.
-- Verified evidence/source presentation.
-- Responsive table layout on smaller screens.
+The Holdings UI now distinguishes Enterprise strategy allocation from visible deployed holdings so allocated capital cannot silently disappear from the investor view.
+
+Host presentation now separates:
+
+- `Allocated Capital` — authoritative strategy allocation from the Enterprise allocation layer.
+- `Deployed Holdings` — sum of strategy-owned visible holding market values.
+- `Invested Positions` — visible non-reserve positions.
+- `Cash Reserve (SGOV)` — explicit reserve/cash holding value.
+- `Available / Undeployed Cash` — explicit strategy cash when supplied, otherwise read-only arithmetic derived as allocated capital minus visible holdings.
+
+The host displays a reconciliation banner. If explicit cash plus visible holdings does not match allocated capital, the UI reports a warning instead of forcing the numbers to balance.
+
+Swing compatibility requirement:
+
+- Publish canonical `allocated_capital` for SWING-001 through the existing Enterprise allocation contract.
+- If Swing owns an authoritative undeployed-cash value, expose one of: `available_cash`, `undeployed_cash`, `unallocated_cash`, `remaining_cash`, or `cash_available` for normalization.
+- If Swing does not publish explicit undeployed cash, the host may derive it strictly as `allocated_capital - sum(visible holding market_value)` for display/reconciliation only.
+- If SWING-001 has a reserve instrument or cash row, publish it explicitly with `position_status`/`status` such as `PARKED`, `CASH`, or `RESERVE`, or a reserve/cash sleeve.
+- Do not report Enterprise-wide cash as SWING-001 cash.
+- A negative or inconsistent reconciliation must remain a visible warning and must not be silently corrected.
+
+The Holdings table now exposes these optional strategy-owned analytics when authoritative evidence exists:
+
+- `cost_basis` / `total_cost` / `cost_basis_value`
+- `average_cost` / `avg_cost` / `cost_per_share`
+- `unrealized_pnl` / `unrealized_gain` / `unrealized_pl`
+- `total_return_percent` / `total_return_pct` / `return_percent` / `return_pct`
+- `daily_change_percent` / `daily_change_pct` / `day_change_percent` / `day_change_pct`
+- `dividend_yield_percent` / `yield_percent` / `distribution_yield_percent`
+- `annual_income` / `projected_annual_income` / `annual_dividend_income`
+- `next_ex_dividend_date` / `next_ex_date` / `ex_dividend_date`
+
+Swing compatibility requirement for expanded columns:
+
+- Swing may publish any supported canonical/alias field above from its authoritative position analytics.
+- Unsupported or absent analytics are displayed as `Not reported`.
+- The host does not synthesize a fake P/L, return, yield, cost basis, or ex-dividend date.
+- `% Allocation` is calculated by the host as each holding's `market_value / SWING-001 allocated_capital`, not against Enterprise-wide capital.
+- The table is horizontally scrollable because the full professional position contract is intentionally richer than the original compact table.
 
 ### 2026-08-07 — Watchlist detail
 
@@ -270,7 +299,7 @@ As UI 2.0 development continues, append Swing compatibility notes for:
 4. Detailed Performance dashboard.
 5. Alerts and risk presentation.
 6. Decision Journal presentation.
-7. Position Analytics fields such as cost basis, unrealized P/L, return, and daily change.
+7. Position Analytics fields not already covered by Holdings.
 8. Any new Enterprise contract or schema field introduced by the host.
 
 ## Handoff rule
