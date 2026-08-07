@@ -1,9 +1,9 @@
 """Build strategy-scoped DIVIDEND-001 dashboard evidence from paper-only artifacts.
 
 This module is read-only/reporting-only. It normalizes the Dividend Bot's existing
-paper state, candidate discovery, trade history, and performance evidence into the
-fields consumed by the Enterprise strategy workspace. It never changes
-allocations, moves capital, contacts a broker, or places orders.
+paper state, candidate discovery, trade history, market snapshot, and performance
+evidence into the fields consumed by the Enterprise strategy workspace. It never
+changes allocations, moves capital, contacts a broker, or places orders.
 """
 from __future__ import annotations
 
@@ -11,6 +11,11 @@ import csv
 import json
 from pathlib import Path
 from typing import Any, Mapping
+
+from .dividend_position_analytics import (
+    enrich_holdings_with_position_analytics,
+    total_unrealized_pnl,
+)
 
 STRATEGY_ID = "DIVIDEND-001"
 PAPER_TRADE_MODE = True
@@ -180,12 +185,15 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     candidate_payload = candidate_payload if isinstance(candidate_payload, Mapping) else {}
     performance = _read_json(root / "results" / "dividend_paper_trade_performance.json")
     performance = performance if isinstance(performance, Mapping) else {}
+    market_snapshot = _read_json(root / "market_data_snapshot.json")
     log_rows = _read_csv(root / "paper_trade_log.csv")
 
     holdings, portfolio_value, state_income = _holdings_from_state(state)
+    holdings = enrich_holdings_with_position_analytics(holdings, log_rows, market_snapshot)
     watchlist = _watchlist_from_candidates(candidate_payload)
     income_events = _income_events(log_rows)
     realized_gain = round(sum(_number(item.get("pnl"), 0.0) or 0.0 for item in performance.get("closed_trades", []) if isinstance(item, Mapping)), 2) if isinstance(performance.get("closed_trades"), list) else None
+    unrealized_gain = total_unrealized_pnl(holdings)
 
     return {
         "strategy_id": STRATEGY_ID,
@@ -198,7 +206,7 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "income": state_income,
         "income_events": income_events,
         "realized_gain": realized_gain,
-        "unrealized_gain": None,
+        "unrealized_gain": unrealized_gain,
         "alerts": _alerts(state=state, candidate_payload=candidate_payload, performance=performance),
         "risk_flags": _alerts(state=state, candidate_payload=candidate_payload, performance=performance),
         "performance_detail": {
@@ -217,6 +225,7 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
                 "paper_state.json" if (root / "paper_state.json").is_file() else None,
                 "paper_trade_log.csv" if (root / "paper_trade_log.csv").is_file() else None,
                 "candidate_discovery.json" if (root / "candidate_discovery.json").is_file() else None,
+                "market_data_snapshot.json" if (root / "market_data_snapshot.json").is_file() else None,
                 "results/dividend_paper_trade_performance.json" if (root / "results" / "dividend_paper_trade_performance.json").is_file() else None,
             ) if path is not None
         ],
