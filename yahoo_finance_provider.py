@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from typing import Any, Iterable
 
 MODULE_NAME = "yahoo_finance_provider"
-MODULE_VERSION = "1.1.0"
+MODULE_VERSION = "1.2.0"
 PROVIDER_NAME = "YAHOO_FINANCE"
 READ_ONLY = True
 BROKER_EXECUTION_ENABLED = False
@@ -49,6 +49,25 @@ def _text(value: Any) -> str | None:
     return text or None
 
 
+def _date_text(value: Any) -> str | None:
+    """Normalize provider date values without inventing a future date."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, (int, float)):
+        try:
+            return datetime.fromtimestamp(float(value), tz=timezone.utc).date().isoformat()
+        except (OSError, OverflowError, ValueError):
+            return None
+    text = _text(value)
+    if text is None:
+        return None
+    if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
+        return text[:10]
+    return text
+
+
 @dataclass(frozen=True)
 class YahooFinanceProvider:
     timeout_seconds: int = 15
@@ -75,6 +94,8 @@ class YahooFinanceProvider:
             "provider": PROVIDER_NAME,
             "retrieved_at_utc": _utc_now_text(),
             "symbol": ticker_symbol,
+            "short_name": _text(info.get("shortName")),
+            "long_name": _text(info.get("longName")),
             "price": price,
             "currency": info.get("currency") or fast_info.get("currency"),
             "previous_close": _number(fast_info.get("previous_close") or info.get("previousClose")),
@@ -86,6 +107,7 @@ class YahooFinanceProvider:
             "dividend_yield": _number(info.get("dividendYield")),
             "trailing_annual_dividend_yield": _number(info.get("trailingAnnualDividendYield")),
             "five_year_avg_dividend_yield": _number(info.get("fiveYearAvgDividendYield")),
+            "ex_dividend_date": _date_text(info.get("exDividendDate")),
             "payout_ratio": _number(info.get("payoutRatio")),
             "trailing_pe": _number(info.get("trailingPE")),
             "forward_pe": _number(info.get("forwardPE")),
