@@ -23,7 +23,7 @@ from master_portfolio_orchestrator import (
 from stage_input_adapters import prepare_stage_kwargs
 
 MODULE_NAME = "run_daily_dividend_cycle"
-MODULE_VERSION = "1.3.0"
+MODULE_VERSION = "1.4.0"
 SCHEMA_VERSION = "1.0"
 GENERATED_BY = "Agentic-Robin-Dividend.bot"
 PAPER_TRADE_MODE = True
@@ -48,6 +48,7 @@ STAGE_EXECUTION_PLAN = {
     "momentum_score": ("momentum_score_engine", "build_momentum_score_report"),
     "entry_score": ("entry_score_engine", "build_entry_score_report"),
     "conviction": ("conviction_engine", "build_conviction_report"),
+    "dividend_quality": ("src.dividend_bot.dividend_quality_engine", "build_dividend_quality_report"),
     "dividend_ranking": ("dividend_ranking_engine", "build_dividend_ranking_report"),
     "opportunity_pairing": ("opportunity_pairing_engine", "build_opportunity_pairing_report"),
     "portfolio_decision": ("portfolio_decision_engine", "build_portfolio_decision_report"),
