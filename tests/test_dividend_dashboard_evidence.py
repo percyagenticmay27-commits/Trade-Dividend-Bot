@@ -60,7 +60,8 @@ def test_builds_strategy_scoped_holdings_income_watchlist_and_performance(tmp_pa
     report = build_dividend_dashboard_evidence(tmp_path)
 
     assert report["strategy_id"] == "DIVIDEND-001"
-    assert report["portfolio_value"] == 90.0
+    # 2*10 AVGW + 1*20 AVGX + 30 SGOV reserve = 70.
+    assert report["portfolio_value"] == 70.0
     assert report["position_count"] == 3
     assert {row["symbol"] for row in report["holdings"]} == {"AVGW", "AVGX", "SGOV"}
     assert report["watchlist_count"] == 1
