@@ -23,6 +23,7 @@ This document must be updated whenever a new Enterprise dashboard field, evidenc
 - Preserve `capital_movement_enabled = false`.
 - Strategy evidence must remain strategy-scoped; SWING-001 evidence must never be inferred from DIVIDEND-001 artifacts.
 - Missing evidence must remain visibly missing rather than being fabricated.
+- Enterprise aggregate dashboards are host-owned outputs and must never be republished as inline strategy evidence.
 
 ## Current Enterprise strategy KPI contract
 
@@ -191,6 +192,24 @@ Swing compatibility requirement:
 - Swing does not need to reproduce this Dividend-specific fallback.
 - If SWING-001 chooses to publish income for an instrument, it may use its own authoritative observed-distribution history and should preserve calculation provenance.
 - Never turn a historical payment cadence into a claimed future ex-dividend date.
+
+### 2026-08-07 — Bounded Registry evidence and recursive-dashboard protection
+
+Production refreshes were OOM-killed after three Enterprise output files grew to approximately 1.6 GB each. Root cause: DIVIDEND-001 declares host-owned Enterprise dashboards (`ai_cio_executive_dashboard.json` and `enterprise_investor_dashboard.json`) as Registry artifacts. The Registry evidence loader previously inlined those complete dashboard payloads; the next refresh then embedded Registry evidence back into the same Enterprise dashboards, causing recursive/exponential file growth and multi-gigabyte memory use.
+
+Permanent host rule:
+
+- Any Registry artifact with `scope = ENTERPRISE` is availability/provenance metadata only. Its full payload is never inlined into per-strategy Registry evidence.
+- Strategy-scoped artifacts remain inline when reasonably sized.
+- Artifacts larger than the host inline-size ceiling are also metadata-only so refresh memory stays bounded.
+- `available = true` still means the artifact exists and may be referenced; metadata-only does not mean missing.
+- Host aggregate dashboards must not become strategy-owned evidence payloads.
+
+Swing compatibility requirement:
+
+- SWING-001 should declare its own artifacts as `scope = STRATEGY` unless the artifact is genuinely an Enterprise host aggregate.
+- Do not declare host-generated `ai_cio_executive_dashboard.json`, `enterprise_investor_dashboard.json`, or other Enterprise aggregate outputs as Swing strategy evidence.
+- Large Swing reports may remain independently readable by path/provenance even when the host keeps them metadata-only instead of embedding them.
 
 ### 2026-08-07 — Watchlist detail
 
