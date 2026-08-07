@@ -1,8 +1,8 @@
 """Shared read-only market-data refresh engine for the Dividend Bot.
 
-The engine discovers symbols from portfolio and watchlist artifacts, refreshes each
-symbol once through the central MarketDataService, and writes one normalized JSON
-and CSV snapshot for all downstream analysis stages.
+The engine discovers symbols from portfolio, paper-history, and watchlist artifacts,
+refreshes each symbol once through the central MarketDataService, and writes one
+normalized JSON/CSV snapshot for downstream scoring. Provider data is read-only.
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from market_data_provider import MarketDataService
 from yahoo_finance_provider import MarketDataProviderError
 
 MODULE_NAME = "market_data_integration_engine"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 SCHEMA_VERSION = "1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -38,12 +38,19 @@ DEFAULT_SYMBOL_FILES = [
     "dividend_rankings.json",
     "watchlist.json",
     "portfolio.json",
+    "paper_state.json",
+    "paper_trade_log.csv",
+    "paper_signal_history.csv",
 ]
 
 SYMBOL_KEYS = {
     "symbol", "ticker", "income_symbol", "growth_symbol", "primary_symbol",
     "secondary_symbol", "asset", "security",
 }
+CSV_SYMBOL_HEADERS = (
+    "symbol", "ticker", "income_symbol", "growth_symbol", "primary_symbol",
+    "secondary_symbol", "Symbol", "Ticker",
+)
 
 
 @dataclass(frozen=True)
@@ -92,6 +99,19 @@ def _collect_symbols(value: Any, result: set[str]) -> None:
             _collect_symbols(item, result)
 
 
+def _collect_csv_symbols(path: Path, result: set[str]) -> None:
+    try:
+        with path.open("r", newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                for key in CSV_SYMBOL_HEADERS:
+                    symbol = _normalize_symbol(row.get(key))
+                    if symbol:
+                        result.add(symbol)
+    except (OSError, UnicodeError, csv.Error):
+        return
+
+
 def discover_market_symbols(
     root_path: str = ".",
     explicit_symbols: Optional[Iterable[str]] = None,
@@ -106,7 +126,12 @@ def discover_market_symbols(
     root = Path(root_path)
     for filename in symbol_files or DEFAULT_SYMBOL_FILES:
         path = root / filename
-        if not path.exists() or path.suffix.lower() != ".json":
+        if not path.exists():
+            continue
+        if path.suffix.lower() == ".csv":
+            _collect_csv_symbols(path, symbols)
+            continue
+        if path.suffix.lower() != ".json":
             continue
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
@@ -125,20 +150,37 @@ def _safe_number(value: Any) -> float:
         return 0.0
 
 
+def _history_rows(history: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    rows = (
+        history.get("rows")
+        or history.get("history")
+        or history.get("prices")
+        or history.get("records")
+        or []
+    )
+    return [row for row in rows if isinstance(row, Mapping)] if isinstance(rows, list) else []
+
+
 def _latest_history_close(history: Mapping[str, Any]) -> float:
-    rows = history.get("history") or history.get("prices") or history.get("records") or []
-    if not isinstance(rows, list) or not rows:
+    rows = _history_rows(history)
+    if not rows:
         return 0.0
-    last = rows[-1]
-    if not isinstance(last, Mapping):
-        return 0.0
-    return _safe_number(last.get("close", last.get("Close", 0.0)))
+    return _safe_number(rows[-1].get("close", rows[-1].get("Close", 0.0)))
+
+
+def _dividend_rows(dividends: Mapping[str, Any]) -> list[Any]:
+    rows = (
+        dividends.get("payments")
+        or dividends.get("dividends")
+        or dividends.get("history")
+        or dividends.get("records")
+        or []
+    )
+    return rows if isinstance(rows, list) else []
 
 
 def _dividend_summary(dividends: Mapping[str, Any]) -> tuple[int, float]:
-    rows = dividends.get("dividends") or dividends.get("history") or dividends.get("records") or []
-    if not isinstance(rows, list):
-        return 0, 0.0
+    rows = _dividend_rows(dividends)
     total = 0.0
     count = 0
     for row in rows:
@@ -151,6 +193,31 @@ def _dividend_summary(dividends: Mapping[str, Any]) -> tuple[int, float]:
             total += amount
         count += 1
     return count, round(total, 6)
+
+
+def _year_from_date(value: Any) -> int | None:
+    text = str(value or "")
+    if len(text) >= 4 and text[:4].isdigit():
+        return int(text[:4])
+    return None
+
+
+def _derived_dividend_growth(dividends: Mapping[str, Any]) -> float | None:
+    annual: dict[int, float] = {}
+    for row in _dividend_rows(dividends):
+        if not isinstance(row, Mapping):
+            continue
+        year = _year_from_date(row.get("date"))
+        amount = _safe_number(row.get("amount", row.get("dividend", row.get("value", 0.0))))
+        if year is not None and amount > 0:
+            annual[year] = annual.get(year, 0.0) + amount
+    years = sorted(year for year, amount in annual.items() if amount > 0)
+    if len(years) < 2:
+        return None
+    latest, prior = years[-1], years[-2]
+    if annual[prior] <= 0:
+        return None
+    return round((annual[latest] / annual[prior]) - 1.0, 6)
 
 
 def refresh_market_data_snapshot(
@@ -181,32 +248,40 @@ def refresh_market_data_snapshot(
                 force_refresh=force_refresh,
             )
             dividend_count, dividend_total = _dividend_summary(dividends)
+            derived_growth = _derived_dividend_growth(dividends)
+            enriched_quote = dict(quote)
+            if enriched_quote.get("dividend_growth") is None and derived_growth is not None:
+                enriched_quote["dividend_growth"] = derived_growth
+                enriched_quote["dividend_growth_source"] = "DERIVED_ANNUAL_PAYMENT_HISTORY"
             price = _safe_number(
-                quote.get("price", quote.get("regular_market_price", quote.get("current_price", 0.0)))
+                enriched_quote.get("price", enriched_quote.get("regular_market_price", enriched_quote.get("current_price", 0.0)))
             )
             if price == 0.0:
                 price = _latest_history_close(history)
             records.append({
                 "symbol": symbol,
                 "price": price,
-                "previous_close": _safe_number(quote.get("previous_close", 0.0)),
-                "market_cap": _safe_number(quote.get("market_cap", 0.0)),
-                "dividend_yield": _safe_number(quote.get("dividend_yield", 0.0)),
-                "beta": _safe_number(quote.get("beta", 0.0)),
-                "volume": _safe_number(quote.get("volume", 0.0)),
-                "fifty_two_week_high": _safe_number(quote.get("fifty_two_week_high", 0.0)),
-                "fifty_two_week_low": _safe_number(quote.get("fifty_two_week_low", 0.0)),
-                "sector": str(quote.get("sector", "UNKNOWN")),
-                "industry": str(quote.get("industry", "UNKNOWN")),
+                "previous_close": _safe_number(enriched_quote.get("previous_close", 0.0)),
+                "market_cap": _safe_number(enriched_quote.get("market_cap", 0.0)),
+                "dividend_yield": _safe_number(enriched_quote.get("dividend_yield", 0.0)),
+                "beta": _safe_number(enriched_quote.get("beta", enriched_quote.get("beta_3y", 0.0))),
+                "volume": _safe_number(enriched_quote.get("volume", 0.0)),
+                "fifty_two_week_high": _safe_number(enriched_quote.get("fifty_two_week_high", 0.0)),
+                "fifty_two_week_low": _safe_number(enriched_quote.get("fifty_two_week_low", 0.0)),
+                "sector": str(enriched_quote.get("sector") or "UNKNOWN"),
+                "industry": str(enriched_quote.get("industry") or enriched_quote.get("category") or "UNKNOWN"),
+                "quote_type": str(enriched_quote.get("quote_type") or "UNKNOWN"),
                 "dividend_record_count": dividend_count,
                 "dividend_total": dividend_total,
-                "quote_source": str(quote.get("data_source", "UNKNOWN")),
+                "derived_dividend_growth": derived_growth,
+                "history_row_count": len(_history_rows(history)),
+                "quote_source": str(enriched_quote.get("data_source", "UNKNOWN")),
                 "history_source": str(history.get("data_source", "UNKNOWN")),
                 "dividend_source": str(dividends.get("data_source", "UNKNOWN")),
                 "is_stale": bool(
-                    quote.get("is_stale") or history.get("is_stale") or dividends.get("is_stale")
+                    enriched_quote.get("is_stale") or history.get("is_stale") or dividends.get("is_stale")
                 ),
-                "quote": dict(quote),
+                "quote": enriched_quote,
                 "history": dict(history),
                 "dividends": dict(dividends),
             })
@@ -293,7 +368,8 @@ def write_market_data_snapshot(
     fieldnames = [
         "symbol", "price", "previous_close", "market_cap", "dividend_yield",
         "beta", "volume", "fifty_two_week_high", "fifty_two_week_low", "sector",
-        "industry", "dividend_record_count", "dividend_total", "quote_source",
+        "industry", "quote_type", "dividend_record_count", "dividend_total",
+        "derived_dividend_growth", "history_row_count", "quote_source",
         "history_source", "dividend_source", "is_stale",
     ]
     with (root / files["csv"]).open("w", newline="", encoding="utf-8") as handle:
