@@ -150,13 +150,31 @@ def _opportunity_quality(payload: Any) -> tuple[float | None, str | None]:
 
 
 def _win_rate(payload: Any) -> tuple[float | None, str | None]:
-    """Return only an explicitly reported win rate; never infer one from returns."""
+    """Return DIVIDEND-001's explicit win rate; never infer one from returns."""
     if payload is None:
         return None, None
-    value = _first_metric(payload, ("win_rate_percent", "win_rate_pct", "win_rate"))
-    if value is None:
-        return None, None
-    return min(100.0, max(0.0, value)), "DECLARED_WIN_RATE"
+
+    if isinstance(payload, Mapping):
+        direct_strategy_id = str(payload.get("strategy_id") or "").strip().upper()
+        if direct_strategy_id in {STRATEGY_ID, "DIVIDEND"}:
+            value = _first_metric(payload, ("win_rate_percent", "win_rate_pct", "win_rate"))
+            if value is not None:
+                return min(100.0, max(0.0, value)), "DECLARED_DIVIDEND_WIN_RATE"
+
+        for key in ("strategies", "strategy_performance", "performance", "results"):
+            rows = payload.get(key)
+            if not isinstance(rows, list):
+                continue
+            for row in rows:
+                if not isinstance(row, Mapping):
+                    continue
+                strategy_id = str(row.get("strategy_id") or "").strip().upper()
+                if strategy_id not in {STRATEGY_ID, "DIVIDEND"}:
+                    continue
+                value = _first_metric(row, ("win_rate_percent", "win_rate_pct", "win_rate"))
+                if value is not None:
+                    return min(100.0, max(0.0, value)), "DECLARED_DIVIDEND_WIN_RATE"
+    return None, None
 
 
 def build_dividend_strategy_kpi_evidence(
