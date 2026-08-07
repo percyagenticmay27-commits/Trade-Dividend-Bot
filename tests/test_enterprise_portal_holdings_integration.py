@@ -53,7 +53,9 @@ def test_workspace_uses_professional_holdings_renderer() -> None:
     output = render_strategy_workspace(_report(), audience="executive")
 
     assert "class='holdings-pro'" in output
-    assert "class='holdings-table'" in output
+    assert "class='holdings-overview-table'" in output
+    assert "class='position-analytics-table'" in output
+    assert "class='income-table'" in output
     assert "Allocated Capital" in output
     assert "Available / Undeployed Cash" in output
     assert "Capital Reconciliation" in output
@@ -62,6 +64,8 @@ def test_workspace_uses_professional_holdings_renderer() -> None:
     assert "Unrealized P&amp;L" in output
     assert "Total Return" in output
     assert "Cash Reserve (SGOV)" in output
+    assert "% Strategy Allocation" in output
+    assert "% Deployed Portfolio" in output
     assert "✓ Verified" in output
     assert "AVGW: Pair:" not in output
 
