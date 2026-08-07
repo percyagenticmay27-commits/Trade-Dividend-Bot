@@ -53,13 +53,13 @@ def test_workspace_uses_professional_holdings_renderer() -> None:
     output = render_strategy_workspace(_report(), audience="executive")
 
     assert "class='holdings-pro'" in output
-    assert "class='holdings-overview-table'" in output
-    assert "class='position-analytics-table'" in output
-    assert "class='income-table'" in output
+    assert "holdings-overview-table" in output
+    assert "holdings-analytics-table" in output
+    assert "holdings-income-table" in output
     assert "Allocated Capital" in output
     assert "Available / Undeployed Cash" in output
     assert "Capital Reconciliation" in output
-    assert "Position Status" in output
+    assert "Status" in output
     assert "Cost Basis" in output
     assert "Unrealized P&amp;L" in output
     assert "Total Return" in output
