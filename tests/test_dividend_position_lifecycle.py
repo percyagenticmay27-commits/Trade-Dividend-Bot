@@ -30,6 +30,25 @@ def test_reconstructs_open_parked_and_closed_lifecycle() -> None:
     assert by_symbol["SGOV"]["reserve_value"] == 400.0
 
 
+def test_legacy_park_row_with_sgov_ticker_maps_back_to_pair_sleeve() -> None:
+    rows = [
+        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "PLTW", "Pair": "PLTW / PLTU", "Sleeve": "A"},
+        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "PLTU", "Pair": "PLTW / PLTU", "Sleeve": "B"},
+        {"Date": "2026-06-18", "Action": "PAPER_PARK_IN_SGOV", "Ticker": "SGOV", "Pair": "PLTW / PLTU", "Sleeve": "A", "Paper_Value": "28.0"},
+        {"Date": "2026-06-18", "Action": "PAPER_PARK_IN_SGOV", "Ticker": "SGOV", "Pair": "PLTW / PLTU", "Sleeve": "B", "Paper_Value": "12.0"},
+    ]
+
+    lifecycle = build_position_lifecycle(rows, [])
+    by_symbol = {item["symbol"]: item for item in lifecycle}
+
+    assert by_symbol["PLTW"]["lifecycle_status"] == "PARKED_IN_SGOV"
+    assert by_symbol["PLTW"]["last_exit_action"] == "PAPER_PARK_IN_SGOV"
+    assert by_symbol["PLTW"]["last_exit_value"] == 28.0
+    assert by_symbol["PLTU"]["lifecycle_status"] == "PARKED_IN_SGOV"
+    assert by_symbol["PLTU"]["last_exit_value"] == 12.0
+    assert "SGOV" not in by_symbol
+
+
 def test_reentry_is_distinguished_from_first_open_position() -> None:
     rows = [
         {"Date": "2026-06-01", "Action": "PAPER_BUY_OPEN", "Ticker": "TEST"},
