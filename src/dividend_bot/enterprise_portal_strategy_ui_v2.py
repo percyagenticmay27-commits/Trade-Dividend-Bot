@@ -1,0 +1,41 @@
+"""Compatibility wrapper that upgrades the strategy Income tab to UI 2.0.
+
+The underlying strategy workspace remains owned by enterprise_portal_strategy_ui.
+This wrapper replaces only the legacy Income panel body and appends the dedicated
+Income stylesheet, keeping the change narrow and reversible.
+"""
+from __future__ import annotations
+
+import html
+import re
+from typing import Any, Mapping
+
+from . import enterprise_portal_strategy_ui as _base
+from .enterprise_income_ui import income_ui_css, render_income_panel
+
+render_left_navigation = _base.render_left_navigation
+
+
+def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> str:
+    output = _base.render_strategy_workspace(report, audience=audience)
+    strategies = report.get("strategy_kpis")
+    if not isinstance(strategies, list):
+        return output
+
+    for index, row in enumerate(strategies):
+        if not isinstance(row, Mapping):
+            continue
+        raw_sid = str(row.get("strategy_id") or f"strategy-{index}")
+        sid = html.escape(raw_sid, quote=True)
+        panel_id = re.escape(f"panel-{sid}-income")
+        pattern = re.compile(
+            rf"(<section class='workspace-tab-panel'[^>]*id='{panel_id}'[^>]*>).*?(</section>)",
+            flags=re.DOTALL,
+        )
+        replacement = rf"\1{render_income_panel(row)}\2"
+        output, _ = pattern.subn(replacement, output, count=1)
+    return output
+
+
+def strategy_ui_css() -> str:
+    return _base.strategy_ui_css() + income_ui_css()
