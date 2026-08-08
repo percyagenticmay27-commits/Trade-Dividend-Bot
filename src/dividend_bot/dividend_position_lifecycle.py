@@ -1,9 +1,8 @@
 """Reconstruct read-only Dividend position lifecycle evidence from the paper ledger.
 
-This module never changes portfolio state. It interprets the existing paper trade log
-and reconciles it with current holdings so Enterprise reporting can distinguish
-OPEN, REENTERED, PARKED_IN_SGOV, CLOSED, and RESERVE state without treating old
-positions as current holdings.
+The lifecycle is audit evidence, not execution. Duplicate initialization rows are
+collapsed, and candidates that were initialized directly into SGOV are classified
+NEVER_ENTERED rather than being presented as zero-return completed trades.
 """
 from __future__ import annotations
 
@@ -15,15 +14,12 @@ REPORTING_ONLY = True
 LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
 
-_BUY_ACTIONS = {"PAPER_BUY_OPEN", "PAPER_BUY", "BUY"}
+_BUY_ACTIONS = {"PAPER_BUY_OPEN", "PAPER_BUY", "BUY", "PAPER_BUY_FROM_SGOV"}
 _PARK_ACTIONS = {"PAPER_SELL_TO_SGOV", "PAPER_PARK_IN_SGOV", "PARK_IN_SGOV"}
+_WAIT_ACTIONS = {"PAPER_WAIT_IN_SGOV", "PAPER_A_WAIT_IN_SGOV", "PAPER_B_WAIT_IN_SGOV"}
 _CLOSE_ACTIONS = {
-    "PAPER_SELL_CLOSE",
-    "PAPER_SELL",
-    "PAPER_FULL_EXIT",
-    "PAPER_CLOSE_POSITION",
-    "SELL",
-    "CLOSE",
+    "PAPER_SELL_CLOSE", "PAPER_SELL", "PAPER_FULL_EXIT",
+    "PAPER_CLOSE_POSITION", "SELL", "CLOSE",
 }
 
 
@@ -62,6 +58,11 @@ def _sleeve(row: Mapping[str, Any]) -> str | None:
     return text or None
 
 
+def _reason(row: Mapping[str, Any]) -> str:
+    value = _first(row, "Reason", "reason")
+    return str(value or "").strip()
+
+
 def _number(row: Mapping[str, Any], *keys: str) -> float | None:
     value = _first(row, *keys)
     try:
@@ -78,8 +79,7 @@ def _pair_symbols(pair: str | None) -> list[str]:
 
 
 def _parked_symbol(row: Mapping[str, Any], action: str, symbol: str) -> str:
-    """Resolve the strategy symbol represented by a SGOV parking ledger row."""
-    if action not in _PARK_ACTIONS or symbol != "SGOV":
+    if action not in (_PARK_ACTIONS | _WAIT_ACTIONS) or symbol != "SGOV":
         return symbol
     pair_symbols = _pair_symbols(_pair(row))
     sleeve = _sleeve(row)
@@ -91,7 +91,6 @@ def _parked_symbol(row: Mapping[str, Any], action: str, symbol: str) -> str:
 
 
 def _event_value(event: Mapping[str, Any]) -> float | None:
-    """Return authoritative paper transaction value when the ledger supplies it."""
     paper_value = event.get("paper_value")
     if paper_value is not None:
         try:
@@ -108,16 +107,53 @@ def _event_value(event: Mapping[str, Any]) -> float | None:
         return None
 
 
+def _event_fingerprint(event: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Identify duplicate ledger rows created by repeated initialization runs."""
+    return (
+        event.get("date"), event.get("action"), event.get("pair"), event.get("sleeve"),
+        event.get("shares"), event.get("price"), event.get("paper_value"), event.get("reason"),
+    )
+
+
+def _deduplicate_events(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[tuple[Any, ...]] = set()
+    result: list[dict[str, Any]] = []
+    for event in rows:
+        fingerprint = _event_fingerprint(event)
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        result.append(event)
+    return result
+
+
+def _is_never_entered(symbol_events: list[dict[str, Any]], is_current: bool) -> bool:
+    """Recognize explicit or legacy initialization that intentionally stayed in SGOV."""
+    if is_current:
+        return False
+    if any(event.get("action") in _WAIT_ACTIONS for event in symbol_events):
+        return True
+    initialization_parks = [
+        event for event in symbol_events
+        if event.get("action") in _PARK_ACTIONS
+        and "initialization" in str(event.get("reason") or "").lower()
+        and "sell" in str(event.get("reason") or "").lower()
+    ]
+    if initialization_parks:
+        latest_park = initialization_parks[-1]
+        later_buys = [
+            event for event in symbol_events
+            if event.get("action") in _BUY_ACTIONS
+            and str(event.get("date") or "") > str(latest_park.get("date") or "")
+        ]
+        return not later_buys
+    return False
+
+
 def _completed_cycle_entry_value(
     symbol_events: list[dict[str, Any]],
     latest_exit: Mapping[str, Any] | None,
 ) -> float | None:
-    """Return entry capital for the most recently completed position cycle.
-
-    For a symbol that was exited, only buys after the preceding full exit and through
-    the latest exit belong to that completed cycle. This prevents an older position
-    from contaminating the entry value after a later re-entry.
-    """
     if latest_exit is None:
         return None
     try:
@@ -144,16 +180,9 @@ def _completed_cycle_entry_value(
 
 
 def _reentry_count(symbol_events: list[dict[str, Any]]) -> int:
-    """Count completed exit-to-new-position transitions, not scale-in buys.
-
-    A re-entry is the first buy that opens a new cycle after a prior full exit. Any
-    additional PAPER_BUY activity while that cycle is already open is a scale-in and
-    must not increment the re-entry count.
-    """
     has_ever_opened = False
     position_open = False
     count = 0
-
     for event in symbol_events:
         action = event.get("action")
         if action in _BUY_ACTIONS:
@@ -166,7 +195,6 @@ def _reentry_count(symbol_events: list[dict[str, Any]]) -> int:
         if action in (_PARK_ACTIONS | _CLOSE_ACTIONS):
             if position_open:
                 position_open = False
-
     return count
 
 
@@ -174,7 +202,6 @@ def build_position_lifecycle(
     log_rows: Iterable[Mapping[str, Any]],
     current_holdings: Iterable[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Return deterministic lifecycle records for symbols observed in the paper ledger."""
     events: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in log_rows:
         if not isinstance(row, Mapping):
@@ -191,17 +218,16 @@ def build_position_lifecycle(
             "shares": _number(row, "Shares", "shares", "Quantity", "quantity"),
             "price": _number(row, "Price", "price", "Trade_Price", "trade_price"),
             "paper_value": _number(
-                row,
-                "Paper_Value",
-                "paper_value",
-                "Value",
-                "value",
-                "Market_Value",
-                "market_value",
-                "Amount",
-                "amount",
+                row, "Paper_Value", "paper_value", "Value", "value",
+                "Market_Value", "market_value", "Amount", "amount",
             ),
+            "reason": _reason(row),
         })
+
+    events = defaultdict(list, {
+        symbol: _deduplicate_events(symbol_events)
+        for symbol, symbol_events in events.items()
+    })
 
     current: dict[str, Mapping[str, Any]] = {}
     reserve_value = 0.0
@@ -228,9 +254,14 @@ def build_position_lifecycle(
         latest_buy = buy_events[-1] if buy_events else None
         latest_exit = exit_events[-1] if exit_events else None
         is_current = symbol in current
+        never_entered = _is_never_entered(symbol_events, is_current)
         reentry_count = _reentry_count(symbol_events)
 
-        if is_current:
+        if never_entered:
+            lifecycle_status = "NEVER_ENTERED"
+            current_open_date = None
+            first_purchase = None
+        elif is_current:
             latest_exit_date = latest_exit.get("date") if latest_exit else None
             latest_buy_date = latest_buy.get("date") if latest_buy else None
             is_reentered = bool(latest_exit_date and latest_buy_date and latest_buy_date > latest_exit_date)
@@ -246,8 +277,8 @@ def build_position_lifecycle(
             lifecycle_status = "CLOSED"
             current_open_date = None
 
-        entry_value = _completed_cycle_entry_value(symbol_events, latest_exit)
-        exit_value = _event_value(latest_exit) if latest_exit else None
+        entry_value = None if never_entered else _completed_cycle_entry_value(symbol_events, latest_exit)
+        exit_value = None if never_entered else (_event_value(latest_exit) if latest_exit else None)
         realized_gain_loss = None
         if entry_value is not None and exit_value is not None:
             realized_gain_loss = round(exit_value - entry_value, 2)
@@ -258,35 +289,31 @@ def build_position_lifecycle(
             "is_current_holding": is_current,
             "first_purchase_date": first_purchase,
             "current_open_date": current_open_date,
-            "last_exit_date": latest_exit.get("date") if latest_exit else None,
-            "last_exit_action": latest_exit.get("action") if latest_exit else None,
+            "last_exit_date": None if never_entered else (latest_exit.get("date") if latest_exit else None),
+            "last_exit_action": None if never_entered else (latest_exit.get("action") if latest_exit else None),
             "entry_value": entry_value,
             "last_exit_value": exit_value,
             "realized_gain_loss": realized_gain_loss,
             "pair": (current.get(symbol) or {}).get("pair") or (symbol_events[-1].get("pair") if symbol_events else None),
             "sleeve": (current.get(symbol) or {}).get("sleeve") or (symbol_events[-1].get("sleeve") if symbol_events else None),
-            "reentry_count": reentry_count,
+            "reentry_count": 0 if never_entered else reentry_count,
             "event_count": len(symbol_events),
+            "raw_event_count": len(symbol_events),
+            "never_entered_reason": (
+                "ENTRY_GATE_WAIT_IN_SGOV" if any(e.get("action") in _WAIT_ACTIONS for e in symbol_events)
+                else "LEGACY_SIGNAL_AWARE_INITIALIZATION_ON_SELL" if never_entered else None
+            ),
             "evidence_source": "paper_trade_log.csv",
         })
 
     if reserve_value > 0:
         records.append({
-            "symbol": "SGOV",
-            "lifecycle_status": "RESERVE",
-            "is_current_holding": True,
-            "first_purchase_date": None,
-            "current_open_date": None,
-            "last_exit_date": None,
-            "last_exit_action": None,
-            "entry_value": None,
-            "last_exit_value": None,
-            "realized_gain_loss": None,
-            "pair": "CASH RESERVE",
-            "sleeve": "RESERVE",
-            "reentry_count": 0,
-            "event_count": 0,
-            "reserve_value": round(reserve_value, 2),
+            "symbol": "SGOV", "lifecycle_status": "RESERVE", "is_current_holding": True,
+            "first_purchase_date": None, "current_open_date": None, "last_exit_date": None,
+            "last_exit_action": None, "entry_value": None, "last_exit_value": None,
+            "realized_gain_loss": None, "pair": "CASH RESERVE", "sleeve": "RESERVE",
+            "reentry_count": 0, "event_count": 0, "raw_event_count": 0,
+            "reserve_value": round(reserve_value, 2), "never_entered_reason": None,
             "evidence_source": "paper_state.json",
         })
 
@@ -297,11 +324,9 @@ def enrich_current_holdings_with_lifecycle(
     holdings: Iterable[Mapping[str, Any]],
     lifecycle: Iterable[Mapping[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Attach lifecycle metadata to current holdings without adding historical rows."""
     by_symbol = {
         str(item.get("symbol") or "").strip().upper(): item
-        for item in lifecycle
-        if isinstance(item, Mapping)
+        for item in lifecycle if isinstance(item, Mapping)
     }
     enriched: list[dict[str, Any]] = []
     for raw in holdings:
