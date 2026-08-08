@@ -114,7 +114,15 @@ def test_dividend_detail_evidence_is_attached_to_enterprise_kpi_row(tmp_path: Pa
     assert row["positions"] == row["holdings"]
     assert row["watchlist_count"] == 1
     assert row["watchlist"][0]["symbol"] == "AVGW"
-    assert row["income"] == 4.0
+    # Enterprise income is transaction-ledger based. The paper-state cumulative
+    # total is not substituted for the realized receipt ledger.
+    assert row["income"] == 2.5
+    assert row["gross_distribution_income"] == 2.5
+    assert row["income_adjustments"] == 0.0
+    assert row["net_income_received"] == 2.5
+    assert row["realized_income_event_count"] == 1
+    assert row["positive_income_event_count"] == 1
+    assert row["negative_income_event_count"] == 0
     assert row["income_events"][0]["amount"] == 2.5
     assert row["realized_gain"] == 5.5
     assert row["performance_detail"]["win_rate_percent"] == 100.0
