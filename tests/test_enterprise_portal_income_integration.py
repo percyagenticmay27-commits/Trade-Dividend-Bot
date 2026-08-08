@@ -24,10 +24,14 @@ def _report() -> dict:
                         "income_analytics_source": "market_data_snapshot.json",
                     }
                 ],
-                "income": 5.0,
+                "income": 4.0,
+                "net_income_received": 4.0,
+                "gross_distribution_income": 5.0,
+                "income_adjustments": -1.0,
                 "projected_annual_income": 60.0,
                 "income_events": [
-                    {"date": "2026-08-01", "symbol": "AAA", "event_type": "DIVIDEND_RECEIVED", "amount": 5.0, "source": "paper_trade_log.csv"}
+                    {"date": "2026-08-01", "symbol": "AAA", "event_type": "DIVIDEND_RECEIVED", "amount": 5.0, "source": "paper_trade_log.csv"},
+                    {"date": "2026-08-02", "symbol": "AAA", "event_type": "DIVIDEND_REVERSAL", "amount": -1.0, "source": "paper_trade_log.csv"},
                 ],
             }
         ]
@@ -38,6 +42,9 @@ def test_workspace_income_tab_uses_professional_renderer() -> None:
     output = render_strategy_workspace(_report(), audience="investor")
     assert "data-workspace-tab-panel='income'" in output
     assert "class='income-pro'" in output
+    assert "Net Income Received" in output
+    assert "Gross Distributions" in output
+    assert "Income Adjustments" in output
     assert "Projected Annual Income" in output
     assert "Income by Holding" in output
     assert "Distribution History" in output
@@ -72,3 +79,5 @@ def test_strategy_css_includes_income_styles() -> None:
     css = strategy_ui_css()
     assert ".income-summary-grid" in css
     assert ".income-table" in css
+    assert ".income-positive" in css
+    assert ".income-negative" in css
