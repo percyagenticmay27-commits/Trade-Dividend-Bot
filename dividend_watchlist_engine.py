@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 MODULE_NAME = "dividend_watchlist_engine"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 SCHEMA_VERSION = "1.0"
 GENERATED_BY = "Agentic-Robin-Dividend.bot"
 STRATEGY_ID = "DIVIDEND-001"
@@ -64,6 +64,12 @@ def _pair_symbols(pair: str) -> tuple[str, str]:
 
 
 def _held_symbols(state: Mapping[str, Any]) -> set[str]:
+    """Return invested symbols plus strategy-owned reserve assets.
+
+    Reserve cash parked in SGOV is already deployed to the strategy's reserve
+    sleeve and must not be promoted as a new watchlist opportunity simply because
+    it has no share-count field in legacy paper_state.json.
+    """
     held: set[str] = set()
     pairs = state.get("pairs")
     if not isinstance(pairs, Mapping):
@@ -78,6 +84,9 @@ def _held_symbols(state: Mapping[str, Any]) -> set[str]:
             held.add(a)
         if b and b_shares > 0:
             held.add(b)
+        sgov_balance = _number(raw.get("sgov_balance")) or 0.0
+        if sgov_balance > 0:
+            held.add("SGOV")
     return held
 
 
@@ -210,6 +219,7 @@ def build_dividend_watchlist(
             "ready_score": READY_SCORE,
             "maximum_watchlist_size": max(0, int(max_watchlist_size)),
             "exclude_current_holdings": True,
+            "exclude_reserve_assets": True,
             "exclude_stale_market_data": True,
         },
         "watchlist_count": len(candidates),
