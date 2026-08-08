@@ -52,6 +52,27 @@ def test_excludes_current_holdings_stale_market_data_and_low_scores() -> None:
     assert [row["symbol"] for row in report["watchlist"]] == ["GOOD"]
 
 
+def test_excludes_sgov_when_it_is_the_strategy_reserve_asset() -> None:
+    report = build_dividend_watchlist(
+        {"rankings": [_rank("SGOV", 72, "HOLD"), _rank("NUGT", 61, "WATCHLIST")]},
+        paper_state={
+            "pairs": {
+                "AAA / BBB": {
+                    "a_shares": 0.0,
+                    "b_shares": 0.0,
+                    "sgov_balance": 500.0,
+                }
+            }
+        },
+        market_snapshot={"records": [
+            {"symbol": "SGOV", "is_stale": False},
+            {"symbol": "NUGT", "is_stale": False},
+        ]},
+    )
+    assert [row["symbol"] for row in report["watchlist"]] == ["NUGT"]
+    assert report["promotion_policy"]["exclude_reserve_assets"] is True
+
+
 def test_preserves_rank_components_and_market_detail_without_fabrication() -> None:
     report = build_dividend_watchlist(
         {"rankings": [_rank("AAA", 76, "HOLD", momentum=71)]},
