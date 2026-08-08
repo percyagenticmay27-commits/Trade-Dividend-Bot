@@ -1,9 +1,9 @@
 """Qualified-entry wrapper for the Dividend paper trading engine.
 
 The accounting, dividend, earnings, and SGOV implementation remains in
-``paper_trading_engine_core``.  This compatibility layer changes only permission
-to open or re-open ETF exposure: HOLD/SELL, missing promotion evidence, stale
-market data, or missing/UNKNOWN Entry Quality must remain in SGOV.
+``paper_trading_engine_core``. This compatibility layer changes permission to
+open/re-open ETF exposure and binds paper sizing to the Enterprise AI CIO's
+DIVIDEND-001 allocation.
 
 PAPER ONLY - NO REAL TRADES EXECUTED.
 """
@@ -21,7 +21,7 @@ from paper_portfolio_config import (
     PAIR_MANAGED,
     PAPER_PAIRS,
 )
-from paper_trading_engine_core import (  # re-export legacy public surface
+from paper_trading_engine_core import (
     COMPARISON_PATH,
     EARNINGS_DIR,
     LOG_COLUMNS,
@@ -33,9 +33,15 @@ from paper_trading_engine_core import (  # re-export legacy public surface
     PaperTradingEngine as CorePaperTradingEngine,
     YahooMarketDataProvider,
 )
+from src.dividend_bot.dividend_enterprise_capital_contract import (
+    LEGACY_BASELINE_CAPITAL,
+    read_enterprise_dividend_allocation,
+    scale_paper_state_to_allocation,
+)
 
 WATCHLIST_PATH = Path("watchlist_report.json")
 ENTRY_SCORE_PATH = Path("entry_score_report.json")
+ENTERPRISE_CASH_STATE_PATH = Path("state/paper_cash_account.json")
 
 
 def _read_json(path: Path) -> Mapping[str, Any]:
@@ -53,15 +59,22 @@ class PaperTradingEngine(CorePaperTradingEngine):
 
     watchlist_path: Path = WATCHLIST_PATH
     entry_score_path: Path = ENTRY_SCORE_PATH
+    enterprise_cash_state_path: Path = ENTERPRISE_CASH_STATE_PATH
+
+    def _enterprise_allocation(self) -> float:
+        return (
+            read_enterprise_dividend_allocation(self.enterprise_cash_state_path)
+            or LEGACY_BASELINE_CAPITAL
+        )
+
+    def _allocation_scale(self) -> float:
+        return self._enterprise_allocation() / LEGACY_BASELINE_CAPITAL
 
     def _entry_evidence(self) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
         return _read_json(self.watchlist_path), _read_json(self.entry_score_path)
 
     @staticmethod
     def _technical_snapshot(signal: str, signal_symbol: str) -> dict[str, Any]:
-        # The core engine already calculates the approved daily technical signal.
-        # Preserve that authoritative result in the gate evidence without inventing
-        # unavailable indicator values.
         return {
             "signal": str(signal).upper(),
             "signal_symbol": str(signal_symbol).upper(),
@@ -97,12 +110,6 @@ class PaperTradingEngine(CorePaperTradingEngine):
         config: Mapping[str, Any],
         signals: Mapping[str, str],
     ) -> dict[str, Any]:
-        """Require pair-managed sleeves to qualify together.
-
-        Pair-managed architecture follows the A/underlying timing signal in the
-        legacy engine. Both securities must also be promoted/fresh on the strategy
-        watchlist before the pair may leave SGOV.
-        """
         watchlist, entry_score = self._entry_evidence()
         technical = self._technical_snapshot(
             str(signals["A"]), str(config.get("a_signal") or config["a"])
@@ -116,15 +123,18 @@ class PaperTradingEngine(CorePaperTradingEngine):
         )
 
     def initial_state(self, frames, as_of):
-        """Initialize only qualified entries; all others begin in SGOV."""
+        """Initialize from Enterprise allocation and only qualified entries."""
         state, _legacy_logs = super().initial_state(frames, as_of)
+        allocation = self._enterprise_allocation()
+        state, _factor = scale_paper_state_to_allocation(state, allocation)
         logs: list[dict[str, Any]] = []
+        scale = allocation / LEGACY_BASELINE_CAPITAL
 
         for pair, config in PAPER_PAIRS.items():
             entry = state["pairs"][pair]
             signals = entry["last_signal"]
-            a_capital = float(config["allocation"]) * INITIAL_A_WEIGHT
-            b_capital = float(config["allocation"]) * INITIAL_B_WEIGHT
+            a_capital = float(config["allocation"]) * scale * INITIAL_A_WEIGHT
+            b_capital = float(config["allocation"]) * scale * INITIAL_B_WEIGHT
 
             if config["architecture"] == PAIR_MANAGED:
                 decision = self._gate_pair(pair=pair, config=config, signals=signals)
@@ -162,7 +172,6 @@ class PaperTradingEngine(CorePaperTradingEngine):
                         ))
                 continue
 
-            # Independent sleeves are evaluated independently.
             decisions: dict[str, Any] = {}
             for side, capital in (("A", a_capital), ("B", b_capital)):
                 key = side.lower()
@@ -198,8 +207,21 @@ class PaperTradingEngine(CorePaperTradingEngine):
 
         return state, logs
 
+    def run(self, reinitialize_signal_aware: bool = False) -> dict:
+        """Normalize existing paper state to the current Enterprise allocation."""
+        allocation = self._enterprise_allocation()
+        if self.state_path.exists() and not reinitialize_signal_aware:
+            try:
+                existing = json.loads(self.state_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, json.JSONDecodeError):
+                existing = None
+            if isinstance(existing, Mapping):
+                normalized, factor = scale_paper_state_to_allocation(existing, allocation)
+                if abs(factor - 1.0) > 1e-12:
+                    self.write_state(normalized)
+        return super().run(reinitialize_signal_aware=reinitialize_signal_aware)
+
     def buy_pair(self, pair, entry, config, signals, prices, as_of, reason, logs):
-        """Re-enter a pair only after the qualified entry gate approves it."""
         decision = self._gate_pair(pair=pair, config=config, signals=signals)
         entry["entry_gate"] = decision
         if not decision["approved"]:
@@ -211,7 +233,6 @@ class PaperTradingEngine(CorePaperTradingEngine):
         )
 
     def buy_sleeve(self, pair, entry, config, side, signal, price, as_of, reason, logs):
-        """Re-enter an independent sleeve only after gate approval."""
         decision = self._gate_sleeve(
             pair=pair, config=config, side=side, signal=signal
         )
@@ -230,8 +251,6 @@ class PaperTradingEngine(CorePaperTradingEngine):
 
 
 def main() -> int:
-    # Keep the established CLI while ensuring this qualified wrapper is the class
-    # instantiated by the production entry point.
     import argparse
 
     parser = argparse.ArgumentParser(description=__doc__)
