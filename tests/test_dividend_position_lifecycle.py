@@ -6,11 +6,11 @@ from src.dividend_bot.dividend_position_lifecycle import (
 
 def test_reconstructs_open_parked_and_closed_lifecycle() -> None:
     rows = [
-        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "AMDW", "Pair": "AMDW / AMDL", "Sleeve": "A"},
-        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "PLTW", "Pair": "PLTW / PLTU", "Sleeve": "A"},
-        {"Date": "2026-06-18", "Action": "PAPER_PARK_IN_SGOV", "Ticker": "PLTW", "Pair": "PLTW / PLTU", "Sleeve": "A"},
-        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "AVGW", "Pair": "AVGW / AVGX", "Sleeve": "A"},
-        {"Date": "2026-06-26", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "AVGW", "Pair": "AVGW / AVGX", "Sleeve": "A"},
+        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "AMDW", "Pair": "AMDW / AMDL", "Sleeve": "A", "Paper_Value": "52.00"},
+        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "PLTW", "Pair": "PLTW / PLTU", "Sleeve": "A", "Paper_Value": "26.00"},
+        {"Date": "2026-06-18", "Action": "PAPER_PARK_IN_SGOV", "Ticker": "PLTW", "Pair": "PLTW / PLTU", "Sleeve": "A", "Paper_Value": "28.00"},
+        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "AVGW", "Pair": "AVGW / AVGX", "Sleeve": "A", "Paper_Value": "36.98"},
+        {"Date": "2026-06-26", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "AVGW", "Pair": "AVGW / AVGX", "Sleeve": "A", "Paper_Value": "35.89"},
     ]
     holdings = [
         {"symbol": "AMDW", "pair": "AMDW / AMDL", "sleeve": "A", "position_status": "OPEN", "market_value": 52.0},
@@ -23,30 +23,49 @@ def test_reconstructs_open_parked_and_closed_lifecycle() -> None:
     assert by_symbol["AMDW"]["lifecycle_status"] == "OPEN"
     assert by_symbol["AMDW"]["is_current_holding"] is True
     assert by_symbol["PLTW"]["lifecycle_status"] == "PARKED_IN_SGOV"
-    assert by_symbol["PLTW"]["is_current_holding"] is False
+    assert by_symbol["PLTW"]["entry_value"] == 26.0
+    assert by_symbol["PLTW"]["last_exit_value"] == 28.0
+    assert by_symbol["PLTW"]["realized_gain_loss"] == 2.0
     assert by_symbol["AVGW"]["lifecycle_status"] == "PARKED_IN_SGOV"
     assert by_symbol["AVGW"]["last_exit_date"] == "2026-06-26"
+    assert by_symbol["AVGW"]["entry_value"] == 36.98
+    assert by_symbol["AVGW"]["realized_gain_loss"] == -1.09
     assert by_symbol["SGOV"]["lifecycle_status"] == "RESERVE"
     assert by_symbol["SGOV"]["reserve_value"] == 400.0
 
 
-def test_legacy_park_row_with_sgov_ticker_maps_back_to_pair_sleeve() -> None:
+def test_legacy_sgov_parking_row_maps_back_to_pair_sleeve_and_preserves_value() -> None:
     rows = [
-        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "PLTW", "Pair": "PLTW / PLTU", "Sleeve": "A"},
-        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "PLTU", "Pair": "PLTW / PLTU", "Sleeve": "B"},
-        {"Date": "2026-06-18", "Action": "PAPER_PARK_IN_SGOV", "Ticker": "SGOV", "Pair": "PLTW / PLTU", "Sleeve": "A", "Paper_Value": "28.0"},
-        {"Date": "2026-06-18", "Action": "PAPER_PARK_IN_SGOV", "Ticker": "SGOV", "Pair": "PLTW / PLTU", "Sleeve": "B", "Paper_Value": "12.0"},
+        {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "PLTU", "Pair": "PLTW / PLTU", "Sleeve": "B", "Paper_Value": "10.00"},
+        {"Date": "2026-06-18", "Action": "PAPER_PARK_IN_SGOV", "Ticker": "SGOV", "Pair": "PLTW / PLTU", "Sleeve": "B", "Paper_Value": "12.00"},
     ]
 
     lifecycle = build_position_lifecycle(rows, [])
-    by_symbol = {item["symbol"]: item for item in lifecycle}
+    record = lifecycle[0]
 
-    assert by_symbol["PLTW"]["lifecycle_status"] == "PARKED_IN_SGOV"
-    assert by_symbol["PLTW"]["last_exit_action"] == "PAPER_PARK_IN_SGOV"
-    assert by_symbol["PLTW"]["last_exit_value"] == 28.0
-    assert by_symbol["PLTU"]["lifecycle_status"] == "PARKED_IN_SGOV"
-    assert by_symbol["PLTU"]["last_exit_value"] == 12.0
-    assert "SGOV" not in by_symbol
+    assert record["symbol"] == "PLTU"
+    assert record["lifecycle_status"] == "PARKED_IN_SGOV"
+    assert record["entry_value"] == 10.0
+    assert record["last_exit_value"] == 12.0
+    assert record["realized_gain_loss"] == 2.0
+
+
+def test_reentry_uses_only_most_recent_completed_cycle_for_entry_value() -> None:
+    rows = [
+        {"Date": "2026-06-01", "Action": "PAPER_BUY_OPEN", "Ticker": "TEST", "Paper_Value": "10.00"},
+        {"Date": "2026-06-10", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "TEST", "Paper_Value": "12.00"},
+        {"Date": "2026-07-01", "Action": "PAPER_BUY_OPEN", "Ticker": "TEST", "Paper_Value": "20.00"},
+        {"Date": "2026-07-05", "Action": "PAPER_BUY", "Ticker": "TEST", "Paper_Value": "5.00"},
+        {"Date": "2026-07-20", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "TEST", "Paper_Value": "27.50"},
+    ]
+
+    lifecycle = build_position_lifecycle(rows, [])
+    record = lifecycle[0]
+
+    assert record["entry_value"] == 25.0
+    assert record["last_exit_value"] == 27.5
+    assert record["realized_gain_loss"] == 2.5
+    assert record["reentry_count"] == 1
 
 
 def test_reentry_is_distinguished_from_first_open_position() -> None:
@@ -65,6 +84,17 @@ def test_reentry_is_distinguished_from_first_open_position() -> None:
     assert record["current_open_date"] == "2026-07-01"
     assert record["last_exit_date"] == "2026-06-10"
     assert record["reentry_count"] == 1
+
+
+def test_missing_transaction_values_do_not_fabricate_gain_loss() -> None:
+    rows = [
+        {"Date": "2026-06-01", "Action": "PAPER_BUY_OPEN", "Ticker": "TEST"},
+        {"Date": "2026-06-10", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "TEST"},
+    ]
+    record = build_position_lifecycle(rows, [])[0]
+    assert record["entry_value"] is None
+    assert record["last_exit_value"] is None
+    assert record["realized_gain_loss"] is None
 
 
 def test_enrichment_never_reintroduces_historical_positions_as_current_holdings() -> None:
