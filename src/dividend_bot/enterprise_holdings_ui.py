@@ -169,20 +169,52 @@ def _analytics_rows(holdings: list[Mapping[str, Any]]) -> str:
     return "".join(rows)
 
 
+def _yield_audit(item: Mapping[str, Any]) -> str:
+    rate = _first_number(item, ("trailing_12m_distribution_rate",))
+    payment_count = _first_number(item, ("trailing_12m_payment_count",))
+    price = _first_number(item, ("yearly_distribution_yield_price",))
+    window_start = _first_value(item, ("trailing_12m_window_start",), default="")
+    window_end = _first_value(item, ("trailing_12m_window_end",), default="")
+    method = _first_value(item, ("yearly_distribution_yield_method",), default="")
+    if rate is None and payment_count is None and price is None and not window_start and not window_end and not method:
+        return "<span class='not-reported'>Not reported</span>"
+    facts: list[str] = []
+    if rate is not None:
+        facts.append(f"T12M distributions: ${rate:,.4f}/share")
+    if payment_count is not None:
+        facts.append(f"Payments: {int(payment_count)}")
+    if price is not None:
+        facts.append(f"Yield price: ${price:,.2f}")
+    if window_start or window_end:
+        facts.append(f"Window: {window_start or '?'} → {window_end or '?'}")
+    if method:
+        friendly = method.replace("_", " ").title()
+        facts.append(f"Method: {friendly}")
+    return (
+        "<details class='yield-audit'><summary>Audit</summary>"
+        + "".join(f"<small>{html.escape(fact)}</small>" for fact in facts)
+        + "</details>"
+    )
+
+
 def _income_rows(holdings: list[Mapping[str, Any]]) -> str:
     rows: list[str] = []
     for item in holdings:
         symbol = html.escape(str(item.get("symbol") or "UNKNOWN"))
-        dividend_yield = _first_number(item, ("dividend_yield_percent", "yield_percent", "distribution_yield_percent"))
+        distribution_yield = _first_number(
+            item,
+            ("yearly_distribution_yield_percent", "dividend_yield_percent", "yield_percent", "distribution_yield_percent"),
+        )
         annual_income = _first_number(item, ("annual_income", "projected_annual_income", "annual_dividend_income"))
         next_ex_date = html.escape(_first_value(item, ("next_ex_dividend_date", "next_ex_date", "ex_dividend_date")))
-        source = html.escape(str(item.get("source") or "Enterprise evidence"))
+        source = html.escape(str(item.get("income_analytics_source") or item.get("source") or "Enterprise evidence"))
         rows.append(
             "<tr>"
             f"<td><strong>{symbol}</strong></td>"
-            f"<td class='num'>{_missing(_percent(dividend_yield))}</td>"
+            f"<td class='num'>{_missing(_percent(distribution_yield))}</td>"
             f"<td class='num'>{_missing(_money(annual_income))}</td>"
             f"<td>{_missing(next_ex_date)}</td>"
+            f"<td>{_yield_audit(item)}</td>"
             "<td><span class='evidence-badge' title='Read-only strategy evidence'>✓ Verified</span>"
             f"<small class='evidence-source'>{source}</small></td>"
             "</tr>"
@@ -277,15 +309,15 @@ def render_holdings_panel(row: Mapping[str, Any]) -> str:
     )
     income = (
         "<section class='holdings-subsection'><div class='subsection-heading'><h4>Income</h4>"
-        "<span>Distribution and income evidence</span></div>"
+        "<span>Observed yearly distribution and income evidence</span></div>"
         "<div class='holdings-table-wrap'><table class='holdings-table holdings-income-table'>"
-        "<thead><tr><th>Symbol</th><th>Yield</th><th>Annual Income</th><th>Next Ex-Date</th><th>Evidence</th></tr></thead>"
+        "<thead><tr><th>Symbol</th><th>Yearly Distribution Yield</th><th>Annual Income</th><th>Next Ex-Date</th><th>Audit</th><th>Evidence</th></tr></thead>"
         f"<tbody>{_income_rows(holdings)}</tbody></table></div></section>"
     )
     return (
         "<section class='holdings-pro'>" + heading +
         f"<div class='holdings-summary-grid'>{summary}</div>{reconciliation}{overview}{analytics}{income}"
-        "<p class='holdings-footnote'>Paper-only positions. Strategy allocation and deployed-portfolio weights are shown separately. Missing analytics remain Not reported until authoritative strategy evidence is published.</p>"
+        "<p class='holdings-footnote'>Paper-only positions. Yearly Distribution Yield uses observed trailing-365-day distributions when available; open Audit to review the rate, payment count, price, window, and calculation method. Missing analytics remain Not reported until authoritative strategy evidence is published.</p>"
         "</section>"
     )
 
@@ -294,6 +326,6 @@ def holdings_ui_css() -> str:
     """Return a complete style block for the Holdings workspace."""
     return """
 <style>
-.holdings-pro{color:#10213b}.holdings-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.holdings-heading h3{margin:0 0 5px;font-size:1.2rem}.holdings-heading p{margin:0;color:#64748b}.holdings-count{background:#eef2ff;color:#5b21b6;border:1px solid #d8ccff;border-radius:999px;padding:7px 11px;font-weight:800;white-space:nowrap}.holdings-summary-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}.holdings-summary-card{display:flex;align-items:flex-start;gap:10px;background:linear-gradient(180deg,#fff,#f8faff);border:1px solid #dbe4f0;border-radius:12px;padding:13px 14px;box-shadow:0 5px 14px rgba(23,43,77,.06)}.summary-icon{display:grid!important;place-items:center;width:30px;height:30px;flex:0 0 30px;border-radius:9px;background:#f0eaff;color:#5b21b6;font-weight:900}.holdings-summary-card span,.holdings-summary-card small{display:block;color:#64748b}.holdings-summary-card strong{display:block;margin-top:5px;font-size:1.15rem;color:#10213b}.holdings-summary-card small{margin-top:3px}.capital-reconciliation{display:flex;align-items:flex-start;gap:12px;margin:0 0 18px;padding:12px 14px;border:1px solid;border-radius:11px}.capital-reconciliation strong{white-space:nowrap}.capital-reconciliation-ok{background:#ecfdf3;border-color:#86d9ad;color:#065f46}.capital-reconciliation-warning{background:#fff7df;border-color:#efc66b;color:#8a4b08}.capital-reconciliation-pending{background:#f8fafc;border-color:#cbd5e1;color:#475569}.holdings-subsection{margin:18px 0}.subsection-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 2px 8px}.subsection-heading h4{margin:0;font-size:1rem}.subsection-heading span{color:#64748b;font-size:.8rem}.holdings-table-wrap{overflow-x:auto;border:1px solid #dbe4f0;border-radius:13px;background:#fff;box-shadow:0 7px 18px rgba(23,43,77,.06)}.holdings-table{width:100%;border-collapse:collapse;table-layout:auto}.holdings-overview-table{min-width:1120px}.holdings-analytics-table{min-width:760px}.holdings-income-table{min-width:650px}.holdings-table th{padding:11px 12px;text-align:left;background:#f4f7fc;color:#53627a;font-size:.72rem;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid #dbe4f0;white-space:nowrap}.holdings-table td{padding:12px;border-bottom:1px solid #edf1f6;vertical-align:middle;white-space:nowrap}.holdings-table tbody tr:last-child td{border-bottom:0}.holdings-table tbody tr:hover{background:#fafbff}.holdings-table td.num{text-align:right;font-variant-numeric:tabular-nums}.holdings-table td.strong{font-weight:800}.holding-symbol{display:inline-block;font-size:.95rem}.symbol-mark{display:inline-block;margin-right:8px;color:#6d3be8}.holding-name{min-width:180px;max-width:220px;white-space:normal!important;line-height:1.3;color:#334155}.sleeve-badge,.holding-status,.evidence-badge,.not-reported{display:inline-block;border-radius:999px;padding:5px 8px;font-size:.75rem;font-weight:800}.sleeve-badge{background:#eef2ff;color:#4f46e5}.holding-status.status-open{background:#e9f9f0;color:#087443}.holding-status.status-parked{background:#edf2f7;color:#475569}.holding-status.status-warning{background:#fff7df;color:#a15c00}.holding-status.status-closed{background:#fff0f0;color:#b42318}.holding-status.status-neutral{background:#f1f5f9;color:#475569}.evidence-badge{background:#ecfdf3;color:#087443}.not-reported{background:#f1f5f9;color:#7a8798;font-weight:700}.metric-positive{color:#087443;font-weight:800}.metric-negative{color:#b42318;font-weight:800}.evidence-source{display:block;margin-top:4px;color:#8a97aa}.holdings-footnote{margin:12px 2px 0;color:#718096;font-size:.8rem}.holdings-empty{padding:24px;border:1px dashed #b9c7db;border-radius:12px;background:#f8fafc;text-align:center;color:#64748b}@media(max-width:1100px){.holdings-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:850px){.holdings-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.capital-reconciliation,.subsection-heading{display:block}.capital-reconciliation strong,.subsection-heading h4{display:block;margin-bottom:5px}}@media(max-width:520px){.holdings-heading{display:block}.holdings-count{display:inline-block;margin-top:10px}.holdings-summary-grid{grid-template-columns:1fr}}
+.holdings-pro{color:#10213b}.holdings-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:16px}.holdings-heading h3{margin:0 0 5px;font-size:1.2rem}.holdings-heading p{margin:0;color:#64748b}.holdings-count{background:#eef2ff;color:#5b21b6;border:1px solid #d8ccff;border-radius:999px;padding:7px 11px;font-weight:800;white-space:nowrap}.holdings-summary-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-bottom:14px}.holdings-summary-card{display:flex;align-items:flex-start;gap:10px;background:linear-gradient(180deg,#fff,#f8faff);border:1px solid #dbe4f0;border-radius:12px;padding:13px 14px;box-shadow:0 5px 14px rgba(23,43,77,.06)}.summary-icon{display:grid!important;place-items:center;width:30px;height:30px;flex:0 0 30px;border-radius:9px;background:#f0eaff;color:#5b21b6;font-weight:900}.holdings-summary-card span,.holdings-summary-card small{display:block;color:#64748b}.holdings-summary-card strong{display:block;margin-top:5px;font-size:1.15rem;color:#10213b}.holdings-summary-card small{margin-top:3px}.capital-reconciliation{display:flex;align-items:flex-start;gap:12px;margin:0 0 18px;padding:12px 14px;border:1px solid;border-radius:11px}.capital-reconciliation strong{white-space:nowrap}.capital-reconciliation-ok{background:#ecfdf3;border-color:#86d9ad;color:#065f46}.capital-reconciliation-warning{background:#fff7df;border-color:#efc66b;color:#8a4b08}.capital-reconciliation-pending{background:#f8fafc;border-color:#cbd5e1;color:#475569}.holdings-subsection{margin:18px 0}.subsection-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;margin:0 2px 8px}.subsection-heading h4{margin:0;font-size:1rem}.subsection-heading span{color:#64748b;font-size:.8rem}.holdings-table-wrap{overflow-x:auto;border:1px solid #dbe4f0;border-radius:13px;background:#fff;box-shadow:0 7px 18px rgba(23,43,77,.06)}.holdings-table{width:100%;border-collapse:collapse;table-layout:auto}.holdings-overview-table{min-width:1120px}.holdings-analytics-table{min-width:760px}.holdings-income-table{min-width:900px}.holdings-table th{padding:11px 12px;text-align:left;background:#f4f7fc;color:#53627a;font-size:.72rem;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid #dbe4f0;white-space:nowrap}.holdings-table td{padding:12px;border-bottom:1px solid #edf1f6;vertical-align:middle;white-space:nowrap}.holdings-table tbody tr:last-child td{border-bottom:0}.holdings-table tbody tr:hover{background:#fafbff}.holdings-table td.num{text-align:right;font-variant-numeric:tabular-nums}.holdings-table td.strong{font-weight:800}.holding-symbol{display:inline-block;font-size:.95rem}.symbol-mark{display:inline-block;margin-right:8px;color:#6d3be8}.holding-name{min-width:180px;max-width:220px;white-space:normal!important;line-height:1.3;color:#334155}.sleeve-badge,.holding-status,.evidence-badge,.not-reported{display:inline-block;border-radius:999px;padding:5px 8px;font-size:.75rem;font-weight:800}.sleeve-badge{background:#eef2ff;color:#4f46e5}.holding-status.status-open{background:#e9f9f0;color:#087443}.holding-status.status-parked{background:#edf2f7;color:#475569}.holding-status.status-warning{background:#fff7df;color:#a15c00}.holding-status.status-closed{background:#fff0f0;color:#b42318}.holding-status.status-neutral{background:#f1f5f9;color:#475569}.evidence-badge{background:#ecfdf3;color:#087443}.not-reported{background:#f1f5f9;color:#7a8798;font-weight:700}.metric-positive{color:#087443;font-weight:800}.metric-negative{color:#b42318;font-weight:800}.evidence-source{display:block;margin-top:4px;color:#8a97aa}.yield-audit{min-width:190px}.yield-audit summary{cursor:pointer;color:#5b21b6;font-weight:800}.yield-audit small{display:block;color:#64748b;white-space:normal;margin-top:4px;line-height:1.25}.holdings-footnote{margin:12px 2px 0;color:#718096;font-size:.8rem}.holdings-empty{padding:24px;border:1px dashed #b9c7db;border-radius:12px;background:#f8fafc;text-align:center;color:#64748b}@media(max-width:1100px){.holdings-summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}@media(max-width:850px){.holdings-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr));}.capital-reconciliation,.subsection-heading{display:block}.capital-reconciliation strong,.subsection-heading h4{display:block;margin-bottom:5px}}@media(max-width:520px){.holdings-heading{display:block}.holdings-count{display:inline-block;margin-top:10px}.holdings-summary-grid{grid-template-columns:1fr}}
 </style>
 """
