@@ -12,6 +12,23 @@ from typing import Any, Mapping
 
 SUPPORTED_FORMATS = {"JSON", "CSV", "JSONL", "MARKDOWN", "HTML"}
 MAX_INLINE_ARTIFACT_BYTES = 10 * 1024 * 1024
+HOST_AGGREGATE_FILENAMES = {
+    "ai_cio_executive_dashboard.json",
+    "enterprise_investor_dashboard.json",
+    "enterprise_registry_strategy_evidence.json",
+}
+HOST_AGGREGATE_ARTIFACT_IDS = {
+    "ai_cio_executive_dashboard",
+    "enterprise_investor_dashboard",
+    "enterprise_registry_strategy_evidence",
+    "registry_strategy_evidence",
+}
+HOST_AGGREGATE_ARTIFACT_TYPES = {
+    "EXECUTIVE_DASHBOARD",
+    "INVESTOR_DASHBOARD",
+    "REGISTRY_STRATEGY_EVIDENCE",
+    "ENTERPRISE_REGISTRY_EVIDENCE",
+}
 
 
 def _text(value: Any) -> str:
@@ -86,14 +103,27 @@ def _read_artifact(path: Path, artifact_format: str) -> Any:
     raise ValueError(f"unsupported artifact format: {artifact_format}")
 
 
-def _metadata_only_reason(*, scope: str, path: Path) -> str | None:
+def _metadata_only_reason(
+    *,
+    scope: str,
+    path: Path,
+    artifact_id: str,
+    artifact_type: str,
+) -> str | None:
     """Return why an artifact must not be inlined into registry evidence.
 
-    Enterprise-scope dashboards are host aggregate outputs. Inlining them into
-    registry evidence creates a recursive cycle when the next dashboard refresh
-    embeds that registry evidence back into the same Enterprise dashboards.
-    Oversized artifacts are also kept metadata-only to bound refresh memory.
+    Host aggregate outputs are detected by semantic identity and filename, not only
+    by the declared scope. This is intentional: a stale or malformed published
+    registry can incorrectly label a host Enterprise dashboard as STRATEGY scope.
+    Those files must still never be parsed/inlined because doing so can recursively
+    embed prior Enterprise dashboards and exhaust memory on the next refresh.
     """
+    if (
+        path.name.lower() in HOST_AGGREGATE_FILENAMES
+        or artifact_id.strip().lower() in HOST_AGGREGATE_ARTIFACT_IDS
+        or artifact_type.strip().upper() in HOST_AGGREGATE_ARTIFACT_TYPES
+    ):
+        return "HOST_AGGREGATE"
     if scope == "ENTERPRISE":
         return "ENTERPRISE_SCOPE"
     try:
@@ -116,10 +146,9 @@ def load_registry_declared_evidence(
     evidence status as ``REQUIRED_EVIDENCE_MISSING`` but do not remove any other
     strategy from the result.
 
-    Host-owned Enterprise-scope aggregate dashboards are intentionally metadata-only
-    and are never inlined. This prevents recursive dashboard -> registry evidence ->
-    dashboard growth across refresh cycles. Large artifacts are also metadata-only
-    to keep refresh memory bounded while preserving their availability/provenance.
+    Host-owned aggregate dashboards are always metadata-only even if a stale
+    registry mislabels their scope. Other Enterprise-scope aggregate dashboards are
+    also metadata-only, and large strategy artifacts are bounded by a size ceiling.
     """
     root = Path(root_dir)
     strategies: list[dict[str, Any]] = []
@@ -173,7 +202,12 @@ def load_registry_declared_evidence(
                 warnings.append(warning)
                 required_failure = required_failure or required
             else:
-                metadata_reason = _metadata_only_reason(scope=scope, path=path)
+                metadata_reason = _metadata_only_reason(
+                    scope=scope,
+                    path=path,
+                    artifact_id=artifact_id,
+                    artifact_type=artifact_type,
+                )
                 if metadata_reason:
                     record["available"] = True
                     record["payload_policy"] = f"METADATA_ONLY_{metadata_reason}"
