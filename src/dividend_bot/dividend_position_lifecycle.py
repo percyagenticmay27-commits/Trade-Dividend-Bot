@@ -17,7 +17,14 @@ BROKER_EXECUTION_ENABLED = False
 
 _BUY_ACTIONS = {"PAPER_BUY_OPEN", "PAPER_BUY", "BUY"}
 _PARK_ACTIONS = {"PAPER_SELL_TO_SGOV", "PAPER_PARK_IN_SGOV", "PARK_IN_SGOV"}
-_CLOSE_ACTIONS = {"PAPER_SELL_CLOSE", "PAPER_SELL", "SELL", "CLOSE"}
+_CLOSE_ACTIONS = {
+    "PAPER_SELL_CLOSE",
+    "PAPER_SELL",
+    "PAPER_FULL_EXIT",
+    "PAPER_CLOSE_POSITION",
+    "SELL",
+    "CLOSE",
+}
 
 
 def _first(row: Mapping[str, Any], *keys: str) -> Any:
@@ -55,6 +62,40 @@ def _sleeve(row: Mapping[str, Any]) -> str | None:
     return text or None
 
 
+def _number(row: Mapping[str, Any], *keys: str) -> float | None:
+    value = _first(row, *keys)
+    try:
+        return float(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _pair_symbols(pair: str | None) -> list[str]:
+    if not pair:
+        return []
+    normalized = pair.replace("|", "/").replace("-", "/")
+    return [part.strip().upper() for part in normalized.split("/") if part.strip()]
+
+
+def _parked_symbol(row: Mapping[str, Any], action: str, symbol: str) -> str:
+    """Resolve the strategy symbol represented by a SGOV parking ledger row.
+
+    Legacy signal-aware initialization writes ``Ticker=SGOV`` for
+    ``PAPER_PARK_IN_SGOV`` and identifies the source position only through Pair and
+    Sleeve. For lifecycle reporting that row belongs to the source position, not
+    to the reserve ETF itself.
+    """
+    if action not in _PARK_ACTIONS or symbol != "SGOV":
+        return symbol
+    pair_symbols = _pair_symbols(_pair(row))
+    sleeve = _sleeve(row)
+    if sleeve == "A" and pair_symbols:
+        return pair_symbols[0]
+    if sleeve == "B" and len(pair_symbols) > 1:
+        return pair_symbols[1]
+    return symbol
+
+
 def build_position_lifecycle(
     log_rows: Iterable[Mapping[str, Any]],
     current_holdings: Iterable[Mapping[str, Any]],
@@ -69,8 +110,8 @@ def build_position_lifecycle(
     for row in log_rows:
         if not isinstance(row, Mapping):
             continue
-        symbol = _symbol(row)
         action = _action(row)
+        symbol = _parked_symbol(row, action, _symbol(row))
         if not symbol or symbol == "SGOV" or not action:
             continue
         events[symbol].append({
@@ -78,6 +119,9 @@ def build_position_lifecycle(
             "action": action,
             "pair": _pair(row),
             "sleeve": _sleeve(row),
+            "shares": _number(row, "Shares", "shares", "Quantity", "quantity"),
+            "price": _number(row, "Price", "price", "Trade_Price", "trade_price"),
+            "paper_value": _number(row, "Paper_Value", "paper_value", "Value", "value"),
         })
 
     current: dict[str, Mapping[str, Any]] = {}
@@ -138,6 +182,7 @@ def build_position_lifecycle(
             "current_open_date": current_open_date,
             "last_exit_date": latest_exit.get("date") if latest_exit else None,
             "last_exit_action": latest_exit.get("action") if latest_exit else None,
+            "last_exit_value": latest_exit.get("paper_value") if latest_exit else None,
             "pair": (current.get(symbol) or {}).get("pair") or (symbol_events[-1].get("pair") if symbol_events else None),
             "sleeve": (current.get(symbol) or {}).get("sleeve") or (symbol_events[-1].get("sleeve") if symbol_events else None),
             "reentry_count": reentry_count,
@@ -154,6 +199,7 @@ def build_position_lifecycle(
             "current_open_date": None,
             "last_exit_date": None,
             "last_exit_action": None,
+            "last_exit_value": None,
             "pair": "CASH RESERVE",
             "sleeve": "RESERVE",
             "reentry_count": 0,
