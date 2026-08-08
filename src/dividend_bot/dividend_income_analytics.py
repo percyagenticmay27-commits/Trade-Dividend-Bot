@@ -9,9 +9,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Mapping, Sequence
 
-
 RESERVE_SYMBOLS = {"SGOV"}
-YEARLY_DISTRIBUTION_YIELD_METHOD = "TRAILING_365D_DISTRIBUTIONS_DIVIDED_BY_CURRENT_PRICE"
+YEARLY_DISTRIBUTION_YIELD_METHOD = "TRAILING_365D_DISTRIBUTIONS_DIVIDED_BY_CURRENT_HOLDING_PRICE"
 ANNUAL_INCOME_METHOD = "TRAILING_365D_DISTRIBUTIONS_PER_SHARE_TIMES_CURRENT_SHARES"
 
 
@@ -45,12 +44,7 @@ def _find_record(payload: Any, symbol: str) -> Mapping[str, Any] | None:
         direct = payload.get(symbol)
         if isinstance(direct, Mapping):
             return direct
-        own_symbol = str(
-            payload.get("symbol")
-            or payload.get("ticker")
-            or payload.get("candidate_id")
-            or ""
-        ).strip().upper()
+        own_symbol = str(payload.get("symbol") or payload.get("ticker") or payload.get("candidate_id") or "").strip().upper()
         if own_symbol == symbol:
             return payload
         for value in payload.values():
@@ -90,13 +84,7 @@ def _history_anchor(record: Mapping[str, Any]) -> datetime:
     history = _nested_mapping(record, "history")
     rows = history.get("rows")
     if isinstance(rows, list):
-        dated = [
-            parsed
-            for item in rows
-            if isinstance(item, Mapping)
-            for parsed in [_parse_date(item.get("date"))]
-            if parsed is not None
-        ]
+        dated = [parsed for item in rows if isinstance(item, Mapping) for parsed in [_parse_date(item.get("date"))] if parsed is not None]
         if dated:
             return max(dated)
     return datetime.now(timezone.utc)
@@ -119,14 +107,9 @@ def _observed_dividend_payments(record: Mapping[str, Any]) -> list[tuple[datetim
 
 
 def _trailing_12m_distribution_audit(record: Mapping[str, Any]) -> dict[str, Any]:
-    """Return the auditable observed-distribution inputs for the trailing 365 days."""
     anchor = _history_anchor(record)
     start = anchor - timedelta(days=365)
-    observed = [
-        (date, amount)
-        for date, amount in _observed_dividend_payments(record)
-        if start < date <= anchor
-    ]
+    observed = [(date, amount) for date, amount in _observed_dividend_payments(record) if start < date <= anchor]
     rate = round(sum(amount for _, amount in observed), 6) if observed else None
     return {
         "trailing_12m_distribution_rate": rate,
@@ -136,11 +119,6 @@ def _trailing_12m_distribution_audit(record: Mapping[str, Any]) -> dict[str, Any
         "trailing_12m_first_payment_date": min((date for date, _ in observed), default=None),
         "trailing_12m_last_payment_date": max((date for date, _ in observed), default=None),
     }
-
-
-def _trailing_12m_distribution_rate(record: Mapping[str, Any]) -> tuple[float | None, int]:
-    audit = _trailing_12m_distribution_audit(record)
-    return audit["trailing_12m_distribution_rate"], audit["trailing_12m_payment_count"]
 
 
 def _observed_frequency(payment_count: int) -> str | None:
@@ -158,21 +136,13 @@ def _observed_frequency(payment_count: int) -> str | None:
 
 
 def _explicit_yield_percent(record: Mapping[str, Any]) -> float | None:
-    """Read only fields whose names explicitly declare percent semantics."""
-    return _first_number(
-        record,
-        (
-            "yearly_distribution_yield_percent",
-            "dividend_yield_percent",
-            "yield_percent",
-            "distribution_yield_percent",
-            "trailing_yield_percent",
-            "forward_yield_percent",
-        ),
-    )
+    return _first_number(record, (
+        "yearly_distribution_yield_percent", "dividend_yield_percent", "yield_percent",
+        "distribution_yield_percent", "trailing_yield_percent", "forward_yield_percent",
+    ))
 
 
-def _yield_price(record: Mapping[str, Any]) -> float | None:
+def _record_price(record: Mapping[str, Any]) -> float | None:
     price = _first_number(record, ("price", "market_price", "current_price"))
     if price is not None and price > 0:
         return price
@@ -181,40 +151,32 @@ def _yield_price(record: Mapping[str, Any]) -> float | None:
     return price if price is not None and price > 0 else None
 
 
-def _derived_yield_percent(record: Mapping[str, Any], trailing_rate: float | None) -> float | None:
-    if trailing_rate is None:
-        return None
-    price = _yield_price(record)
-    if price is None:
+def _yield_price(holding: Mapping[str, Any], record: Mapping[str, Any]) -> tuple[float | None, str | None]:
+    """Prefer the same current holding price displayed on the dashboard.
+
+    This removes the prior ambiguity where yield could use a stale snapshot quote
+    while the Holdings table displayed a newer paper-state price.
+    """
+    holding_price = _number(holding.get("price"))
+    if holding_price is not None and holding_price > 0:
+        return holding_price, "HOLDING_CURRENT_PRICE"
+    record_price = _record_price(record)
+    if record_price is not None:
+        return record_price, "MARKET_SNAPSHOT_PRICE_FALLBACK"
+    return None, None
+
+
+def _derived_yield_percent(trailing_rate: float | None, price: float | None) -> float | None:
+    if trailing_rate is None or price is None or price <= 0:
         return None
     return round((trailing_rate / price) * 100.0, 4)
 
 
-def _annual_income(
-    record: Mapping[str, Any],
-    shares: float | None,
-    trailing_rate: float | None,
-) -> tuple[float | None, str | None]:
-    explicit = _first_number(
-        record,
-        (
-            "annual_income",
-            "projected_annual_income",
-            "annual_dividend_income",
-        ),
-    )
+def _annual_income(record: Mapping[str, Any], shares: float | None, trailing_rate: float | None) -> tuple[float | None, str | None]:
+    explicit = _first_number(record, ("annual_income", "projected_annual_income", "annual_dividend_income"))
     if explicit is not None:
         return explicit, "EXPLICIT_ANNUAL_INCOME"
-
-    annual_rate = _first_number(
-        record,
-        (
-            "annual_dividend_rate",
-            "dividend_rate_per_share",
-            "annual_distribution_rate",
-            "trailing_annual_dividend_rate",
-        ),
-    )
+    annual_rate = _first_number(record, ("annual_dividend_rate", "dividend_rate_per_share", "annual_distribution_rate", "trailing_annual_dividend_rate"))
     method = "EXPLICIT_ANNUAL_DISTRIBUTION_RATE_TIMES_CURRENT_SHARES"
     if annual_rate is None:
         annual_rate = trailing_rate
@@ -225,31 +187,19 @@ def _annual_income(
 
 
 def _security_name(record: Mapping[str, Any]) -> str | None:
-    name = _first_text(
-        record,
-        ("name", "security_name", "display_name", "instrument_name", "short_name", "long_name", "shortName", "longName"),
-    )
+    name = _first_text(record, ("name", "security_name", "display_name", "instrument_name", "short_name", "long_name", "shortName", "longName"))
     if name:
         return name
     quote = _nested_mapping(record, "quote")
-    return _first_text(
-        quote,
-        ("name", "security_name", "display_name", "instrument_name", "short_name", "long_name", "shortName", "longName"),
-    )
+    return _first_text(quote, ("name", "security_name", "display_name", "instrument_name", "short_name", "long_name", "shortName", "longName"))
 
 
 def _next_ex_date(record: Mapping[str, Any]) -> str | None:
-    value = _first_text(
-        record,
-        ("next_ex_dividend_date", "next_ex_date", "ex_dividend_date", "ex_date"),
-    )
+    value = _first_text(record, ("next_ex_dividend_date", "next_ex_date", "ex_dividend_date", "ex_date"))
     if value:
         return value
     quote = _nested_mapping(record, "quote")
-    return _first_text(
-        quote,
-        ("next_ex_dividend_date", "next_ex_date", "ex_dividend_date", "ex_date"),
-    )
+    return _first_text(quote, ("next_ex_dividend_date", "next_ex_date", "ex_dividend_date", "ex_date"))
 
 
 def enrich_holdings_with_income_analytics(
@@ -257,13 +207,6 @@ def enrich_holdings_with_income_analytics(
     market_snapshot: Any = None,
     income_snapshot: Any = None,
 ) -> list[dict[str, Any]]:
-    """Return enriched holding copies with authoritative income metrics only.
-
-    Observed trailing-12-month distribution history is preferred for the UI's
-    Yearly Distribution Yield and annual-income calculations because it has
-    unambiguous dollar-per-share semantics. Audit inputs are published alongside
-    every history-derived metric so the displayed percentage can be reproduced.
-    """
     enriched: list[dict[str, Any]] = []
     for raw in holdings:
         item = dict(raw)
@@ -293,9 +236,9 @@ def enrich_holdings_with_income_analytics(
                 audit = _trailing_12m_distribution_audit(record)
                 trailing_rate = audit["trailing_12m_distribution_rate"]
                 payment_count = int(audit["trailing_12m_payment_count"] or 0)
-                price = _yield_price(record)
+                price, price_source = _yield_price(item, record)
 
-                yield_percent = _derived_yield_percent(record, trailing_rate)
+                yield_percent = _derived_yield_percent(trailing_rate, price)
                 yield_source = None
                 yield_method = None
                 if yield_percent is not None:
@@ -307,8 +250,6 @@ def enrich_holdings_with_income_analytics(
                         yield_source = "EXPLICIT_PERCENT_FIELD"
                         yield_method = "EXPLICIT_PERCENT_FIELD"
                 if yield_percent is not None:
-                    # Keep the legacy semantic field for existing Enterprise consumers,
-                    # and publish the clearer UI/audit name requested for this strategy.
                     item["dividend_yield_percent"] = round(yield_percent, 4)
                     item["yearly_distribution_yield_percent"] = round(yield_percent, 4)
 
@@ -321,25 +262,13 @@ def enrich_holdings_with_income_analytics(
                 if next_ex_date:
                     item["next_ex_dividend_date"] = next_ex_date
 
-                payment_frequency = _first_text(
-                    record,
-                    ("payment_frequency", "dividend_frequency", "distribution_frequency"),
-                )
+                payment_frequency = _first_text(record, ("payment_frequency", "dividend_frequency", "distribution_frequency"))
                 if not payment_frequency:
                     payment_frequency = _observed_frequency(payment_count)
                 if payment_frequency:
                     item["payment_frequency"] = payment_frequency
 
-                if any(
-                    key in item
-                    for key in (
-                        "dividend_yield_percent",
-                        "yearly_distribution_yield_percent",
-                        "annual_income",
-                        "next_ex_dividend_date",
-                        "payment_frequency",
-                    )
-                ):
+                if any(key in item for key in ("dividend_yield_percent", "yearly_distribution_yield_percent", "annual_income", "next_ex_dividend_date", "payment_frequency")):
                     item["income_analytics_source"] = source
 
                 if trailing_rate is not None:
@@ -355,6 +284,8 @@ def enrich_holdings_with_income_analytics(
                         item["trailing_12m_last_payment_date"] = last_date.date().isoformat()
                 if price is not None:
                     item["yearly_distribution_yield_price"] = round(price, 6)
+                    item["yearly_distribution_yield_price_source"] = price_source
+                    item["yearly_distribution_yield_price_as_of"] = audit["trailing_12m_window_end"]
                 if shares is not None:
                     item["annual_income_share_count"] = round(shares, 10)
                 if yield_source:
@@ -369,10 +300,5 @@ def enrich_holdings_with_income_analytics(
 
 
 def total_projected_annual_income(holdings: Sequence[Mapping[str, Any]]) -> float | None:
-    reported = [
-        value
-        for item in holdings
-        for value in [_number(item.get("annual_income"))]
-        if value is not None
-    ]
+    reported = [value for item in holdings for value in [_number(item.get("annual_income"))] if value is not None]
     return round(sum(reported), 2) if reported else None
