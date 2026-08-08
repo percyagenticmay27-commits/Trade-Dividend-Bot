@@ -33,14 +33,13 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
     """Generate Dividend intelligence evidence and canonical Enterprise KPI evidence.
 
     Execution order matters:
-    1. Run the approved Dividend intelligence stages and refresh the shared read-only
-       market snapshot.
-    2. Replace the legacy deterministic momentum placeholder with per-symbol momentum
-       derived from that same snapshot.
-    3. Rebuild Dividend Ranking so Opportunity Quality consumes the real momentum.
-    4. Build candidate discovery after the refreshed ranking exists.
-    5. Reconstruct realized DIVIDEND-001 paper performance from paper_trade_log.csv.
-    6. Publish canonical DIVIDEND-001 KPI evidence for Enterprise dashboards.
+    1. Run the approved Dividend intelligence stages and refresh market evidence.
+    2. Rebuild per-symbol momentum from that same market snapshot.
+    3. Rebuild Dividend Ranking so monitoring decisions use current evidence.
+    4. Build the explicit Dividend strategy watchlist from ranked, non-held candidates.
+    5. Build candidate discovery so WATCHLIST is visible as an authoritative source.
+    6. Reconstruct realized DIVIDEND-001 paper performance.
+    7. Publish canonical DIVIDEND-001 KPI evidence for Enterprise dashboards.
 
     The routine is reporting-only. Existing paper state and allocations are not
     modified by this bridge.
@@ -48,6 +47,7 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
     from run_daily_dividend_cycle import run_daily_dividend_cycle
     from candidate_discovery_engine import write_candidate_discovery
     from dividend_ranking_engine import build_dividend_ranking_report
+    from dividend_watchlist_engine import write_dividend_watchlist
     from src.dividend_bot.market_momentum_evidence import write_market_momentum_report
     from src.dividend_bot.dividend_paper_trade_performance import (
         write_dividend_paper_trade_performance,
@@ -71,6 +71,7 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
         encoding="utf-8",
     )
 
+    watchlist = write_dividend_watchlist(root_path=root)
     candidate = write_candidate_discovery(root_path=str(root))
     performance_path = write_dividend_paper_trade_performance(
         root_dir=root,
@@ -83,14 +84,15 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
         "status": "COMPLETE" if not cycle.get("errors") else "PARTIAL",
         "daily_dividend_cycle_status": cycle.get("run_status"),
         "candidate_count": int(candidate.get("candidate_count", 0) or 0),
-        "watchlist_count": int(candidate.get("watchlist_count", 0) or 0),
+        "watchlist_count": int(watchlist.get("watchlist_count", 0) or 0),
+        "watchlist_evidence_path": str(root / "watchlist_report.json"),
         "momentum_symbol_count": len(momentum_entries) if isinstance(momentum_entries, list) else 0,
         "ranking_count": int(ranking.get("ranking_count", 0) or 0),
         "momentum_evidence_path": str(momentum_path),
         "performance_evidence_path": str(performance_path),
         "kpi_evidence_path": str(evidence_path),
-        "errors": list(cycle.get("errors", [])),
-        "warnings": list(cycle.get("warnings", [])),
+        "errors": list(cycle.get("errors", [])) + list(watchlist.get("errors", [])),
+        "warnings": list(cycle.get("warnings", [])) + list(watchlist.get("warnings", [])),
         "paper_trade_mode": True,
         "live_trading_enabled": False,
         "broker_execution_enabled": False,
