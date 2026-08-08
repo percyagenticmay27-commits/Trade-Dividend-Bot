@@ -27,6 +27,7 @@ For each strategy-owned symbol, publish when authoritative evidence exists:
 - `current_open_date`
 - `last_exit_date`
 - `last_exit_action`
+- `last_exit_value` when the strategy ledger publishes an authoritative exit or parked value
 - `pair` or strategy grouping when applicable
 - `sleeve` when applicable
 - `reentry_count`
@@ -45,6 +46,36 @@ Current holding rows may additionally carry:
 - `lifecycle_evidence_source`
 
 Historical lifecycle rows are reporting evidence only and must not increase current position count, portfolio market value, or deployed capital.
+
+## Position / Sales History presentation contract
+
+The Enterprise Performance workspace now supports a separate `Position / Sales History` presentation sourced from lifecycle evidence. Swing can participate by publishing the normalized lifecycle fields above through its own authoritative artifacts.
+
+The history view is separate from:
+
+- current holdings;
+- dividend/distribution history;
+- realized income accounting;
+- watchlist candidates.
+
+Recommended presentation columns are:
+
+- Symbol
+- Strategy grouping/pair when applicable
+- Sleeve when applicable
+- Lifecycle Status
+- Purchase Date
+- Exit Date
+- Exit Action
+- Exit/Parked Value when authoritative
+- Re-entry Count
+- Evidence Source
+
+Swing must not publish a Dividend-specific `PARKED_IN_SGOV` state unless Swing actually uses SGOV as its reserve mechanism. If Swing uses another cash or reserve mechanism, preserve the native lifecycle meaning and map it to the Enterprise reporting contract without changing Swing calculations.
+
+## Legacy parking-row compatibility
+
+The Dividend implementation encountered legacy paper-ledger rows where a reserve transfer row used `Ticker=SGOV` while the original position identity was represented by `Pair` plus `Sleeve`. The Dividend host normalizes those rows back to the source position for historical reporting. Swing should only implement an equivalent normalization if its own historical artifacts have an analogous representation.
 
 ## Swing implementation guidance
 
