@@ -11,7 +11,7 @@ import re
 from typing import Any, Mapping
 
 from . import enterprise_portal_strategy_ui as _base
-from .enterprise_holdings_purchase_date_ui import render_holdings_panel
+from .enterprise_holdings_purchase_date_ui import holdings_ui_css, render_holdings_panel
 from .enterprise_income_ui import income_ui_css, render_income_panel
 
 render_left_navigation = _base.render_left_navigation
@@ -45,4 +45,4 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
 
 
 def strategy_ui_css() -> str:
-    return _base.strategy_ui_css() + income_ui_css()
+    return _base.strategy_ui_css() + holdings_ui_css() + income_ui_css()
