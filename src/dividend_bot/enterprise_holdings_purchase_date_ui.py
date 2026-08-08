@@ -7,11 +7,13 @@ from typing import Any, Mapping, Sequence
 
 from .enterprise_holdings_ui import holdings_ui_css, render_holdings_panel as _render_base
 
+_MISSING_DATE_HTML = "<span class='not-reported'>Not reported</span>"
+
 
 def _purchase_date(item: Mapping[str, Any]) -> str:
     value = item.get("purchase_date")
     if value in (None, ""):
-        return "<span class='not-reported'>Not reported</span>"
+        return _MISSING_DATE_HTML
     return html.escape(str(value))
 
 
@@ -53,7 +55,8 @@ def render_holdings_panel(row: Mapping[str, Any]) -> str:
 
     def add_date(match: re.Match[str]) -> str:
         symbol = html.unescape(match.group(1)).strip().upper()
-        return match.group(0) + f"<td>{dates.get(symbol, '<span class=\'not-reported\'>Not reported</span>')}</td>"
+        purchase_date = dates.get(symbol, _MISSING_DATE_HTML)
+        return match.group(0) + f"<td>{purchase_date}</td>"
 
     table = row_pattern.sub(add_date, table)
     return output[:start] + table + output[end:]
