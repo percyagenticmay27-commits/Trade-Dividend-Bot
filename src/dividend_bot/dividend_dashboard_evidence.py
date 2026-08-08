@@ -20,6 +20,10 @@ from .dividend_position_analytics import (
     enrich_holdings_with_position_analytics,
     total_unrealized_pnl,
 )
+from .dividend_position_lifecycle import (
+    build_position_lifecycle,
+    enrich_current_holdings_with_lifecycle,
+)
 from .dividend_realized_income import build_realized_income_evidence
 
 STRATEGY_ID = "DIVIDEND-001"
@@ -187,6 +191,11 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     holdings, portfolio_value, state_income = _holdings_from_state(state)
     holdings = enrich_holdings_with_position_analytics(holdings, log_rows, market_snapshot)
     holdings = enrich_holdings_with_income_analytics(holdings, market_snapshot=market_snapshot, income_snapshot=income_snapshot)
+    position_lifecycle = build_position_lifecycle(log_rows, holdings)
+    holdings = enrich_current_holdings_with_lifecycle(holdings, position_lifecycle)
+    active_holdings = [dict(item) for item in holdings if str(item.get("sleeve") or "").upper() != "RESERVE" and str(item.get("symbol") or "").upper() != "SGOV"]
+    reserve_holdings = [dict(item) for item in holdings if str(item.get("sleeve") or "").upper() == "RESERVE" or str(item.get("symbol") or "").upper() == "SGOV"]
+    historical_positions = [dict(item) for item in position_lifecycle if not bool(item.get("is_current_holding"))]
     watchlist = _watchlist_from_report(watchlist_payload) or _watchlist_from_candidates(candidate_payload)
     realized_income = build_realized_income_evidence(log_rows)
     income_events = realized_income["income_events"]
@@ -209,8 +218,15 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "strategy_id": STRATEGY_ID,
         "portfolio_value": portfolio_value if holdings else None,
         "position_count": len(holdings),
+        "active_position_count": len(active_holdings),
+        "reserve_position_count": len(reserve_holdings),
+        "historical_position_count": len(historical_positions),
         "holdings": holdings,
         "positions": holdings,
+        "active_holdings": active_holdings,
+        "reserve_holdings": reserve_holdings,
+        "position_lifecycle": position_lifecycle,
+        "historical_positions": historical_positions,
         "watchlist_count": len(watchlist),
         "watchlist": watchlist,
         "income": realized_income["net_income_received"],
@@ -239,6 +255,8 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
             "win_rate_percent": performance.get("win_rate_percent"),
             "closed_trades": list(performance.get("closed_trades", [])) if isinstance(performance.get("closed_trades"), list) else [],
             "open_trades": list(performance.get("open_trades", [])) if isinstance(performance.get("open_trades"), list) else [],
+            "position_lifecycle": position_lifecycle,
+            "historical_positions": historical_positions,
         },
         "evidence_sources": evidence_sources,
         "paper_trade_mode": True,
