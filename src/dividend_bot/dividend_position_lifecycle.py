@@ -143,6 +143,33 @@ def _completed_cycle_entry_value(
     return round(sum(values), 2) if values else None
 
 
+def _reentry_count(symbol_events: list[dict[str, Any]]) -> int:
+    """Count completed exit-to-new-position transitions, not scale-in buys.
+
+    A re-entry is the first buy that opens a new cycle after a prior full exit. Any
+    additional PAPER_BUY activity while that cycle is already open is a scale-in and
+    must not increment the re-entry count.
+    """
+    has_ever_opened = False
+    position_open = False
+    count = 0
+
+    for event in symbol_events:
+        action = event.get("action")
+        if action in _BUY_ACTIONS:
+            if not position_open:
+                if has_ever_opened:
+                    count += 1
+                has_ever_opened = True
+                position_open = True
+            continue
+        if action in (_PARK_ACTIONS | _CLOSE_ACTIONS):
+            if position_open:
+                position_open = False
+
+    return count
+
+
 def build_position_lifecycle(
     log_rows: Iterable[Mapping[str, Any]],
     current_holdings: Iterable[Mapping[str, Any]],
@@ -201,14 +228,7 @@ def build_position_lifecycle(
         latest_buy = buy_events[-1] if buy_events else None
         latest_exit = exit_events[-1] if exit_events else None
         is_current = symbol in current
-
-        reentry_count = 0
-        for buy in buy_events:
-            if any(
-                exit_event.get("date") and buy.get("date") and exit_event["date"] < buy["date"]
-                for exit_event in exit_events
-            ):
-                reentry_count += 1
+        reentry_count = _reentry_count(symbol_events)
 
         if is_current:
             latest_exit_date = latest_exit.get("date") if latest_exit else None
