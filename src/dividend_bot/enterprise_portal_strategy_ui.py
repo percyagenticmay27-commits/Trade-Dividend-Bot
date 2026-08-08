@@ -6,6 +6,7 @@ from typing import Any, Mapping
 from urllib.parse import quote
 
 from .enterprise_holdings_ui import holdings_ui_css, render_holdings_panel
+from .enterprise_watchlist_ui import render_watchlist_panel, watchlist_ui_css
 from .strategy_decision_journal_renderer import render_strategy_decision_journal
 
 
@@ -234,14 +235,7 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
                 ("Unrealized Gain", _money(row.get("unrealized_gain"))),
             ))
         )
-        watchlist_body = (
-            "<h3>Watchlist</h3>"
-            + _metric_table((("Watchlist Count", _value(row.get("watchlist_count"))),))
-            + _list_rows(
-                row.get("watchlist"),
-                empty="No strategy-owned watchlist detail is currently reported.",
-            )
-        )
+        watchlist_body = render_watchlist_panel(row)
         holdings_body = render_holdings_panel(row)
         income_body = (
             "<h3>Income</h3>"
@@ -418,4 +412,4 @@ def strategy_ui_css() -> str:
 .empty-state{padding:18px;border:1px dashed #b8c5d9;border-radius:10px;background:#f8fafc;color:#64748b;text-align:center}
 @media(max-width:700px){.data-availability{display:block}.data-availability strong{margin-bottom:6px}.portal-frame{padding:10px}}
 </style>"""
-    return base_css + holdings_ui_css()
+    return base_css + holdings_ui_css() + watchlist_ui_css()
