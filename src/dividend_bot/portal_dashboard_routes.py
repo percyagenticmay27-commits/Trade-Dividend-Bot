@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from .enterprise_portal_strategy_ui import render_left_navigation, render_strategy_workspace, strategy_ui_css
+from .enterprise_portal_strategy_ui_v2 import render_left_navigation, render_strategy_workspace, strategy_ui_css
 
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
