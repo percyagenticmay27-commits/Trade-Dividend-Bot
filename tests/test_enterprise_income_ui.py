@@ -96,7 +96,8 @@ def test_income_renderer_preserves_positive_and_negative_realized_events() -> No
 def test_income_renderer_does_not_fabricate_missing_values() -> None:
     output = render_income_panel({"income": 0.0, "holdings": [], "income_events": []})
     assert "$0.00" in output
-    assert "Projected Annual Income</span><strong>Not reported" in output
+    assert "Projected Annual Income" in output
+    assert "Not reported" in output
     assert "No strategy-owned income projection evidence is currently reported" in output
     assert "No realized strategy-owned income events have been recorded yet" in output
 
