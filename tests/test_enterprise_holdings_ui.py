@@ -84,7 +84,7 @@ def test_holdings_renderer_uses_professional_position_columns():
     for heading in (
         "Symbol", "Name", "Status", "Shares", "Market Price", "Market Value",
         "Cost Basis", "Avg Cost", "Unrealized P&amp;L", "Total Return",
-        "Daily Change", "Yield", "Annual Income", "Next Ex-Date", "Evidence",
+        "Daily Change", "Yearly Distribution Yield", "Annual Income", "Next Ex-Date", "Audit", "Evidence",
     ):
         assert heading in page
     assert "Avantis U.S. Large Cap Value ETF" in page
@@ -109,9 +109,16 @@ def test_holdings_renderer_displays_authoritative_optional_position_analytics():
             "unrealized_pnl": 0.62,
             "total_return_percent": 2.10,
             "daily_change_percent": 0.45,
-            "dividend_yield_percent": 4.25,
-            "annual_income": 1.53,
+            "yearly_distribution_yield_percent": 63.08,
+            "annual_income": 23.14,
             "next_ex_dividend_date": "2026-09-15",
+            "trailing_12m_distribution_rate": 27.0712,
+            "trailing_12m_payment_count": 52,
+            "trailing_12m_window_start": "2025-08-07",
+            "trailing_12m_window_end": "2026-08-07",
+            "yearly_distribution_yield_price": 42.92,
+            "yearly_distribution_yield_method": "TRAILING_365D_DISTRIBUTIONS_DIVIDED_BY_CURRENT_PRICE",
+            "income_analytics_source": "market_data_snapshot.json",
         }
     )
     page = render_holdings_panel(row)
@@ -120,9 +127,15 @@ def test_holdings_renderer_displays_authoritative_optional_position_analytics():
     assert "$0.62" in page
     assert "2.10%" in page
     assert "0.45%" in page
-    assert "4.25%" in page
-    assert "$1.53" in page
+    assert "63.08%" in page
+    assert "$23.14" in page
     assert "2026-09-15" in page
+    assert "T12M distributions: $27.0712/share" in page
+    assert "Payments: 52" in page
+    assert "Yield price: $42.92" in page
+    assert "Window: 2025-08-07 → 2026-08-07" in page
+    assert "Trailing 365D Distributions Divided By Current Price" in page
+    assert "market_data_snapshot.json" in page
     assert "metric-positive" in page
 
 
@@ -162,6 +175,7 @@ def test_holdings_css_is_self_contained_and_responsive():
     assert ".holdings-overview-table" in css
     assert ".holdings-analytics-table" in css
     assert ".holdings-income-table" in css
+    assert ".yield-audit" in css
     assert ".not-reported" in css
     assert ".metric-positive" in css
     assert ".metric-negative" in css
