@@ -1,4 +1,8 @@
-from src.dividend_bot.dividend_income_analytics import enrich_holdings_with_income_analytics
+from src.dividend_bot.dividend_income_analytics import (
+    ANNUAL_INCOME_METHOD,
+    YEARLY_DISTRIBUTION_YIELD_METHOD,
+    enrich_holdings_with_income_analytics,
+)
 
 
 def test_trailing_payment_history_drives_yield_and_income_without_ambiguous_provider_yield():
@@ -31,8 +35,17 @@ def test_trailing_payment_history_drives_yield_and_income_without_ambiguous_prov
 
     assert row["trailing_12m_distribution_rate"] == 2.0
     assert row["trailing_12m_payment_count"] == 4
+    assert row["trailing_12m_window_start"] == "2025-08-07"
+    assert row["trailing_12m_window_end"] == "2026-08-07"
+    assert row["trailing_12m_first_payment_date"] == "2025-08-15"
+    assert row["trailing_12m_last_payment_date"] == "2026-05-01"
     assert row["dividend_yield_percent"] == 4.0
+    assert row["yearly_distribution_yield_percent"] == 4.0
+    assert row["yearly_distribution_yield_price"] == 50.0
+    assert row["yearly_distribution_yield_method"] == YEARLY_DISTRIBUTION_YIELD_METHOD
     assert row["annual_income"] == 4.0
+    assert row["annual_income_share_count"] == 2.0
+    assert row["annual_income_method"] == ANNUAL_INCOME_METHOD
     assert row["payment_frequency"] == "QUARTERLY_OBSERVED"
     assert row["dividend_yield_source"] == "TRAILING_12M_PAYMENT_HISTORY"
 
