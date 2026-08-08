@@ -5,6 +5,7 @@ from pathlib import Path
 
 import candidate_discovery_engine
 import dividend_ranking_engine
+import dividend_watchlist_engine
 import run_daily_dividend_cycle
 from src.dividend_bot import dividend_paper_trade_performance
 from src.dividend_bot import dividend_strategy_kpi_evidence
@@ -14,7 +15,7 @@ from src.dividend_bot.dividend_daily_evidence_refresh import (
 )
 
 
-def test_refresh_runs_intelligence_momentum_ranking_candidate_performance_and_kpi_evidence(monkeypatch, tmp_path: Path) -> None:
+def test_refresh_runs_intelligence_momentum_ranking_watchlist_candidate_performance_and_kpi_evidence(monkeypatch, tmp_path: Path) -> None:
     calls: list[str] = []
     (tmp_path / "market_data_snapshot.json").write_text(json.dumps({"records": []}), encoding="utf-8")
 
@@ -32,6 +33,10 @@ def test_refresh_runs_intelligence_momentum_ranking_candidate_performance_and_kp
         calls.append(f"ranking:{root_path}")
         return {"ranking_count": 1, "rankings": [{"symbol": "AAA", "overall_score": 70.0}]}
 
+    def fake_watchlist(*, root_path: str | Path):
+        calls.append(f"watchlist:{root_path}")
+        return {"watchlist_count": 3, "warnings": [], "errors": []}
+
     def fake_candidate(*, root_path: str):
         calls.append(f"candidate:{root_path}")
         return {"candidate_count": 8, "watchlist_count": 3}
@@ -47,6 +52,7 @@ def test_refresh_runs_intelligence_momentum_ranking_candidate_performance_and_kp
     monkeypatch.setattr(run_daily_dividend_cycle, "run_daily_dividend_cycle", fake_cycle)
     monkeypatch.setattr(market_momentum_evidence, "write_market_momentum_report", fake_momentum)
     monkeypatch.setattr(dividend_ranking_engine, "build_dividend_ranking_report", fake_ranking)
+    monkeypatch.setattr(dividend_watchlist_engine, "write_dividend_watchlist", fake_watchlist)
     monkeypatch.setattr(candidate_discovery_engine, "write_candidate_discovery", fake_candidate)
     monkeypatch.setattr(dividend_paper_trade_performance, "write_dividend_paper_trade_performance", fake_performance)
     monkeypatch.setattr(dividend_strategy_kpi_evidence, "write_dividend_strategy_kpi_evidence", fake_evidence)
@@ -57,6 +63,7 @@ def test_refresh_runs_intelligence_momentum_ranking_candidate_performance_and_kp
         f"cycle:{tmp_path}",
         f"momentum:{tmp_path}",
         f"ranking:{tmp_path}",
+        f"watchlist:{tmp_path}",
         f"candidate:{tmp_path}",
         f"performance:{tmp_path}",
         f"evidence:{tmp_path}",
@@ -65,6 +72,7 @@ def test_refresh_runs_intelligence_momentum_ranking_candidate_performance_and_kp
     assert report["daily_dividend_cycle_status"] == "COMPLETE"
     assert report["candidate_count"] == 8
     assert report["watchlist_count"] == 3
+    assert report["watchlist_evidence_path"].endswith("watchlist_report.json")
     assert report["momentum_symbol_count"] == 1
     assert report["ranking_count"] == 1
     assert report["momentum_evidence_path"].endswith("momentum_score_report.json")
@@ -89,6 +97,11 @@ def test_refresh_preserves_governance_and_execution_locks(monkeypatch, tmp_path:
         dividend_ranking_engine,
         "build_dividend_ranking_report",
         lambda **_: {"ranking_count": 0, "rankings": []},
+    )
+    monkeypatch.setattr(
+        dividend_watchlist_engine,
+        "write_dividend_watchlist",
+        lambda **_: {"watchlist_count": 0, "warnings": [], "errors": []},
     )
     monkeypatch.setattr(
         candidate_discovery_engine,
