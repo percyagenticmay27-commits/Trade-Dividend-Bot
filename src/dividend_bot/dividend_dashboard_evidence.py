@@ -1,9 +1,9 @@
 """Build strategy-scoped DIVIDEND-001 dashboard evidence from paper-only artifacts.
 
 This module is read-only/reporting-only. It normalizes the Dividend Bot's existing
-paper state, candidate discovery, trade history, market snapshot, and performance
-evidence into the fields consumed by the Enterprise strategy workspace. It never
-changes allocations, moves capital, contacts a broker, or places orders.
+paper state, candidate discovery, strategy watchlist, trade history, market snapshot,
+and performance evidence into the fields consumed by the Enterprise strategy workspace.
+It never changes allocations, moves capital, contacts a broker, or places orders.
 """
 from __future__ import annotations
 
@@ -136,6 +136,13 @@ def _watchlist_from_candidates(payload: Mapping[str, Any]) -> list[dict[str, Any
     return result
 
 
+def _watchlist_from_report(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
+    rows = payload.get("watchlist")
+    if not isinstance(rows, list):
+        return []
+    return [dict(row) for row in rows if isinstance(row, Mapping)]
+
+
 def _income_events(rows: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
     events: list[dict[str, Any]] = []
     for row in rows:
@@ -153,12 +160,7 @@ def _income_events(rows: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
     return events[-50:]
 
 
-def _alerts(
-    *,
-    state: Mapping[str, Any],
-    candidate_payload: Mapping[str, Any],
-    performance: Mapping[str, Any],
-) -> list[dict[str, Any]]:
+def _alerts(*, state: Mapping[str, Any], candidate_payload: Mapping[str, Any], performance: Mapping[str, Any]) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
     pairs = state.get("pairs")
     if isinstance(pairs, Mapping):
@@ -167,13 +169,7 @@ def _alerts(
                 continue
             for sleeve in ("a", "b"):
                 if entry.get(f"{sleeve}_earnings_lock") is True:
-                    alerts.append({
-                        "alert_type": "EARNINGS_LOCK",
-                        "pair": str(pair_name),
-                        "sleeve": sleeve.upper(),
-                        "severity": "WARNING",
-                        "status": "ACTIVE",
-                    })
+                    alerts.append({"alert_type": "EARNINGS_LOCK", "pair": str(pair_name), "sleeve": sleeve.upper(), "severity": "WARNING", "status": "ACTIVE"})
     for warning in candidate_payload.get("warnings", []) if isinstance(candidate_payload.get("warnings"), list) else []:
         alerts.append({"alert_type": "DISCOVERY_WARNING", "severity": "WARNING", "message": str(warning), "status": "ACTIVE"})
     for warning in performance.get("warnings", []) if isinstance(performance.get("warnings"), list) else []:
@@ -182,10 +178,7 @@ def _alerts(
 
 
 def _income_snapshot(root: Path) -> tuple[Any, str | None]:
-    for relative in (
-        "dividend_income_snapshot.json",
-        "results/dividend_income_snapshot.json",
-    ):
+    for relative in ("dividend_income_snapshot.json", "results/dividend_income_snapshot.json"):
         path = root / relative
         payload = _read_json(path)
         if payload is not None:
@@ -199,6 +192,8 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     state = state if isinstance(state, Mapping) else {}
     candidate_payload = _read_json(root / "candidate_discovery.json")
     candidate_payload = candidate_payload if isinstance(candidate_payload, Mapping) else {}
+    watchlist_payload = _read_json(root / "watchlist_report.json")
+    watchlist_payload = watchlist_payload if isinstance(watchlist_payload, Mapping) else {}
     performance = _read_json(root / "results" / "dividend_paper_trade_performance.json")
     performance = performance if isinstance(performance, Mapping) else {}
     market_snapshot = _read_json(root / "market_data_snapshot.json")
@@ -207,28 +202,24 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
 
     holdings, portfolio_value, state_income = _holdings_from_state(state)
     holdings = enrich_holdings_with_position_analytics(holdings, log_rows, market_snapshot)
-    holdings = enrich_holdings_with_income_analytics(
-        holdings,
-        market_snapshot=market_snapshot,
-        income_snapshot=income_snapshot,
-    )
-    watchlist = _watchlist_from_candidates(candidate_payload)
+    holdings = enrich_holdings_with_income_analytics(holdings, market_snapshot=market_snapshot, income_snapshot=income_snapshot)
+    watchlist = _watchlist_from_report(watchlist_payload) or _watchlist_from_candidates(candidate_payload)
     income_events = _income_events(log_rows)
     projected_annual_income = total_projected_annual_income(holdings)
     realized_gain = round(sum(_number(item.get("pnl"), 0.0) or 0.0 for item in performance.get("closed_trades", []) if isinstance(item, Mapping)), 2) if isinstance(performance.get("closed_trades"), list) else None
     unrealized_gain = total_unrealized_pnl(holdings)
 
-    evidence_sources = [
-        path for path in (
-            "paper_state.json" if (root / "paper_state.json").is_file() else None,
-            "paper_trade_log.csv" if (root / "paper_trade_log.csv").is_file() else None,
-            "candidate_discovery.json" if (root / "candidate_discovery.json").is_file() else None,
-            "market_data_snapshot.json" if (root / "market_data_snapshot.json").is_file() else None,
-            income_snapshot_path,
-            "results/dividend_paper_trade_performance.json" if (root / "results" / "dividend_paper_trade_performance.json").is_file() else None,
-        ) if path is not None
-    ]
+    evidence_sources = [path for path in (
+        "paper_state.json" if (root / "paper_state.json").is_file() else None,
+        "paper_trade_log.csv" if (root / "paper_trade_log.csv").is_file() else None,
+        "candidate_discovery.json" if (root / "candidate_discovery.json").is_file() else None,
+        "watchlist_report.json" if (root / "watchlist_report.json").is_file() else None,
+        "market_data_snapshot.json" if (root / "market_data_snapshot.json").is_file() else None,
+        income_snapshot_path,
+        "results/dividend_paper_trade_performance.json" if (root / "results" / "dividend_paper_trade_performance.json").is_file() else None,
+    ) if path is not None]
 
+    alerts = _alerts(state=state, candidate_payload=candidate_payload, performance=performance)
     return {
         "strategy_id": STRATEGY_ID,
         "portfolio_value": portfolio_value if holdings else None,
@@ -242,8 +233,8 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "income_events": income_events,
         "realized_gain": realized_gain,
         "unrealized_gain": unrealized_gain,
-        "alerts": _alerts(state=state, candidate_payload=candidate_payload, performance=performance),
-        "risk_flags": _alerts(state=state, candidate_payload=candidate_payload, performance=performance),
+        "alerts": alerts,
+        "risk_flags": alerts,
         "performance_detail": {
             "trade_count": performance.get("trade_count"),
             "closed_trade_count": performance.get("closed_trade_count"),
