@@ -1,13 +1,12 @@
-"""Compatibility wrapper upgrading strategy Holdings and Income tabs.
+"""Compatibility wrapper upgrading strategy Holdings, Income, and Performance tabs.
 
 The underlying strategy workspace remains owned by enterprise_portal_strategy_ui.
-This wrapper replaces only the Holdings and Income panel bodies and appends their
-dedicated styles, keeping the change narrow and reversible.
+This wrapper replaces Holdings and Income panel bodies, appends strategy-owned
+Position / Sales History to Performance, and includes their dedicated styles.
 
-Panel replacement deliberately uses balanced <section> matching rather than a
-non-greedy regular expression. Holdings and Income renderers contain nested
-<section> elements, so stopping at the first </section> corrupts the surrounding
-workspace DOM and can collapse the page into a narrow column.
+Panel mutation deliberately uses balanced <section> matching rather than a
+non-greedy regular expression. Renderers contain nested <section> elements, so
+stopping at the first </section> corrupts the surrounding workspace DOM.
 """
 from __future__ import annotations
 
@@ -18,17 +17,13 @@ from typing import Any, Mapping
 from . import enterprise_portal_strategy_ui as _base
 from .enterprise_holdings_purchase_date_ui import holdings_ui_css, render_holdings_panel
 from .enterprise_income_ui import income_ui_css, render_income_panel
+from .enterprise_position_history_ui import position_history_ui_css, render_position_history_panel
 
 render_left_navigation = _base.render_left_navigation
 
 
 def _find_matching_section_end(output: str, start: int) -> int | None:
-    """Return the end offset of the section opened at *start*.
-
-    The strategy panel contains nested semantic sections, so a simple
-    ``.*?</section>`` replacement is unsafe. This lightweight scanner counts
-    nested section tags and returns the matching outer close tag.
-    """
+    """Return the end offset of the section opened at *start*."""
     token_pattern = re.compile(r"<section\b[^>]*>|</section\s*>", flags=re.IGNORECASE)
     depth = 0
     for match in token_pattern.finditer(output, start):
@@ -42,8 +37,7 @@ def _find_matching_section_end(output: str, start: int) -> int | None:
     return None
 
 
-def _replace_panel(output: str, *, sid: str, tab: str, body: str) -> str:
-    """Replace only the body of one workspace tab panel without changing its DOM shell."""
+def _panel_bounds(output: str, *, sid: str, tab: str) -> tuple[int, int, int] | None:
     panel_id = f"panel-{sid}-{tab}"
     opening_pattern = re.compile(
         rf"<section\b[^>]*\bid=['\"]{re.escape(panel_id)}['\"][^>]*>",
@@ -51,17 +45,32 @@ def _replace_panel(output: str, *, sid: str, tab: str, body: str) -> str:
     )
     opening = opening_pattern.search(output)
     if opening is None:
-        return output
-
+        return None
     outer_end = _find_matching_section_end(output, opening.start())
     if outer_end is None:
-        return output
-
+        return None
     closing_start = output.rfind("</section", opening.end(), outer_end)
     if closing_start < opening.end():
-        return output
+        return None
+    return opening.end(), closing_start, outer_end
 
-    return output[: opening.end()] + body + output[closing_start:]
+
+def _replace_panel(output: str, *, sid: str, tab: str, body: str) -> str:
+    """Replace only the body of one workspace tab panel without changing its DOM shell."""
+    bounds = _panel_bounds(output, sid=sid, tab=tab)
+    if bounds is None:
+        return output
+    body_start, closing_start, _ = bounds
+    return output[:body_start] + body + output[closing_start:]
+
+
+def _append_panel(output: str, *, sid: str, tab: str, body: str) -> str:
+    """Append content inside a tab's outer section while preserving its existing body."""
+    bounds = _panel_bounds(output, sid=sid, tab=tab)
+    if bounds is None:
+        return output
+    _, closing_start, _ = bounds
+    return output[:closing_start] + body + output[closing_start:]
 
 
 def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> str:
@@ -77,8 +86,19 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
         sid = html.escape(raw_sid, quote=True)
         output = _replace_panel(output, sid=sid, tab="holdings", body=render_holdings_panel(row))
         output = _replace_panel(output, sid=sid, tab="income", body=render_income_panel(row))
+        output = _append_panel(
+            output,
+            sid=sid,
+            tab="performance",
+            body=render_position_history_panel(row),
+        )
     return output
 
 
 def strategy_ui_css() -> str:
-    return _base.strategy_ui_css() + holdings_ui_css() + income_ui_css()
+    return (
+        _base.strategy_ui_css()
+        + holdings_ui_css()
+        + income_ui_css()
+        + position_history_ui_css()
+    )
