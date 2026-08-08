@@ -12,18 +12,9 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
-from .dividend_income_analytics import (
-    enrich_holdings_with_income_analytics,
-    total_projected_annual_income,
-)
-from .dividend_position_analytics import (
-    enrich_holdings_with_position_analytics,
-    total_unrealized_pnl,
-)
-from .dividend_position_lifecycle import (
-    build_position_lifecycle,
-    enrich_current_holdings_with_lifecycle,
-)
+from .dividend_income_analytics import enrich_holdings_with_income_analytics, total_projected_annual_income
+from .dividend_position_analytics import enrich_holdings_with_position_analytics, total_unrealized_pnl
+from .dividend_position_lifecycle import build_position_lifecycle, enrich_current_holdings_with_lifecycle
 from .dividend_realized_income import build_realized_income_evidence
 
 STRATEGY_ID = "DIVIDEND-001"
@@ -75,11 +66,9 @@ def _holdings_from_state(state: Mapping[str, Any]) -> tuple[list[dict[str, Any]]
     portfolio_value = 0.0
     total_income = 0.0
     total_sgov = 0.0
-
     pairs = state.get("pairs")
     if not isinstance(pairs, Mapping):
         return holdings, portfolio_value, total_income
-
     for pair_name, raw_entry in pairs.items():
         if not isinstance(raw_entry, Mapping):
             continue
@@ -91,34 +80,22 @@ def _holdings_from_state(state: Mapping[str, Any]) -> tuple[list[dict[str, Any]]
             market_value = shares * price
             if shares > 0 and market_value > 0:
                 holdings.append({
-                    "symbol": symbol,
-                    "pair": str(pair_name),
-                    "sleeve": sleeve,
-                    "shares": round(shares, 10),
-                    "price": round(price, 6),
-                    "market_value": round(market_value, 2),
-                    "position_status": "OPEN",
+                    "symbol": symbol, "pair": str(pair_name), "sleeve": sleeve,
+                    "shares": round(shares, 10), "price": round(price, 6),
+                    "market_value": round(market_value, 2), "position_status": "OPEN",
                     "source": "paper_state.json",
                 })
                 portfolio_value += market_value
-
         sgov_value = _number(raw_entry.get("sgov_balance"), 0.0) or 0.0
         total_sgov += max(0.0, sgov_value)
         total_income += _number(raw_entry.get("total_dividends_received"), 0.0) or 0.0
-
     if total_sgov > 0:
         holdings.append({
-            "symbol": "SGOV",
-            "pair": "CASH RESERVE",
-            "sleeve": "RESERVE",
-            "shares": None,
-            "price": None,
-            "market_value": round(total_sgov, 2),
-            "position_status": "PARKED",
-            "source": "paper_state.json",
+            "symbol": "SGOV", "pair": "CASH RESERVE", "sleeve": "RESERVE",
+            "shares": None, "price": None, "market_value": round(total_sgov, 2),
+            "position_status": "PARKED", "source": "paper_state.json",
         })
         portfolio_value += total_sgov
-
     holdings.sort(key=lambda row: (str(row.get("symbol")), str(row.get("sleeve"))))
     return holdings, round(portfolio_value, 2), round(total_income, 2)
 
@@ -133,8 +110,7 @@ def _watchlist_from_candidates(payload: Mapping[str, Any]) -> list[dict[str, Any
             continue
         result.append({
             "symbol": str(row.get("symbol") or row.get("candidate_id") or "UNKNOWN"),
-            "status": row.get("status"),
-            "currently_held": bool(row.get("currently_held", False)),
+            "status": row.get("status"), "currently_held": bool(row.get("currently_held", False)),
             "market_data_stale": bool(row.get("market_data_stale", False)),
             "sources": list(row.get("sources", [])) if isinstance(row.get("sources"), list) else [],
         })
@@ -195,7 +171,12 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     holdings = enrich_current_holdings_with_lifecycle(holdings, position_lifecycle)
     active_holdings = [dict(item) for item in holdings if str(item.get("sleeve") or "").upper() != "RESERVE" and str(item.get("symbol") or "").upper() != "SGOV"]
     reserve_holdings = [dict(item) for item in holdings if str(item.get("sleeve") or "").upper() == "RESERVE" or str(item.get("symbol") or "").upper() == "SGOV"]
-    historical_positions = [dict(item) for item in position_lifecycle if not bool(item.get("is_current_holding"))]
+    never_entered_candidates = [dict(item) for item in position_lifecycle if str(item.get("lifecycle_status") or "").upper() == "NEVER_ENTERED"]
+    historical_positions = [
+        dict(item) for item in position_lifecycle
+        if not bool(item.get("is_current_holding"))
+        and str(item.get("lifecycle_status") or "").upper() != "NEVER_ENTERED"
+    ]
     watchlist = _watchlist_from_report(watchlist_payload) or _watchlist_from_candidates(candidate_payload)
     realized_income = build_realized_income_evidence(log_rows)
     income_events = realized_income["income_events"]
@@ -221,14 +202,13 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "active_position_count": len(active_holdings),
         "reserve_position_count": len(reserve_holdings),
         "historical_position_count": len(historical_positions),
-        "holdings": holdings,
-        "positions": holdings,
-        "active_holdings": active_holdings,
-        "reserve_holdings": reserve_holdings,
+        "never_entered_candidate_count": len(never_entered_candidates),
+        "holdings": holdings, "positions": holdings,
+        "active_holdings": active_holdings, "reserve_holdings": reserve_holdings,
         "position_lifecycle": position_lifecycle,
         "historical_positions": historical_positions,
-        "watchlist_count": len(watchlist),
-        "watchlist": watchlist,
+        "never_entered_candidates": never_entered_candidates,
+        "watchlist_count": len(watchlist), "watchlist": watchlist,
         "income": realized_income["net_income_received"],
         "state_reported_income": state_income,
         "gross_distribution_income": realized_income["gross_distribution_income"],
@@ -241,10 +221,8 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "income_evidence_source": realized_income["income_evidence_source"],
         "projected_annual_income": projected_annual_income,
         "income_events": income_events,
-        "realized_gain": realized_gain,
-        "unrealized_gain": unrealized_gain,
-        "alerts": alerts,
-        "risk_flags": alerts,
+        "realized_gain": realized_gain, "unrealized_gain": unrealized_gain,
+        "alerts": alerts, "risk_flags": alerts,
         "performance_detail": {
             "trade_count": performance.get("trade_count"),
             "closed_trade_count": performance.get("closed_trade_count"),
@@ -257,14 +235,11 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
             "open_trades": list(performance.get("open_trades", [])) if isinstance(performance.get("open_trades"), list) else [],
             "position_lifecycle": position_lifecycle,
             "historical_positions": historical_positions,
+            "never_entered_candidates": never_entered_candidates,
         },
         "evidence_sources": evidence_sources,
-        "paper_trade_mode": True,
-        "reporting_only": True,
-        "live_trading_enabled": False,
-        "broker_execution_enabled": False,
-        "order_placement_enabled": False,
-        "capital_movement_enabled": False,
-        "automatic_activation_allowed": False,
-        "investor_governance_required": True,
+        "paper_trade_mode": True, "reporting_only": True,
+        "live_trading_enabled": False, "broker_execution_enabled": False,
+        "order_placement_enabled": False, "capital_movement_enabled": False,
+        "automatic_activation_allowed": False, "investor_governance_required": True,
     }
