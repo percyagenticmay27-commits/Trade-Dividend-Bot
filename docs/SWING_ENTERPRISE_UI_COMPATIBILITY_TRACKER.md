@@ -240,11 +240,37 @@ Swing compatibility requirement:
 - Do not declare host-generated `ai_cio_executive_dashboard.json`, `enterprise_investor_dashboard.json`, or other Enterprise aggregate outputs as Swing strategy evidence.
 - Large Swing reports may remain independently readable by path/provenance even when the host keeps them metadata-only instead of embedding them.
 
-### 2026-08-07 — Watchlist detail
+### 2026-08-07 — Professional Watchlist UI 2.0 contract
 
-The Enterprise host supports both `watchlist_count` and structured `watchlist` rows. Swing should continue publishing authoritative Swing watchlist evidence with symbol/status and may preserve rank, score, committee decision, market-data state, or source.
+The Enterprise host now has a dedicated professional Watchlist renderer with strategy-scoped summary cards, ranked candidate rows, explicit market-data freshness, held/not-held state, evidence provenance, and optional score columns. A reported watchlist count of zero is treated as a valid strategy state and is rendered as an explicit empty state rather than as missing data.
 
-Known readable Swing path: `main/results/watchlist_report.json`.
+Supported structured Watchlist row fields include:
+
+- `rank` / `watchlist_rank` / `candidate_rank`
+- `symbol` / `candidate_id`
+- `name` / `security_name` / `display_name` / `instrument_name`
+- `status` / `watchlist_status` / `candidate_status`
+- `opportunity_quality` / `opportunity_score` / `score`
+- `conviction_score`
+- `momentum_score`
+- `daily_change_percent`
+- `market_data_stale`
+- `currently_held`
+- `sources` / `source`
+
+Permanent host behavior:
+
+- Missing scores remain `Not reported`; the host does not invent neutral or zero scores.
+- `market_data_stale = false` renders as fresh evidence; `true` renders as stale evidence.
+- The Enterprise renderer never promotes, removes, ranks, buys, or allocates a candidate. It only displays strategy-published evidence.
+- `watchlist_count = 0` with an empty list is not an error.
+
+Swing compatibility requirement:
+
+- SWING-001 should publish its authoritative watchlist rows as structured evidence rather than only a count.
+- Preserve the Swing-owned rank, committee or lifecycle status, opportunity/conviction/momentum scores, market-data freshness, held state, and evidence source when those fields exist.
+- Do not fabricate a score merely so a host column is populated.
+- Known readable Swing path remains `main/results/watchlist_report.json`.
 
 ### 2026-08-07 — Performance detail contract
 
@@ -283,7 +309,7 @@ The professional UI is host-owned. Swing does not duplicate CSS or HTML. For eac
 
 ## Next updates to this tracker
 
-As UI 2.0 development continues, append Swing compatibility notes for Portfolio summary/attribution, Professional Watchlist, detailed Performance, Alerts/risk presentation, Decision Journal presentation, and any new Enterprise contract introduced by the host.
+As UI 2.0 development continues, append Swing compatibility notes for Portfolio summary/attribution, detailed Performance, Alerts/risk presentation, Decision Journal presentation, and any new Enterprise contract introduced by the host.
 
 ## Handoff rule
 
