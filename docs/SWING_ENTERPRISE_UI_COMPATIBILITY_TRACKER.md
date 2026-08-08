@@ -193,6 +193,35 @@ Swing compatibility requirement:
 - If SWING-001 chooses to publish income for an instrument, it may use its own authoritative observed-distribution history and should preserve calculation provenance.
 - Never turn a historical payment cadence into a claimed future ex-dividend date.
 
+### 2026-08-07 — Yearly Distribution Yield naming and audit evidence
+
+The host Income table now uses the clearer investor-facing label **Yearly Distribution Yield** instead of the generic `Yield`. For Dividend holdings, this metric represents the observed trailing-365-day cash distributions per share divided by the current market price when sufficient payment history exists. The legacy `dividend_yield_percent` field is retained for backwards compatibility, while `yearly_distribution_yield_percent` is the preferred explicit UI semantic.
+
+Dividend audit fields now include:
+
+- `yearly_distribution_yield_percent`
+- `trailing_12m_distribution_rate`
+- `trailing_12m_payment_count`
+- `trailing_12m_window_start`
+- `trailing_12m_window_end`
+- `trailing_12m_first_payment_date`
+- `trailing_12m_last_payment_date`
+- `yearly_distribution_yield_price`
+- `yearly_distribution_yield_method`
+- `dividend_yield_source`
+- `annual_income_share_count`
+- `annual_income_method`
+- `income_analytics_source`
+
+The host renderer exposes a compact `Audit` disclosure for each Income row so a high distribution yield can be reproduced from its underlying rate, payment count, price, observation window, and method instead of being trusted as an unexplained percentage.
+
+Swing compatibility requirement:
+
+- If SWING-001 publishes an income/distribution yield, prefer the explicit semantic field `yearly_distribution_yield_percent` when it represents a trailing observed distribution yield.
+- Preserve the price, observation window, payment count, calculation method, and evidence source used to derive the value.
+- Do not label SEC yield, forward yield, option-income distribution rate, or another materially different metric as `yearly_distribution_yield_percent` unless the field contract genuinely matches the trailing observed-distribution calculation.
+- The host continues accepting `dividend_yield_percent` for compatibility, but Swing should avoid ambiguous yield names in new evidence.
+
 ### 2026-08-07 — Bounded Registry evidence and recursive-dashboard protection
 
 Production refreshes were OOM-killed after three Enterprise output files grew to approximately 1.6 GB each. Root cause: DIVIDEND-001 declares host-owned Enterprise dashboards (`ai_cio_executive_dashboard.json` and `enterprise_investor_dashboard.json`) as Registry artifacts. The Registry evidence loader previously inlined those complete dashboard payloads; the next refresh then embedded Registry evidence back into the same Enterprise dashboards, causing recursive/exponential file growth and multi-gigabyte memory use.
