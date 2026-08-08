@@ -1,8 +1,9 @@
 """Derive read-only DIVIDEND-001 position analytics from paper artifacts.
 
-The builder reconstructs open paper cost basis from the Dividend Bot's own trade
-log and enriches currently reported holdings with authoritative market snapshot
-metadata when available. It does not place orders, move capital, or alter state.
+The builder reconstructs open paper cost basis and current-position purchase dates
+from the Dividend Bot's own trade log and enriches currently reported holdings with
+authoritative market snapshot metadata when available. It does not place orders,
+move capital, or alter state.
 """
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ from typing import Any, Mapping, Sequence
 BUY_ACTIONS = {"PAPER_BUY_OPEN", "PAPER_BUY_FROM_SGOV"}
 SELL_ACTIONS = {"PAPER_SELL_TO_SGOV", "PAPER_SELL_CLOSE", "PAPER_SELL"}
 RESERVE_STATUSES = {"PARKED", "CASH", "RESERVE"}
+DATE_KEYS = ("Date", "date", "Trade_Date", "trade_date", "Timestamp", "timestamp")
 
 
 def _number(value: Any) -> float | None:
@@ -24,9 +26,22 @@ def _symbol(row: Mapping[str, Any]) -> str:
     return str(row.get("Ticker") or row.get("ticker") or row.get("symbol") or "").strip().upper()
 
 
-def _open_lots(rows: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, float]]:
-    """Reconstruct aggregate open shares/cost using average-cost reductions."""
-    lots: dict[str, dict[str, float]] = {}
+def _trade_date(row: Mapping[str, Any]) -> str | None:
+    for key in DATE_KEYS:
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value).strip() or None
+    return None
+
+
+def _open_lots(rows: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Reconstruct aggregate open shares/cost and the current position open date.
+
+    ``purchase_date`` is the first buy date belonging to the currently open
+    position. A complete exit removes the lot, so a later re-entry receives a new
+    purchase date rather than inheriting an older historical purchase.
+    """
+    lots: dict[str, dict[str, Any]] = {}
     for row in rows:
         symbol = _symbol(row)
         action = str(row.get("Action") or row.get("action") or "").strip().upper()
@@ -39,7 +54,14 @@ def _open_lots(rows: Sequence[Mapping[str, Any]]) -> dict[str, dict[str, float]]
             cost = paper_value if paper_value is not None and paper_value >= 0 else (shares * price if price is not None else None)
             if cost is None:
                 continue
-            lot = lots.setdefault(symbol, {"shares": 0.0, "cost_basis": 0.0})
+            lot = lots.get(symbol)
+            if lot is None:
+                lot = {
+                    "shares": 0.0,
+                    "cost_basis": 0.0,
+                    "purchase_date": _trade_date(row),
+                }
+                lots[symbol] = lot
             lot["shares"] += shares
             lot["cost_basis"] += cost
         elif action in SELL_ACTIONS:
@@ -138,6 +160,11 @@ def enrich_holdings_with_position_analytics(
                 cost_basis = avg_cost * current_shares
                 item["average_cost"] = round(avg_cost, 6)
                 item["cost_basis"] = round(cost_basis, 2)
+                purchase_date = lot.get("purchase_date")
+                if purchase_date:
+                    item["purchase_date"] = str(purchase_date)
+                    item["purchase_date_source"] = "paper_trade_log.csv"
+                    item["purchase_date_method"] = "CURRENT_OPEN_POSITION_FIRST_BUY"
                 if market_value is not None:
                     unrealized = market_value - cost_basis
                     item["unrealized_pnl"] = round(unrealized, 2)
