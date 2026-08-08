@@ -5,7 +5,10 @@ from src.dividend_bot.enterprise_income_ui import income_ui_css, render_income_p
 
 def _row() -> dict:
     return {
-        "income": 12.50,
+        "income": 11.25,
+        "net_income_received": 11.25,
+        "gross_distribution_income": 12.50,
+        "income_adjustments": -1.25,
         "projected_annual_income": 120.0,
         "holdings": [
             {
@@ -34,15 +37,26 @@ def _row() -> dict:
                 "event_type": "DIVIDEND_RECEIVED",
                 "amount": 12.50,
                 "source": "paper_trade_log.csv",
-            }
+            },
+            {
+                "date": "2026-08-02",
+                "symbol": "AAA",
+                "event_type": "DIVIDEND_REVERSAL",
+                "amount": -1.25,
+                "source": "paper_trade_log.csv",
+            },
         ],
     }
 
 
 def test_income_renderer_uses_professional_summary_cards() -> None:
     output = render_income_panel(_row())
-    assert "Income Received" in output
+    assert "Net Income Received" in output
+    assert "$11.25" in output
+    assert "Gross Distributions" in output
     assert "$12.50" in output
+    assert "Income Adjustments" in output
+    assert "-$1.25" in output
     assert "Projected Annual Income" in output
     assert "$120.00" in output
     assert "Projected Monthly Income" in output
@@ -67,7 +81,16 @@ def test_income_renderer_keeps_realized_and_projected_income_separate() -> None:
     assert "Projected income is not treated as realized income" in output
     assert "Distribution History" in output
     assert "DIVIDEND_RECEIVED" in output
+    assert "DIVIDEND_REVERSAL" in output
     assert "paper_trade_log.csv" in output
+
+
+def test_income_renderer_preserves_positive_and_negative_realized_events() -> None:
+    output = render_income_panel(_row())
+    assert "+$12.50" in output
+    assert "-$1.25" in output
+    assert "income-positive" in output
+    assert "income-negative" in output
 
 
 def test_income_renderer_does_not_fabricate_missing_values() -> None:
@@ -90,5 +113,7 @@ def test_income_css_is_responsive_and_self_contained() -> None:
     css = income_ui_css()
     assert ".income-summary-grid" in css
     assert ".income-table-wrap" in css
+    assert ".income-positive" in css
+    assert ".income-negative" in css
     assert "overflow-x:auto" in css
     assert "@media(max-width:520px)" in css
