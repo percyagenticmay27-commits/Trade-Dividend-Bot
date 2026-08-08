@@ -1,0 +1,94 @@
+from __future__ import annotations
+
+from src.dividend_bot.enterprise_income_ui import income_ui_css, render_income_panel
+
+
+def _row() -> dict:
+    return {
+        "income": 12.50,
+        "projected_annual_income": 120.0,
+        "holdings": [
+            {
+                "symbol": "AAA",
+                "name": "Alpha Income ETF",
+                "yearly_distribution_yield_percent": 25.0,
+                "annual_income": 90.0,
+                "payment_frequency": "WEEKLY",
+                "next_ex_dividend_date": None,
+                "income_analytics_source": "market_data_snapshot.json",
+            },
+            {
+                "symbol": "BBB",
+                "name": "Beta Income ETF",
+                "dividend_yield_percent": 8.0,
+                "annual_income": 30.0,
+                "payment_frequency": "MONTHLY",
+                "next_ex_dividend_date": "2026-08-15",
+                "income_analytics_source": "market_data_snapshot.json",
+            },
+        ],
+        "income_events": [
+            {
+                "date": "2026-08-01",
+                "symbol": "AAA",
+                "event_type": "DIVIDEND_RECEIVED",
+                "amount": 12.50,
+                "source": "paper_trade_log.csv",
+            }
+        ],
+    }
+
+
+def test_income_renderer_uses_professional_summary_cards() -> None:
+    output = render_income_panel(_row())
+    assert "Income Received" in output
+    assert "$12.50" in output
+    assert "Projected Annual Income" in output
+    assert "$120.00" in output
+    assert "Projected Monthly Income" in output
+    assert "$10.00" in output
+    assert "Income-Producing Positions" in output
+    assert ">2<" in output
+
+
+def test_income_renderer_uses_strategy_owned_holding_projection_table() -> None:
+    output = render_income_panel(_row())
+    assert "Income by Holding" in output
+    assert "Yearly Distribution Yield" in output
+    assert "Alpha Income ETF" in output
+    assert "25.00%" in output
+    assert "$90.00" in output
+    assert "WEEKLY" in output
+    assert "Not reported" in output
+
+
+def test_income_renderer_keeps_realized_and_projected_income_separate() -> None:
+    output = render_income_panel(_row())
+    assert "Projected income is not treated as realized income" in output
+    assert "Distribution History" in output
+    assert "DIVIDEND_RECEIVED" in output
+    assert "paper_trade_log.csv" in output
+
+
+def test_income_renderer_does_not_fabricate_missing_values() -> None:
+    output = render_income_panel({"income": 0.0, "holdings": [], "income_events": []})
+    assert "$0.00" in output
+    assert "Projected Annual Income</span><strong>Not reported" in output
+    assert "No strategy-owned income projection evidence is currently reported" in output
+    assert "No realized strategy-owned income events have been recorded yet" in output
+
+
+def test_income_renderer_escapes_strategy_owned_text() -> None:
+    row = _row()
+    row["holdings"][0]["name"] = "<script>alert(1)</script>"
+    output = render_income_panel(row)
+    assert "<script>alert(1)</script>" not in output
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in output
+
+
+def test_income_css_is_responsive_and_self_contained() -> None:
+    css = income_ui_css()
+    assert ".income-summary-grid" in css
+    assert ".income-table-wrap" in css
+    assert "overflow-x:auto" in css
+    assert "@media(max-width:520px)" in css
