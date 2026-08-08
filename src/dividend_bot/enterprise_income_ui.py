@@ -67,6 +67,7 @@ def _income_holding_rows(row: Mapping[str, Any]) -> str:
             "<tr>"
             f"<td><strong>{symbol}</strong></td>"
             f"<td>{name}</td>"
+            f"<td>{_text(item.get('purchase_date'))}</td>"
             f"<td>{_percent(yearly_yield)}</td>"
             f"<td><strong>{_money(annual_income)}</strong></td>"
             f"<td>{_text(item.get('payment_frequency'))}</td>"
@@ -75,7 +76,7 @@ def _income_holding_rows(row: Mapping[str, Any]) -> str:
             "</tr>"
         )
     if not rendered:
-        return "<tr><td colspan='7' class='income-empty-cell'>No strategy-owned income projection evidence is currently reported.</td></tr>"
+        return "<tr><td colspan='8' class='income-empty-cell'>No strategy-owned income projection evidence is currently reported.</td></tr>"
     return "".join(rendered)
 
 
@@ -118,13 +119,13 @@ def render_income_panel(row: Mapping[str, Any]) -> str:
         "</div>"
         "<div class='income-section-heading'><h4>Income by Holding</h4><span>Observed distribution evidence and current projections</span></div>"
         "<div class='income-table-wrap'><table class='income-table'>"
-        "<thead><tr><th>Symbol</th><th>Name</th><th>Yearly Distribution Yield</th><th>Annual Income</th><th>Frequency</th><th>Next Ex-Date</th><th>Evidence</th></tr></thead>"
+        "<thead><tr><th>Symbol</th><th>Name</th><th>Purchase Date</th><th>Yearly Distribution Yield</th><th>Annual Income</th><th>Frequency</th><th>Next Ex-Date</th><th>Evidence</th></tr></thead>"
         f"<tbody>{_income_holding_rows(row)}</tbody></table></div>"
         "<div class='income-section-heading'><h4>Distribution History</h4><span>Realized paper income only</span></div>"
         "<div class='income-table-wrap'><table class='income-table income-history-table'>"
         "<thead><tr><th>Date</th><th>Symbol</th><th>Event</th><th>Amount</th><th>Evidence</th></tr></thead>"
         f"<tbody>{_event_rows(row)}</tbody></table></div>"
-        "<p class='income-footnote'>Projected income is not treated as realized income. Missing payment dates or analytics remain Not reported until authoritative strategy evidence is published.</p>"
+        "<p class='income-footnote'>Purchase Date is the first buy in the currently open position and resets after a full exit and later re-entry. Projected income is not treated as realized income. Missing payment dates or analytics remain Not reported until authoritative strategy evidence is published.</p>"
         "</section>"
     )
 
@@ -132,5 +133,5 @@ def render_income_panel(row: Mapping[str, Any]) -> str:
 def income_ui_css() -> str:
     return """
 <style>
-.income-pro{min-width:0}.income-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.income-heading h3{margin:0}.income-heading p{margin:5px 0 0;color:#64748b}.income-event-badge{white-space:nowrap;background:#ecfdf3;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}.income-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0 18px}.income-summary-grid article{border:1px solid #dbe4ef;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:12px;padding:12px}.income-summary-grid span,.income-summary-grid small{display:block;color:#64748b}.income-summary-grid strong{display:block;margin:5px 0;font-size:18px;color:#0f5132}.income-summary-grid small{font-size:10px}.income-section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:18px 0 8px}.income-section-heading h4{margin:0;color:#0b1d3a}.income-section-heading span{font-size:11px;color:#64748b}.income-table-wrap{overflow-x:auto;border:1px solid #dbe4ef;border-radius:11px}.income-table{width:100%;border-collapse:collapse;min-width:820px}.income-history-table{min-width:620px}.income-table th{padding:9px 10px;background:#f4f7fb;color:#475569;text-align:left;text-transform:uppercase;font-size:10px;letter-spacing:.03em}.income-table td{padding:10px;border-top:1px solid #e5eaf1;font-size:12px}.income-table tbody tr:hover{background:#fbfdff}.income-empty-cell{text-align:center!important;color:#64748b;padding:22px!important}.income-footnote{margin:12px 0 0;color:#64748b;font-size:11px}.income-footnote strong{color:#334155}@media(max-width:900px){.income-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.income-summary-grid{grid-template-columns:1fr}.income-heading,.income-section-heading{display:block}.income-event-badge{display:inline-block;margin-top:8px}}
+.income-pro{min-width:0}.income-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.income-heading h3{margin:0}.income-heading p{margin:5px 0 0;color:#64748b}.income-event-badge{white-space:nowrap;background:#ecfdf3;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}.income-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0 18px}.income-summary-grid article{border:1px solid #dbe4ef;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:12px;padding:12px}.income-summary-grid span,.income-summary-grid small{display:block;color:#64748b}.income-summary-grid strong{display:block;margin:5px 0;font-size:18px;color:#0f5132}.income-summary-grid small{font-size:10px}.income-section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:18px 0 8px}.income-section-heading h4{margin:0;color:#0b1d3a}.income-section-heading span{font-size:11px;color:#64748b}.income-table-wrap{overflow-x:auto;border:1px solid #dbe4ef;border-radius:11px}.income-table{width:100%;border-collapse:collapse;min-width:960px}.income-history-table{min-width:620px}.income-table th{padding:9px 10px;background:#f4f7fb;color:#475569;text-align:left;text-transform:uppercase;font-size:10px;letter-spacing:.03em}.income-table td{padding:10px;border-top:1px solid #e5eaf1;font-size:12px}.income-table tbody tr:hover{background:#fbfdff}.income-empty-cell{text-align:center!important;color:#64748b;padding:22px!important}.income-footnote{margin:12px 0 0;color:#64748b;font-size:11px}.income-footnote strong{color:#334155}@media(max-width:900px){.income-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.income-summary-grid{grid-template-columns:1fr}.income-heading,.income-section-heading{display:block}.income-event-badge{display:inline-block;margin-top:8px}}
 </style>"""
