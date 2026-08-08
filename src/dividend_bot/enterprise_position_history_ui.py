@@ -40,7 +40,9 @@ def _history_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(item, Mapping):
             continue
         status = str(item.get("lifecycle_status") or "").upper()
-        if status in {"OPEN", "REENTERED", "RESERVE"}:
+        # Sales history is for positions that actually owned ETF exposure.
+        # NEVER_ENTERED belongs to watchlist/decision evidence, not realized P&L.
+        if status in {"OPEN", "REENTERED", "RESERVE", "NEVER_ENTERED"}:
             continue
         result.append(dict(item))
     return sorted(
@@ -77,58 +79,45 @@ def render_position_history_panel(row: Mapping[str, Any]) -> str:
     if not history:
         body = (
             "<div class='position-history-empty'>"
-            "No strategy-owned position exits are currently reported."
+            "No strategy-owned completed position exits are currently reported."
             "</div>"
         )
     else:
         rows = []
         for item in history:
-            status = str(item.get("lifecycle_status") or "CLOSED").upper()
-            status_class = "parked" if status == "PARKED_IN_SGOV" else "closed"
-            pnl_text, pnl_class = _gain_loss(item.get("realized_gain_loss"))
+            gain, gain_class = _gain_loss(item.get("realized_gain_loss"))
             rows.append(
                 "<tr>"
-                f"<td class='symbol-cell'><strong>{_text(item.get('symbol'))}</strong><small>{_text(item.get('pair'))}</small></td>"
-                f"<td class='center-cell'>{_text(item.get('sleeve'))}</td>"
-                f"<td><span class='position-history-status {status_class}'>{_text(status.replace('_', ' '))}</span></td>"
-                f"<td class='date-cell'>{_text(item.get('first_purchase_date'))}</td>"
-                f"<td class='date-cell'>{_text(item.get('last_exit_date'))}</td>"
-                f"<td class='money-cell'>{_money(item.get('entry_value'))}</td>"
-                f"<td class='money-cell'>{_money(item.get('last_exit_value'))}</td>"
-                f"<td class='money-cell position-history-pnl {pnl_class}'>{pnl_text}</td>"
-                f"<td class='action-cell'>{_text(item.get('last_exit_action'))}</td>"
-                f"<td class='center-cell'>{_text(item.get('reentry_count'))}</td>"
-                f"<td class='evidence-cell'>{_text(item.get('evidence_source'))}</td>"
+                f"<td><strong>{_text(item.get('symbol'))}</strong><div class='position-history-pair'>{_text(item.get('pair'))}</div></td>"
+                f"<td>{_text(item.get('sleeve'))}</td>"
+                f"<td><span class='position-history-status'>{_text(item.get('lifecycle_status'))}</span></td>"
+                f"<td>{_text(item.get('first_purchase_date'))}</td>"
+                f"<td>{_text(item.get('last_exit_date'))}</td>"
+                f"<td class='money'>{_money(item.get('entry_value'))}</td>"
+                f"<td class='money'>{_money(item.get('last_exit_value'))}</td>"
+                f"<td class='money {gain_class}'>{gain}</td>"
+                f"<td>{_text(item.get('last_exit_action'))}</td>"
+                f"<td>{_text(item.get('reentry_count'))}</td>"
+                f"<td>{_text(item.get('evidence_source'))}</td>"
                 "</tr>"
             )
         body = (
-            "<div class='position-history-table-wrap'><table class='position-history-table'>"
-            "<thead><tr>"
-            "<th>Symbol / Pair</th><th>Sleeve</th><th>Status</th>"
-            "<th>Entry Date</th><th>Exit Date</th><th class='money-head'>Entry Value</th>"
-            "<th class='money-head'>Exit Value</th><th class='money-head'>Gain / Loss</th>"
-            "<th>Exit Action</th><th>Re-entry</th><th>Evidence</th>"
-            "</tr></thead><tbody>"
-            + "".join(rows)
-            + "</tbody></table></div>"
+            "<div class='position-history-scroll'><table class='position-history-table'>"
+            "<thead><tr><th>Symbol / Pair</th><th>Sleeve</th><th>Status</th>"
+            "<th>Entry Date</th><th>Exit Date</th><th>Entry Value</th><th>Exit Value</th>"
+            "<th>Gain / Loss</th><th>Exit Action</th><th>Re-entry</th><th>Evidence</th>"
+            "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
         )
 
     return (
-        "<section class='position-history-pro' aria-label='Position and sales history'>"
-        "<div class='position-history-heading'>"
-        "<div><h3>Position / Sales History</h3>"
-        "<p>Historical paper positions are retained separately from current holdings and dividend income.</p></div>"
-        "</div>"
-        f"{summary}{body}"
-        "<p class='position-history-note'>"
-        "Entry Value is the paper capital committed to the most recently completed position cycle. "
-        "Gain / Loss is Exit Value minus Entry Value when both values are reported. "
-        "PARKED IN SGOV means the position proceeds were redirected into reserve capital."
-        "</p></section>"
+        "<section class='position-history-pro' aria-label='Position sales history'>"
+        "<div class='position-history-heading'><div><h3>Position / Sales History</h3>"
+        "<p>Completed strategy-owned paper positions only. Candidates that never entered remain outside realized trade history.</p>"
+        "</div></div>" + summary + body + "</section>"
     )
 
 
 def position_history_ui_css() -> str:
     return """
-.position-history-pro{margin-top:20px;border-top:1px solid #e5e7eb;padding-top:18px}.position-history-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.position-history-heading h3{margin:0 0 4px;font-size:17px;color:#101828}.position-history-heading p,.position-history-note{margin:0;color:#667085;font-size:11px;line-height:1.45}.position-history-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:14px 0}.position-history-summary>div{border:1px solid #e4e7ec;border-radius:10px;padding:10px 12px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.03)}.position-history-summary span{display:block;color:#667085;font-size:10px;margin-bottom:3px}.position-history-summary strong{font-size:17px;color:#101828}.position-history-table-wrap{overflow-x:auto;border:1px solid #e4e7ec;border-radius:10px;background:#fff;box-shadow:0 1px 3px rgba(16,24,40,.04)}.position-history-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1180px;table-layout:auto}.position-history-table thead th{position:sticky;top:0;z-index:1;background:#f8fafc;color:#475467;font-size:9px;text-transform:uppercase;letter-spacing:.035em;text-align:left;padding:9px 10px;border-bottom:1px solid #e4e7ec;white-space:nowrap}.position-history-table tbody tr:nth-child(even){background:#fcfcfd}.position-history-table tbody tr:hover{background:#f9fafb}.position-history-table td{padding:9px 10px;border-bottom:1px solid #eef2f6;font-size:11px;vertical-align:middle;color:#344054}.position-history-table tbody tr:last-child td{border-bottom:0}.symbol-cell{min-width:105px}.symbol-cell strong{display:block;color:#101828;font-size:12px}.symbol-cell small{display:block;color:#667085;font-size:9px;margin-top:2px;white-space:nowrap}.center-cell{text-align:center;white-space:nowrap}.date-cell{white-space:nowrap;font-variant-numeric:tabular-nums}.money-cell,.money-head{text-align:right!important;white-space:nowrap;font-variant-numeric:tabular-nums}.action-cell{white-space:nowrap;font-size:10px!important;color:#475467!important}.evidence-cell{white-space:nowrap;font-size:9px!important;color:#667085!important}.position-history-status{display:inline-block;padding:4px 7px;border-radius:999px;font-size:9px;font-weight:700;line-height:1.15;white-space:nowrap}.position-history-status.parked{background:#eef2ff;color:#4338ca}.position-history-status.closed{background:#f2f4f7;color:#475467}.position-history-pnl.positive{color:#067647!important}.position-history-pnl.negative{color:#b42318!important}.position-history-pnl.neutral{color:#475467!important}.position-history-empty{padding:22px;border:1px dashed #d0d5dd;border-radius:10px;text-align:center;color:#667085;background:#fcfcfd}.position-history-note{margin-top:10px}@media(max-width:900px){.position-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:720px){.position-history-summary{grid-template-columns:1fr}.position-history-pro{margin-top:12px}.position-history-table{min-width:1080px}}
+.position-history-pro{margin-top:24px}.position-history-heading h3{margin:0 0 4px;font-size:18px}.position-history-heading p{margin:0 0 14px;color:#667085}.position-history-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}.position-history-summary>div{border:1px solid #e4e7ec;border-radius:10px;padding:12px;background:#fff}.position-history-summary span{display:block;color:#667085;font-size:12px}.position-history-summary strong{display:block;margin-top:4px;font-size:18px}.position-history-scroll{overflow-x:auto;border:1px solid #e4e7ec;border-radius:12px;background:#fff}.position-history-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1180px}.position-history-table th{position:sticky;top:0;background:#f8fafc;color:#475467;text-align:left;padding:11px 12px;font-size:12px;border-bottom:1px solid #e4e7ec;white-space:nowrap}.position-history-table td{padding:11px 12px;border-bottom:1px solid #f0f2f5;vertical-align:top}.position-history-table tbody tr:nth-child(even){background:#fcfcfd}.position-history-table tbody tr:hover{background:#f8fafc}.position-history-table .money{text-align:right;white-space:nowrap}.position-history-pair{font-size:12px;color:#667085;margin-top:3px}.position-history-status{display:inline-block;border-radius:999px;padding:3px 8px;background:#eef2f6;font-size:11px;font-weight:700}.positive{color:#027a48}.negative{color:#b42318}.neutral{color:#475467}.position-history-empty{padding:20px;border:1px dashed #d0d5dd;border-radius:10px;color:#667085}@media(max-width:900px){.position-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.position-history-summary{grid-template-columns:1fr}}
 """
