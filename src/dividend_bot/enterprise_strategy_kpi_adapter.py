@@ -347,6 +347,55 @@ def build_strategy_kpis(
                 ("dividend_income", "income_received", "total_income", "projected_annual_income"),
             )
 
+        projected_annual_income = (
+            _number(dashboard_evidence.get("projected_annual_income"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        if projected_annual_income is None:
+            projected_annual_income = _metric(payloads, ("projected_annual_income",))
+
+        gross_distribution_income = (
+            _number(dashboard_evidence.get("gross_distribution_income"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        income_adjustments = (
+            _number(dashboard_evidence.get("income_adjustments"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        net_income_received = (
+            _number(dashboard_evidence.get("net_income_received"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        realized_income_event_count = (
+            _number(dashboard_evidence.get("realized_income_event_count"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        positive_income_event_count = (
+            _number(dashboard_evidence.get("positive_income_event_count"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        negative_income_event_count = (
+            _number(dashboard_evidence.get("negative_income_event_count"))
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        income_accounting_method = (
+            dashboard_evidence.get("income_accounting_method")
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        income_evidence_source = (
+            dashboard_evidence.get("income_evidence_source")
+            if dashboard_sources_available and isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+
         if host_dividend_evidence is not None:
             host_watchlist = _number(host_dividend_evidence.get("watchlist_count"))
             watchlist = int(host_watchlist) if host_watchlist is not None else None
@@ -414,6 +463,15 @@ def build_strategy_kpis(
             "realized_gain": round(realized, 2) if realized is not None else None,
             "unrealized_gain": round(unrealized, 2) if unrealized is not None else None,
             "income": round(income, 2) if income is not None else None,
+            "projected_annual_income": round(projected_annual_income, 2) if projected_annual_income is not None else None,
+            "gross_distribution_income": round(gross_distribution_income, 2) if gross_distribution_income is not None else None,
+            "income_adjustments": round(income_adjustments, 2) if income_adjustments is not None else None,
+            "net_income_received": round(net_income_received, 2) if net_income_received is not None else None,
+            "realized_income_event_count": int(realized_income_event_count) if realized_income_event_count is not None else None,
+            "positive_income_event_count": int(positive_income_event_count) if positive_income_event_count is not None else None,
+            "negative_income_event_count": int(negative_income_event_count) if negative_income_event_count is not None else None,
+            "income_accounting_method": income_accounting_method,
+            "income_evidence_source": income_evidence_source,
             "watchlist_count": watchlist,
             "position_count": positions,
             "opportunity_quality": round(opportunity, 2) if opportunity is not None else None,
