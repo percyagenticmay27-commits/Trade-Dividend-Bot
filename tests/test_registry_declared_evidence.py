@@ -183,8 +183,39 @@ def test_enterprise_scope_dashboard_is_metadata_only_to_prevent_recursive_growth
     assert strategies[0]["evidence_status"] == "AVAILABLE"
     assert record["available"] is True
     assert record["payload"] is None
-    assert record["payload_policy"] == "METADATA_ONLY_ENTERPRISE_SCOPE"
+    assert record["payload_policy"] == "METADATA_ONLY_HOST_AGGREGATE"
     assert record["size_bytes"] == artifact.stat().st_size
+
+
+def test_host_dashboard_is_metadata_only_even_when_scope_is_mislabeled_strategy(tmp_path: Path) -> None:
+    artifact = tmp_path / "results" / "enterprise_investor_dashboard.json"
+    _write_json(artifact, {"nested": {"recursive": "payload"}})
+    registry = {
+        "strategy_plugins": [
+            {
+                "strategy_id": "DIVIDEND-001",
+                "dashboard_artifacts": [
+                    {
+                        "artifact_id": "enterprise_investor_dashboard",
+                        "artifact_type": "INVESTOR_DASHBOARD",
+                        "path": str(artifact),
+                        "format": "JSON",
+                        "scope": "STRATEGY",
+                        "authoritative": True,
+                        "required": False,
+                    }
+                ],
+            }
+        ]
+    }
+
+    strategies, warnings = load_registry_declared_evidence(registry, root_dir=tmp_path)
+
+    assert warnings == []
+    record = strategies[0]["artifacts"][0]
+    assert record["available"] is True
+    assert record["payload"] is None
+    assert record["payload_policy"] == "METADATA_ONLY_HOST_AGGREGATE"
 
 
 def test_oversized_strategy_artifact_is_metadata_only(tmp_path: Path) -> None:
