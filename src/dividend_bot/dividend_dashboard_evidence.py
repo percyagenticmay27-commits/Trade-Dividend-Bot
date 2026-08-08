@@ -20,6 +20,7 @@ from .dividend_position_analytics import (
     enrich_holdings_with_position_analytics,
     total_unrealized_pnl,
 )
+from .dividend_realized_income import build_realized_income_evidence
 
 STRATEGY_ID = "DIVIDEND-001"
 PAPER_TRADE_MODE = True
@@ -143,23 +144,6 @@ def _watchlist_from_report(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, Mapping)]
 
 
-def _income_events(rows: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    events: list[dict[str, Any]] = []
-    for row in rows:
-        action = str(row.get("Action") or "").strip().upper()
-        if action != "PAPER_DIVIDEND_RECEIVED":
-            continue
-        events.append({
-            "date": row.get("Date"),
-            "symbol": row.get("Ticker") or row.get("Pair") or "DIVIDEND",
-            "pair": row.get("Pair"),
-            "amount": round(_number(row.get("Paper_Value"), 0.0) or 0.0, 2),
-            "event_type": "DIVIDEND_RECEIVED",
-            "source": "paper_trade_log.csv",
-        })
-    return events[-50:]
-
-
 def _alerts(*, state: Mapping[str, Any], candidate_payload: Mapping[str, Any], performance: Mapping[str, Any]) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
     pairs = state.get("pairs")
@@ -204,7 +188,8 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     holdings = enrich_holdings_with_position_analytics(holdings, log_rows, market_snapshot)
     holdings = enrich_holdings_with_income_analytics(holdings, market_snapshot=market_snapshot, income_snapshot=income_snapshot)
     watchlist = _watchlist_from_report(watchlist_payload) or _watchlist_from_candidates(candidate_payload)
-    income_events = _income_events(log_rows)
+    realized_income = build_realized_income_evidence(log_rows)
+    income_events = realized_income["income_events"]
     projected_annual_income = total_projected_annual_income(holdings)
     realized_gain = round(sum(_number(item.get("pnl"), 0.0) or 0.0 for item in performance.get("closed_trades", []) if isinstance(item, Mapping)), 2) if isinstance(performance.get("closed_trades"), list) else None
     unrealized_gain = total_unrealized_pnl(holdings)
@@ -228,7 +213,16 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "positions": holdings,
         "watchlist_count": len(watchlist),
         "watchlist": watchlist,
-        "income": state_income,
+        "income": realized_income["net_income_received"],
+        "state_reported_income": state_income,
+        "gross_distribution_income": realized_income["gross_distribution_income"],
+        "income_adjustments": realized_income["income_adjustments"],
+        "net_income_received": realized_income["net_income_received"],
+        "realized_income_event_count": realized_income["realized_income_event_count"],
+        "positive_income_event_count": realized_income["positive_income_event_count"],
+        "negative_income_event_count": realized_income["negative_income_event_count"],
+        "income_accounting_method": realized_income["income_accounting_method"],
+        "income_evidence_source": realized_income["income_evidence_source"],
         "projected_annual_income": projected_annual_income,
         "income_events": income_events,
         "realized_gain": realized_gain,
