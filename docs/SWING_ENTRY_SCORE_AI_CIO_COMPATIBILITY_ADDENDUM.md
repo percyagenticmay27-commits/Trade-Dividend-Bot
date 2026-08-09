@@ -2,44 +2,83 @@
 
 ## Purpose
 
-This addendum records the Enterprise-facing consequences of the Dividend Entry Score Version 1.1 development. It must be used by the Swing Bot development chat as a compatibility handoff. The Dividend repository remains the Enterprise AI CIO host; no changes in this document authorize modifying the Swing repository from the Dividend repository.
+This addendum records the Enterprise-facing consequences of the Dividend Entry Score development. It is a compatibility handoff for the Swing Bot development chat. The Dividend repository remains the Enterprise AI CIO host; nothing here authorizes changing the Swing repository from the Dividend repository.
 
-## Dividend-side change
+## Dividend-side Strategy A / Strategy B timing model
 
-DIVIDEND-001 now derives symbol-specific entry-timing evidence from the already-fetched shared market-data snapshot instead of using the legacy global `entry_score = 0` / `entry_status = UNKNOWN` placeholder whenever sufficient daily history exists.
+DIVIDEND-001 now publishes two distinct strategy-owned timing models from already-fetched daily OHLC evidence.
 
-Dividend Entry Score evidence now evaluates strategy-owned timing using:
+### Strategy A — Oscillator / Momentum
 
-- RSI14;
-- EMA20;
-- EMA50;
-- bullish `Price > EMA20 > EMA50` alignment;
-- HMA50 and whether HMA50 is rising;
-- Fast Stochastic %K, slope, and whether it is rising;
-- Fast Stochastic overextension protection;
-- five-day price direction;
-- market-data freshness;
-- history sufficiency.
+The arming mechanism uses:
 
-The legacy deterministic `UNKNOWN` fallback remains mandatory when sufficient market evidence is unavailable.
+- Stochastic Oscillator `(14,3,3)` where `%K > %D` and `%K >= 50`, **or**
+- RSI(14) crossing from below into `>= 50`.
 
-### Fast Stochastic overextension protection
+Once armed, the execution lever is Stochastic RSI `(14,7,3,3)`.
 
-Dividend Entry Score Version 1.1.1 treats Fast Stochastic `%K >= 90` as an explicit overextension blocker even when `%K` is still rising. This prevents a high raw score from converting a late/chasing setup into an approved entry.
+A Strategy A BUY trigger requires:
 
-Dividend publishes:
+- Stochastic RSI `%K` genuinely crossing above `%D`; and
+- `%K` entering/crossing the 50 level or the 80 level.
 
-- `FAST_STOCHASTIC_OVEREXTENDED` in `reasons`;
-- `Fast Stochastic must cool below 90 before entry` in `requirements_for_buy`;
-- `timing_context = OVEREXTENDED`;
-- `technical_evidence.fast_stochastic_overextended = true`;
-- `technical_evidence.fast_stochastic_overextended_threshold = 90.0`.
+A Strategy A SELL trigger occurs when either:
 
-This threshold is Dividend strategy logic, not an Enterprise-wide or Swing threshold.
+- Stochastic RSI `%D` genuinely crosses above `%K`; or
+- Stochastic Oscillator `%D` genuinely crosses above `%K`.
+
+Touching/equality by itself is not a crossover. The implementation requires an actual side change between the previous and current observations.
+
+### Strategy B — EMA Trend
+
+A Strategy B BUY-eligible state requires:
+
+- Price > EMA20; and
+- EMA20 > EMA50.
+
+Therefore the bullish structure is `Price > EMA20 > EMA50`.
+
+A Strategy B SELL trigger occurs when current Price is below EMA20.
+
+## Correction to the prior Fast Stochastic overextension draft
+
+The prior temporary Dividend rule that treated raw Fast Stochastic `%K >= 90` as an automatic overextension blocker has been retired. It conflicted with the approved Strategy A design, where Stochastic RSI entering 80 can be part of the valid execution lever.
+
+The old raw Fast Stochastic 14-period value remains available only as audit/backward-compatibility evidence and is explicitly marked `entry_authority = false`.
+
+The authoritative Dividend oscillator evidence is now:
+
+- Stochastic Oscillator `(14,3,3)`;
+- RSI(14);
+- Stochastic RSI `(14,7,3,3)`.
+
+## Enterprise evidence fields
+
+Dividend symbol-specific Entry Score evidence can now include a `strategy_signals` object containing:
+
+- `available`;
+- `source_timeframe`;
+- `strategy_a.name`;
+- `strategy_a.entry_armed`;
+- `strategy_a.arming_reasons`;
+- `strategy_a.buy_trigger`;
+- `strategy_a.sell_trigger`;
+- `strategy_a.buy_reasons`;
+- `strategy_a.sell_reasons`;
+- `strategy_a.rsi14`;
+- Stochastic Oscillator `(14,3,3)` K/D and prior K/D;
+- Stochastic RSI `(14,7,3,3)` K/D and prior K/D;
+- `strategy_b.buy_eligible`;
+- `strategy_b.sell_trigger`;
+- `strategy_b.buy_reason`;
+- `strategy_b.sell_reason`;
+- Strategy B Price, EMA20, and EMA50.
+
+Missing or insufficient market evidence remains fail-closed.
 
 ## Entry status contract
 
-The host can consume these statuses:
+The Enterprise host can continue consuming:
 
 - `STRONG_ENTRY`
 - `GOOD_ENTRY`
@@ -48,96 +87,51 @@ The host can consume these statuses:
 - `AVOID`
 - `UNKNOWN`
 
-For DIVIDEND-001, only `GOOD_ENTRY` and `STRONG_ENTRY` may satisfy the Dividend Entry Gate. A high Opportunity Quality or ranking score does not override a weak Entry Score or an overextension blocker.
+Opportunity Quality and Entry Timing remain separate. High Opportunity Quality does not authorize an entry by itself.
 
-Every non-approved entry should publish explicit reasons and, where deterministically known, requirements that would need to change before a BUY could be considered. Example fields include:
+## AI CIO implications
 
-- `entry_score`
-- `entry_status`
-- `timing_context`
-- `confidence`
-- `confidence_level`
-- `technical_signal`
-- `reasons`
-- `requirements_for_buy`
-- `technical_evidence`
-- `market_data_stale`
-- `history_row_count`
-- `source`
+The AI CIO should eventually be able to explain which Dividend timing strategy is active and why. Examples:
 
-## Fail-closed AI CIO behavior
+- `Strategy A armed by STOCH_OSC_K_ABOVE_D_AND_AT_OR_ABOVE_50`;
+- `Strategy A BUY lever waiting for STOCH_RSI_K_CROSSED_ABOVE_D`;
+- `Strategy A SELL caused by STOCH_RSI_D_CROSSED_ABOVE_K`;
+- `Strategy B BUY eligible because PRICE_ABOVE_EMA20_ABOVE_EMA50`;
+- `Strategy B SELL because PRICE_BELOW_EMA20`.
 
-The Enterprise AI CIO must not interpret missing or `UNKNOWN` Entry Score evidence as approval. The strategy-owned entry gate remains authoritative for strategy execution eligibility.
-
-A Dividend WAIT can now include multiple independent blockers, for example:
-
-- `WATCHLIST_NOT_PROMOTED_WATCH`
-- `ENTRY_STATUS_NOT_APPROVED_WAIT`
-- `ENTRY_EVIDENCE_RSI14_BELOW_50`
-- `ENTRY_EVIDENCE_EMA20_EMA50_BULLISH_ALIGNMENT_NOT_CONFIRMED`
-- `ENTRY_EVIDENCE_PRICE_BELOW_HMA50`
-- `ENTRY_EVIDENCE_FAST_STOCHASTIC_NOT_RISING`
-- `ENTRY_EVIDENCE_FAST_STOCHASTIC_OVEREXTENDED`
-
-The host UI should display the reason rather than a naked `WAIT` label whenever the strategy publishes reason evidence.
+The Enterprise host must display supplied strategy evidence; it must not recompute Dividend or Swing trading logic.
 
 ## Swing compatibility requirement
 
-SWING-001 must **not** copy the Dividend indicator thresholds, scoring weights, overextension threshold, or pair-entry policy. Swing owns its own Entry Score methodology and committee rules.
+SWING-001 must **not** copy Dividend's Strategy A or Strategy B formulas unless Swing independently chooses those rules for its own strategy.
 
-To obtain equivalent AI CIO display and auditability, Swing should publish symbol/candidate-specific entry evidence using the same semantic concepts where applicable:
+Swing should instead publish its own strategy-owned entry/exit methodology through equivalent semantic evidence where useful:
 
-- canonical `strategy_id = SWING-001`;
-- candidate `symbol` or Swing candidate identifier;
-- numeric `entry_score` bounded to the Swing Entry Score contract;
-- `entry_status` using a documented Swing-to-Enterprise semantic mapping;
-- explicit reason codes for `WAIT`, `WATCH`, `AVOID`, overextension, or rejected promotion;
-- human-readable requirements or next triggers when deterministic;
-- `timing_context`, including an overextended/chasing state if Swing has one;
-- `market_data_stale` or equivalent freshness state;
-- evidence provenance/path;
-- technical/committee evidence owned by Swing;
+- strategy/method identifier;
+- candidate symbol or pair;
+- entry status;
+- entry score if used;
+- whether its entry mechanism is armed/eligible;
+- exact BUY trigger evidence;
+- exact SELL trigger evidence;
+- prior/current values needed to prove a crossover rather than a touch;
+- explicit WAIT/rejection reasons;
+- requirements/next trigger;
+- market-data freshness;
+- source/provenance;
 - paper-only and broker-disabled safety flags.
 
-If Swing uses RSI, EMA, HMA, Stochastic, breakout structure, ATR, volume, committee votes, or another timing model, Swing should publish those values as Swing-owned evidence. If Swing has its own overextension/chasing rule, publish the strategy-owned threshold and blocker so AI CIO can explain it. The Enterprise host must display the supplied evidence but must never recompute Swing's Entry Score using Dividend formulas.
+If Swing uses RSI, EMA, Stochastic, Stochastic RSI, HMA, ATR, volume, breakout structure, committee votes, or another model, those values remain Swing-owned evidence. The AI CIO should aggregate/display them without applying Dividend formulas to Swing.
 
-## Opportunity Quality versus Entry Timing
+## Cross-strategy permanent rules
 
-This separation is permanent across strategies:
-
-- **Opportunity Quality** answers whether the candidate is attractive.
-- **Entry Score / Entry Timing** answers whether this is an acceptable time to deploy capital.
-
-A strategy may report very high Opportunity Quality while simultaneously reporting `WAIT` for entry. The AI CIO dashboard must preserve both values rather than collapsing them into one score.
-
-## Watchlist / promotion interaction
-
-Dividend currently requires both strategy-owned promotion and acceptable Entry Score before a paper purchase can be approved. Swing may use a different lifecycle, but if it has an equivalent committee promotion stage it should publish the state separately from Entry Score so the AI CIO can explain whether a candidate is waiting because of:
-
-- discovery/ranking;
-- committee/watchlist promotion;
-- entry timing;
-- overextension/chasing risk;
-- risk/governance;
-- stale or insufficient evidence.
-
-## AI CIO display expectations
-
-For any strategy that publishes sufficient evidence, jshouseapi.com should eventually be able to display:
-
-- candidate/pair;
-- Opportunity Quality;
-- Entry Score and Entry Status;
-- timing context, including `OVEREXTENDED` when published;
-- promotion/watchlist state;
-- final strategy decision;
-- confidence;
-- primary blocking reason;
-- additional reason codes;
-- requirements for the decision to change;
-- evidence freshness/source.
-
-The host remains presentation/aggregation only. It does not approve a Swing trade on Swing's behalf.
+- Opportunity Quality answers whether an opportunity is attractive.
+- Entry Timing answers whether capital should be deployed now.
+- A WAIT must have an explicit reason whenever strategy evidence supports one.
+- Missing/UNKNOWN evidence fails closed.
+- Crossovers require prior/current evidence and cannot be inferred from lines merely touching.
+- Strategy calculations remain owned by their source strategy.
+- The Enterprise AI CIO aggregates, governs, and displays; it does not silently replace strategy logic.
 
 ## Swing regression tests to add
 
@@ -145,20 +139,20 @@ Swing development should add tests proving that:
 
 1. missing entry evidence fails closed;
 2. stale technical evidence cannot become an approved entry;
-3. candidate-specific entry evidence is not replaced by a global score;
-4. a high Opportunity Quality score cannot bypass a failed Entry Timing decision;
-5. every `WAIT`/rejected entry contains a reason code;
-6. if Swing implements overextension/chasing protection, an overextended setup cannot be approved merely because momentum is still rising;
-7. cross-strategy evidence cannot be consumed as SWING-001 evidence;
-8. paper-only, no-order, and broker-disabled flags remain locked;
-9. the canonical Swing artifact reaches the Enterprise registry at the declared path.
+3. candidate-specific evidence is not replaced by a global score;
+4. high Opportunity Quality cannot bypass failed Entry Timing;
+5. every WAIT/rejected entry has a reason code;
+6. any crossover-based Swing rule distinguishes a true cross from equality/touching;
+7. entry and exit reasons identify the responsible Swing mechanism;
+8. cross-strategy evidence cannot be consumed as SWING-001 evidence;
+9. paper-only, no-order, and broker-disabled flags remain locked;
+10. canonical Swing evidence reaches the Enterprise registry at its declared path.
 
-## Files changed on the Dividend side for this milestone
+## Dividend files changed for this strategy timing milestone
 
+- `src/dividend_bot/dividend_entry_strategy_signals.py`
 - `src/dividend_bot/dividend_technical_entry_evidence.py`
-- `entry_score_engine.py`
-- `dividend_entry_gate.py`
-- `stage_input_adapters.py`
+- `tests/test_dividend_entry_strategy_signals.py`
 - `tests/test_dividend_entry_score_market_evidence.py`
 
-This addendum should be merged into `SWING_ENTERPRISE_UI_COMPATIBILITY_TRACKER.md` during the next documentation consolidation pass.
+This addendum should be consolidated into `SWING_ENTERPRISE_UI_COMPATIBILITY_TRACKER.md` during the next documentation consolidation pass.
