@@ -8,10 +8,13 @@ Strategy A
 ----------
 Arming mechanism:
 * Stochastic Oscillator (14, 3, 3): %K > %D and %K >= 50, OR
-* RSI(14) crosses into >= 50.
+* RSI(14) is >= 50.
 
-Execution lever after arming:
-* Stochastic RSI (14, 7, 3, 3) %K crosses above %D while %K enters 50 or 80.
+Execution lever while armed:
+* Stochastic RSI (14, 7, 3, 3) %K > %D.
+* A fresh %K/%D crossover is NOT required for BUY. If RSI or Stochastic
+  Oscillator keeps the mechanism armed and Stochastic RSI %K is already above
+  %D and moving upward, the setup remains BUY-active.
 
 Exit:
 * Stochastic RSI %D crosses above %K, OR
@@ -22,7 +25,7 @@ Strategy B
 Entry eligible while Price > EMA20 > EMA50.
 Exit when Price is below EMA20.
 
-Crosses require a real side change. Equality/touching alone is not a cross.
+Exit crosses require a real side change. Equality/touching alone is not a cross.
 """
 from __future__ import annotations
 
@@ -31,7 +34,7 @@ from typing import Any
 import pandas as pd
 
 MODULE_NAME = "dividend_entry_strategy_signals"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 
 STOCH_OSC_LENGTH = 14
 STOCH_OSC_K_SMOOTH = 3
@@ -141,13 +144,16 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
     srsi_d_prev = float(stoch_rsi_d.iloc[prev])
 
     oscillator_armed = osc_k > osc_d and osc_k >= ARM_LEVEL
+    rsi_above_50 = rsi_now >= ARM_LEVEL
     rsi_entered_50 = _entered_level(rsi_prev, rsi_now, ARM_LEVEL)
-    entry_armed = oscillator_armed or rsi_entered_50
+    entry_armed = oscillator_armed or rsi_above_50
 
+    srsi_k_above_d = srsi_k > srsi_d
+    srsi_k_rising = srsi_k > srsi_k_prev
     srsi_k_cross_above_d = _cross_above(srsi_k_prev, srsi_d_prev, srsi_k, srsi_d)
     srsi_entered_50 = _entered_level(srsi_k_prev, srsi_k, 50.0)
     srsi_entered_80 = _entered_level(srsi_k_prev, srsi_k, 80.0)
-    strategy_a_buy = entry_armed and srsi_k_cross_above_d and (srsi_entered_50 or srsi_entered_80)
+    strategy_a_buy = entry_armed and srsi_k_above_d
 
     srsi_d_cross_above_k = _cross_above(srsi_d_prev, srsi_k_prev, srsi_d, srsi_k)
     osc_d_cross_above_k = _cross_above(osc_d_prev, osc_k_prev, osc_d, osc_k)
@@ -165,6 +171,7 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
             "arming_reasons": [
                 reason for reason, met in (
                     ("STOCH_OSC_K_ABOVE_D_AND_AT_OR_ABOVE_50", oscillator_armed),
+                    ("RSI14_AT_OR_ABOVE_50", rsi_above_50),
                     ("RSI14_ENTERED_50", rsi_entered_50),
                 ) if met
             ],
@@ -172,6 +179,8 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
             "sell_trigger": strategy_a_sell,
             "buy_reasons": [
                 reason for reason, met in (
+                    ("STOCH_RSI_K_ABOVE_D", srsi_k_above_d),
+                    ("STOCH_RSI_K_RISING", srsi_k_rising),
                     ("STOCH_RSI_K_CROSSED_ABOVE_D", srsi_k_cross_above_d),
                     ("STOCH_RSI_K_ENTERED_50", srsi_entered_50),
                     ("STOCH_RSI_K_ENTERED_80", srsi_entered_80),
@@ -198,6 +207,8 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
                 "d": round(srsi_d, 4),
                 "k_previous": round(srsi_k_prev, 4),
                 "d_previous": round(srsi_d_prev, 4),
+                "k_above_d": srsi_k_above_d,
+                "k_rising": srsi_k_rising,
             },
         },
         "strategy_b": {
