@@ -23,13 +23,14 @@ def _row():
                     "symbol": "PLTW",
                     "pair": "PLTW / PLTU",
                     "sleeve": "A",
-                    "lifecycle_status": "PARKED_IN_SGOV",
-                    "first_purchase_date": "2026-06-18",
-                    "last_exit_date": "2026-06-18",
+                    "lifecycle_status": "NEVER_ENTERED",
+                    "first_purchase_date": None,
+                    "last_exit_date": None,
                     "last_exit_action": "PAPER_PARK_IN_SGOV",
-                    "entry_value": 26.0,
-                    "last_exit_value": 28.0,
-                    "realized_gain_loss": 2.0,
+                    "entry_value": None,
+                    "last_exit_value": None,
+                    "realized_gain_loss": None,
+                    "never_entered_reason": "PAPER_WAIT_IN_SGOV",
                     "reentry_count": 0,
                     "evidence_source": "paper_trade_log.csv",
                 },
@@ -57,43 +58,45 @@ def _row():
     }
 
 
-def test_position_history_renderer_keeps_current_and_reserve_out_of_sales_history() -> None:
+def test_position_history_renderer_keeps_current_reserve_and_never_entered_out_of_sales_history() -> None:
     output = render_position_history_panel(_row())
     assert "Position / Sales History" in output
-    assert "PLTW" in output
     assert "AVGW" in output
     assert "AMDW" not in output
+    assert "PLTW" not in output
     assert ">SGOV<" not in output
+    assert "Candidates that never entered remain outside realized trade history." in output
 
 
-def test_position_history_renderer_shows_entry_exit_and_gain_loss() -> None:
+def test_position_history_renderer_shows_entry_exit_and_gain_loss_for_realized_position() -> None:
     output = render_position_history_panel(_row())
     assert "Entry Value" in output
     assert "Exit Value" in output
     assert "Gain / Loss" in output
-    assert "$26.00" in output
-    assert "$28.00" in output
-    assert "+$2.00" in output
     assert "$36.98" in output
     assert "$35.89" in output
     assert "-$1.09" in output
-    assert "position-history-pnl positive" in output
-    assert "position-history-pnl negative" in output
+    assert "negative" in output
+    assert "$26.00" not in output
+    assert "$28.00" not in output
+    assert "+$2.00" not in output
 
 
-def test_position_history_renderer_shows_exit_evidence_and_summary() -> None:
+def test_position_history_renderer_shows_only_real_exit_evidence_and_summary() -> None:
     output = render_position_history_panel(_row())
-    assert "PAPER_PARK_IN_SGOV" in output
     assert "PAPER_SELL_TO_SGOV" in output
+    assert "PAPER_PARK_IN_SGOV" not in output
     assert "paper_trade_log.csv" in output
     assert "Reported Realized P&amp;L" in output
-    assert "+$0.91" in output
+    assert "-$1.09" in output
+    assert "+$0.91" not in output
 
 
-def test_position_history_renderer_does_not_mix_distribution_history() -> None:
+def test_position_history_renderer_does_not_mix_distribution_or_never_entered_history() -> None:
     output = render_position_history_panel(_row())
     assert "Distribution History" not in output
-    assert "dividend" in output.lower()
+    assert "PLTW" not in output
+    assert "PAPER_PARK_IN_SGOV" not in output
 
 
 def test_position_history_renderer_does_not_fabricate_missing_pnl() -> None:
@@ -118,7 +121,7 @@ def test_position_history_renderer_does_not_fabricate_missing_pnl() -> None:
 
 def test_position_history_renderer_has_explicit_empty_state() -> None:
     output = render_position_history_panel({"performance_detail": {"position_lifecycle": []}})
-    assert "No strategy-owned position exits are currently reported." in output
+    assert "No strategy-owned completed position exits are currently reported." in output
 
 
 def test_position_history_css_is_professional_responsive_and_scrollable() -> None:
@@ -126,6 +129,6 @@ def test_position_history_css_is_professional_responsive_and_scrollable() -> Non
     assert "overflow-x:auto" in css
     assert "position:sticky" in css
     assert "nth-child(even)" in css
-    assert "position-history-pnl.positive" in css
-    assert "position-history-pnl.negative" in css
+    assert ".positive" in css
+    assert ".negative" in css
     assert "@media" in css
