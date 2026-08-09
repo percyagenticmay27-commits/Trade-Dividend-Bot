@@ -3,6 +3,9 @@
 This module does not fetch market data and does not place or simulate orders. It
 converts already-fetched daily OHLC history into symbol-specific entry-timing
 metrics used by ``entry_score_engine``. Missing or stale evidence fails closed.
+
+The legacy raw Fast Stochastic values are retained for compatibility/audit only.
+Dividend Strategy A/B timing is published by ``dividend_entry_strategy_signals``.
 """
 from __future__ import annotations
 
@@ -11,14 +14,14 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from .dividend_entry_strategy_signals import build_strategy_signals
 from .indicators import calculate_indicators
 
 MODULE_NAME = "dividend_technical_entry_evidence"
-MODULE_VERSION = "1.0.1"
+MODULE_VERSION = "1.1.0"
 MIN_HISTORY_ROWS = 60
 STOCH_PERIOD = 14
 HMA_PERIOD = 50
-STOCH_OVEREXTENDED = 90.0
 
 
 def _records(snapshot: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
@@ -67,6 +70,7 @@ def _hma(series: pd.Series, period: int = HMA_PERIOD) -> pd.Series:
 
 
 def _fast_stochastic(frame: pd.DataFrame, period: int = STOCH_PERIOD) -> pd.Series:
+    """Legacy raw Fast %K retained only for compatibility/audit."""
     highest = frame["High"].rolling(period).max()
     lowest = frame["Low"].rolling(period).min()
     spread = highest - lowest
@@ -135,6 +139,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
             "reasons": blockers,
             "requirements_for_buy": ["At least 60 valid daily OHLC rows", "Fresh market data"],
             "technical_evidence": {},
+            "strategy_signals": {"available": False, "reason": "INSUFFICIENT_STRATEGY_SIGNAL_HISTORY"},
             "history_row_count": len(rows),
             "market_data_stale": stale,
             "source": "market_data_snapshot.json",
@@ -144,7 +149,8 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
     indicators = calculate_indicators(frame)
     close = indicators["Close"]
     hma = _hma(close)
-    stochastic = _fast_stochastic(frame)
+    legacy_fast_stochastic = _fast_stochastic(frame)
+    strategy_signals = build_strategy_signals(frame)
     latest = indicators.iloc[-1]
     price = float(latest["Close"])
     ema20 = float(latest["EMA20"])
@@ -152,17 +158,18 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
     rsi14 = float(latest["RSI14"])
     hma50 = float(hma.iloc[-1])
     hma50_prior = float(hma.iloc[-2])
-    stoch_k = float(stochastic.iloc[-1])
-    stoch_prior = float(stochastic.iloc[-2])
-    stoch_slope = stoch_k - stoch_prior
+    fast_k = float(legacy_fast_stochastic.iloc[-1])
+    fast_prior = float(legacy_fast_stochastic.iloc[-2])
+    fast_slope = fast_k - fast_prior
 
     ema_aligned = price > ema20 > ema50
     above_hma = price > hma50
     hma_rising = hma50 > hma50_prior
-    stochastic_rising = stoch_slope > 0
-    stochastic_overextended = stoch_k >= STOCH_OVEREXTENDED
     five_day_up = len(close) >= 6 and float(close.iloc[-1]) > float(close.iloc[-6])
 
+    # Legacy confirmation remains for Entry Score V1.1 compatibility. Raw Fast
+    # Stochastic is no longer an entry blocker; Strategy A uses Stochastic
+    # Oscillator 14,3,3 plus Stoch RSI 14,7,3,3 instead.
     if rsi14 < 50:
         blockers.append("RSI14_BELOW_50")
     elif rsi14 <= 55:
@@ -173,27 +180,14 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         blockers.append("PRICE_BELOW_HMA50")
     if not hma_rising:
         blockers.append("HMA50_NOT_RISING")
-    if not stochastic_rising:
-        blockers.append("FAST_STOCHASTIC_NOT_RISING")
-    if stochastic_overextended:
-        blockers.append("FAST_STOCHASTIC_OVEREXTENDED")
 
     ema_score = 100.0 if ema_aligned else (60.0 if price > ema20 else 20.0)
     hma_score = 100.0 if above_hma and hma_rising else (65.0 if above_hma else 20.0)
-    if stochastic_overextended:
-        stochastic_score = 35.0
-    elif stochastic_rising and 20 <= stoch_k <= 80:
-        stochastic_score = 100.0
-    elif stochastic_rising:
-        stochastic_score = 65.0
-    else:
-        stochastic_score = 20.0
     trend_score = 100.0 if five_day_up else 35.0
     scores = {
         "rsi14": _rsi_score(rsi14),
         "ema_alignment": ema_score,
         "hma50": hma_score,
-        "fast_stochastic": stochastic_score,
         "five_day_price_trend": trend_score,
     }
     score = round(sum(scores.values()) / len(scores), 2)
@@ -210,8 +204,6 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         "EMA20_EMA50_BULLISH_ALIGNMENT_NOT_CONFIRMED": "Price > EMA20 > EMA50",
         "PRICE_BELOW_HMA50": "Price must close above HMA50",
         "HMA50_NOT_RISING": "HMA50 must turn upward",
-        "FAST_STOCHASTIC_NOT_RISING": "Fast Stochastic must turn upward",
-        "FAST_STOCHASTIC_OVEREXTENDED": "Fast Stochastic must cool below 90 before entry",
         "STALE_MARKET_DATA": "Refresh market data",
     }
     for reason in blockers:
@@ -221,7 +213,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
 
     confidence = round(min(1.0, len(frame) / 200.0) * (0.5 if stale else 1.0), 4)
     confidence_level = "HIGH" if confidence >= 0.70 else ("MEDIUM" if confidence >= 0.40 else "LOW")
-    timing_context = "OVEREXTENDED" if stochastic_overextended else ("TREND_CONTINUATION" if ema_aligned and above_hma else ("PULLBACK_ENTRY" if price > ema50 else "RANGE_BOUND"))
+    timing_context = "TREND_CONTINUATION" if ema_aligned and above_hma else ("PULLBACK_ENTRY" if price > ema50 else "RANGE_BOUND")
 
     return {
         "symbol": symbol,
@@ -233,6 +225,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         "technical_signal": technical_signal,
         "reasons": blockers or ["ENTRY_TECHNICAL_CONFIRMATION_COMPLETE"],
         "requirements_for_buy": requirements,
+        "strategy_signals": strategy_signals,
         "technical_evidence": {
             "price": round(price, 6),
             "ema20": round(ema20, 6),
@@ -241,16 +234,17 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
             "hma50": round(hma50, 6),
             "hma50_prior": round(hma50_prior, 6),
             "hma50_rising": hma_rising,
-            "fast_stochastic_k": round(stoch_k, 4),
-            "fast_stochastic_prior": round(stoch_prior, 4),
-            "fast_stochastic_slope": round(stoch_slope, 4),
-            "fast_stochastic_rising": stochastic_rising,
-            "fast_stochastic_overextended": stochastic_overextended,
-            "fast_stochastic_overextended_threshold": STOCH_OVEREXTENDED,
             "ema_bullish_alignment": ema_aligned,
             "price_above_hma50": above_hma,
             "five_day_price_up": five_day_up,
             "component_scores": scores,
+            "legacy_fast_stochastic_audit": {
+                "period": STOCH_PERIOD,
+                "k": round(fast_k, 4),
+                "k_previous": round(fast_prior, 4),
+                "slope": round(fast_slope, 4),
+                "entry_authority": False,
+            },
         },
         "history_row_count": len(rows),
         "market_data_stale": stale,
