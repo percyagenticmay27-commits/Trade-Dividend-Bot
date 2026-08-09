@@ -1,8 +1,8 @@
 """Read-only technical entry evidence derived from the shared market snapshot.
 
-This module does not fetch market data and does not place or simulate orders.  It
+This module does not fetch market data and does not place or simulate orders. It
 converts already-fetched daily OHLC history into symbol-specific entry-timing
-metrics used by ``entry_score_engine``.  Missing or stale evidence fails closed.
+metrics used by ``entry_score_engine``. Missing or stale evidence fails closed.
 """
 from __future__ import annotations
 
@@ -14,10 +14,11 @@ import pandas as pd
 from .indicators import calculate_indicators
 
 MODULE_NAME = "dividend_technical_entry_evidence"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.0.1"
 MIN_HISTORY_ROWS = 60
 STOCH_PERIOD = 14
 HMA_PERIOD = 50
+STOCH_OVEREXTENDED = 90.0
 
 
 def _records(snapshot: Mapping[str, Any] | None) -> list[Mapping[str, Any]]:
@@ -159,6 +160,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
     above_hma = price > hma50
     hma_rising = hma50 > hma50_prior
     stochastic_rising = stoch_slope > 0
+    stochastic_overextended = stoch_k >= STOCH_OVEREXTENDED
     five_day_up = len(close) >= 6 and float(close.iloc[-1]) > float(close.iloc[-6])
 
     if rsi14 < 50:
@@ -173,10 +175,19 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         blockers.append("HMA50_NOT_RISING")
     if not stochastic_rising:
         blockers.append("FAST_STOCHASTIC_NOT_RISING")
+    if stochastic_overextended:
+        blockers.append("FAST_STOCHASTIC_OVEREXTENDED")
 
     ema_score = 100.0 if ema_aligned else (60.0 if price > ema20 else 20.0)
     hma_score = 100.0 if above_hma and hma_rising else (65.0 if above_hma else 20.0)
-    stochastic_score = 100.0 if stochastic_rising and 20 <= stoch_k <= 80 else (65.0 if stochastic_rising else 20.0)
+    if stochastic_overextended:
+        stochastic_score = 35.0
+    elif stochastic_rising and 20 <= stoch_k <= 80:
+        stochastic_score = 100.0
+    elif stochastic_rising:
+        stochastic_score = 65.0
+    else:
+        stochastic_score = 20.0
     trend_score = 100.0 if five_day_up else 35.0
     scores = {
         "rsi14": _rsi_score(rsi14),
@@ -200,6 +211,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         "PRICE_BELOW_HMA50": "Price must close above HMA50",
         "HMA50_NOT_RISING": "HMA50 must turn upward",
         "FAST_STOCHASTIC_NOT_RISING": "Fast Stochastic must turn upward",
+        "FAST_STOCHASTIC_OVEREXTENDED": "Fast Stochastic must cool below 90 before entry",
         "STALE_MARKET_DATA": "Refresh market data",
     }
     for reason in blockers:
@@ -209,7 +221,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
 
     confidence = round(min(1.0, len(frame) / 200.0) * (0.5 if stale else 1.0), 4)
     confidence_level = "HIGH" if confidence >= 0.70 else ("MEDIUM" if confidence >= 0.40 else "LOW")
-    timing_context = "TREND_CONTINUATION" if ema_aligned and above_hma else ("PULLBACK_ENTRY" if price > ema50 else "RANGE_BOUND")
+    timing_context = "OVEREXTENDED" if stochastic_overextended else ("TREND_CONTINUATION" if ema_aligned and above_hma else ("PULLBACK_ENTRY" if price > ema50 else "RANGE_BOUND"))
 
     return {
         "symbol": symbol,
@@ -233,6 +245,8 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
             "fast_stochastic_prior": round(stoch_prior, 4),
             "fast_stochastic_slope": round(stoch_slope, 4),
             "fast_stochastic_rising": stochastic_rising,
+            "fast_stochastic_overextended": stochastic_overextended,
+            "fast_stochastic_overextended_threshold": STOCH_OVEREXTENDED,
             "ema_bullish_alignment": ema_aligned,
             "price_above_hma50": above_hma,
             "five_day_price_up": five_day_up,
