@@ -77,6 +77,19 @@ def test_stale_market_data_cannot_be_good_entry() -> None:
     assert row["entry_status"] not in {"GOOD_ENTRY", "STRONG_ENTRY"}
 
 
+def test_overextended_fast_stochastic_blocks_entry_even_when_rising() -> None:
+    closes = [100 + i * 0.15 for i in range(80)] + [112, 113, 114, 116, 118, 121, 124, 128, 133, 139]
+    report = entry_engine.build_entry_score_report(_snapshot(_record("HOT", closes)))
+    row = report["entries"][0]
+    technical = row["technical_evidence"]
+    assert technical["fast_stochastic_k"] >= 90
+    assert technical["fast_stochastic_overextended"] is True
+    assert "FAST_STOCHASTIC_OVEREXTENDED" in row["reasons"]
+    assert "Fast Stochastic must cool below 90 before entry" in row["requirements_for_buy"]
+    assert row["timing_context"] == "OVEREXTENDED"
+    assert row["entry_status"] not in {"GOOD_ENTRY", "STRONG_ENTRY"}
+
+
 def test_gate_selects_symbol_specific_entry_instead_of_global_aggregate() -> None:
     report = {
         "entry_score": 90,
