@@ -32,6 +32,133 @@ def test_current_holding_owner_reaches_dashboard_evidence(tmp_path: Path) -> Non
     assert holding["strategy_owner"] == "STRATEGY_A"
     assert holding["entry_method"] == "STRATEGY_A"
     assert holding["strategy_ownership_source"] == "QUALIFIED_ENTRY_GATE"
+    assert holding["exit_state"] == "UNKNOWN"
+    assert holding["sell_trigger"] is False
+
+
+def test_strategy_a_buffered_warning_reaches_dashboard_without_becoming_sell(tmp_path: Path) -> None:
+    _write_json(tmp_path / "paper_state.json", {
+        "pairs": {
+            "AAA / BBB": {
+                "a_shares": 2.0,
+                "b_shares": 0.0,
+                "last_prices": {"A": 10.0, "B": 20.0},
+                "sgov_balance": 0.0,
+                "total_dividends_received": 0.0,
+                "a_strategy_owner": "STRATEGY_A",
+                "strategy_owner": "STRATEGY_A",
+                "strategy_ownership_source": "QUALIFIED_ENTRY_GATE",
+            }
+        }
+    })
+    _write_json(tmp_path / "entry_score_report.json", {
+        "entries": [{
+            "symbol": "AAA",
+            "strategy_signals": {
+                "strategy_a": {
+                    "sell_trigger": False,
+                    "sell_reasons": [],
+                    "exit_warning_active": True,
+                    "exit_buffered": True,
+                    "exit_warning_reasons": ["STOCH_RSI_D_CROSSED_ABOVE_K"],
+                },
+                "strategy_b": {"sell_trigger": False, "sell_reason": None},
+            },
+        }]
+    })
+
+    payload = build_dividend_dashboard_evidence(tmp_path)
+    holding = next(row for row in payload["holdings"] if row["symbol"] == "AAA")
+    assert holding["strategy_owner"] == "STRATEGY_A"
+    assert holding["position_status"] == "OPEN"
+    assert holding["exit_state"] == "WARNING_BUFFERED"
+    assert holding["exit_warning_active"] is True
+    assert holding["exit_buffered"] is True
+    assert holding["exit_warning_reasons"] == ["STOCH_RSI_D_CROSSED_ABOVE_K"]
+    assert holding["sell_trigger"] is False
+    assert holding["sell_reasons"] == []
+    assert holding["exit_authority_reason"] == "STRATEGY_A_EXIT_AUTHORITY"
+    assert holding["exit_evidence_source"] == "entry_score_report.json"
+    assert "entry_score_report.json" in payload["evidence_sources"]
+
+
+def test_strategy_a_confirmed_sell_reaches_dashboard_as_confirmed_not_closed(tmp_path: Path) -> None:
+    _write_json(tmp_path / "paper_state.json", {
+        "pairs": {
+            "AAA / BBB": {
+                "a_shares": 2.0,
+                "b_shares": 0.0,
+                "last_prices": {"A": 10.0, "B": 20.0},
+                "sgov_balance": 0.0,
+                "total_dividends_received": 0.0,
+                "a_strategy_owner": "STRATEGY_A",
+                "strategy_owner": "STRATEGY_A",
+                "strategy_ownership_source": "QUALIFIED_ENTRY_GATE",
+            }
+        }
+    })
+    _write_json(tmp_path / "entry_score_report.json", {
+        "entries": [{
+            "symbol": "AAA",
+            "strategy_signals": {
+                "strategy_a": {
+                    "sell_trigger": True,
+                    "sell_reasons": ["STOCH_OSC_D_CROSSED_ABOVE_K_BELOW_80"],
+                    "exit_warning_active": True,
+                    "exit_buffered": False,
+                    "exit_warning_reasons": ["STOCH_RSI_D_CROSSED_ABOVE_K"],
+                },
+                "strategy_b": {"sell_trigger": False, "sell_reason": None},
+            },
+        }]
+    })
+
+    payload = build_dividend_dashboard_evidence(tmp_path)
+    holding = next(row for row in payload["holdings"] if row["symbol"] == "AAA")
+    assert holding["position_status"] == "OPEN"
+    assert holding["exit_state"] == "SELL_CONFIRMED"
+    assert holding["sell_trigger"] is True
+    assert holding["sell_reasons"] == ["STOCH_OSC_D_CROSSED_ABOVE_K_BELOW_80"]
+
+
+def test_strategy_b_does_not_inherit_strategy_a_buffer_warning(tmp_path: Path) -> None:
+    _write_json(tmp_path / "paper_state.json", {
+        "pairs": {
+            "AAA / BBB": {
+                "a_shares": 2.0,
+                "b_shares": 0.0,
+                "last_prices": {"A": 10.0, "B": 20.0},
+                "sgov_balance": 0.0,
+                "total_dividends_received": 0.0,
+                "a_strategy_owner": "STRATEGY_B",
+                "strategy_owner": "STRATEGY_B",
+                "strategy_ownership_source": "QUALIFIED_ENTRY_GATE",
+            }
+        }
+    })
+    _write_json(tmp_path / "entry_score_report.json", {
+        "entries": [{
+            "symbol": "AAA",
+            "strategy_signals": {
+                "strategy_a": {
+                    "sell_trigger": False,
+                    "exit_warning_active": True,
+                    "exit_buffered": True,
+                    "exit_warning_reasons": ["STOCH_RSI_D_CROSSED_ABOVE_K"],
+                },
+                "strategy_b": {"sell_trigger": False, "sell_reason": None},
+            },
+        }]
+    })
+
+    payload = build_dividend_dashboard_evidence(tmp_path)
+    holding = next(row for row in payload["holdings"] if row["symbol"] == "AAA")
+    assert holding["strategy_owner"] == "STRATEGY_B"
+    assert holding["exit_state"] == "HOLD"
+    assert holding["exit_warning_active"] is False
+    assert holding["exit_buffered"] is False
+    assert holding["exit_warning_reasons"] == []
+    assert holding["sell_trigger"] is False
 
 
 def test_completed_owner_controlled_exit_reaches_lifecycle_evidence(tmp_path: Path) -> None:
