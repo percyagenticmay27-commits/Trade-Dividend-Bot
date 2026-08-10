@@ -58,7 +58,7 @@ The authoritative Dividend oscillator evidence is now:
 
 ## Strategy ownership and lifecycle routing
 
-DIVIDEND-001 now has a dedicated strategy-ownership router for paper lifecycle governance.
+DIVIDEND-001 now has a dedicated strategy-ownership router and the qualified-entry paper wrapper now persists the resolved methodology into `paper_state.json` when an ETF position actually opens or re-opens.
 
 Permanent ownership rules:
 
@@ -67,11 +67,29 @@ Permanent ownership rules:
 - if only Strategy B is BUY-active for a new position, Strategy B may own that position;
 - if neither strategy is BUY-active, entry waits with `NO_ACTIVE_ENTRY_STRATEGY`;
 - if both strategies are BUY-active and no explicit precedence/selection policy exists, the router fails closed with `MULTIPLE_ACTIVE_ENTRY_STRATEGIES_REQUIRE_SELECTION_POLICY` rather than arbitrarily assigning ownership;
-- an A-owned position ignores Strategy B SELL triggers;
-- a B-owned position ignores Strategy A SELL triggers;
+- an A-owned position must ignore Strategy B SELL triggers;
+- a B-owned position must ignore Strategy A SELL triggers;
 - unknown ownership cannot generate a strategy-routed SELL.
 
-This ownership layer is analysis/governance only at the current milestone. It is being introduced before wiring the paper engine so a later execution change cannot silently mix Strategy A and Strategy B exit rules.
+### Persisted Dividend paper-state fields
+
+For a pair-managed qualified entry, the paper state can now persist:
+
+- `strategy_owner`;
+- `a_strategy_owner`;
+- `b_strategy_owner`;
+- `strategy_ownership_source = QUALIFIED_ENTRY_GATE`.
+
+A pair-managed position receives one common owner only when the qualified entry gate supplies one unambiguous strategy owner. Multiple owners are not collapsed into an invented precedence rule.
+
+For an independent-sleeve position, the paper state can persist per sleeve:
+
+- `a_strategy_owner` / `b_strategy_owner`;
+- `a_strategy_ownership_source` / `b_strategy_ownership_source`.
+
+Failed or waiting entries do not fabricate ownership. Re-entry ownership is written only after the core paper ledger has actually moved that position out of SGOV.
+
+The next lifecycle-routing milestone must make SELL evaluation read these persisted owner fields before closing positions. This is intentionally separate from the ownership-persistence milestone so persistence can be regression-tested before changing exit authority in the daily paper loop.
 
 ## Enterprise evidence fields
 
@@ -152,6 +170,7 @@ Swing should instead publish its own strategy-owned entry/exit methodology throu
 - exact SELL trigger evidence;
 - prior/current values needed to prove a crossover rather than a touch when Swing uses crossover rules;
 - strategy owner/method owner for an open lifecycle if Swing supports multiple timing methods;
+- persisted owner/method field in Swing's own position lifecycle once a position is actually opened;
 - explicit WAIT/rejection reasons;
 - requirements/next trigger;
 - market-data freshness;
@@ -159,6 +178,8 @@ Swing should instead publish its own strategy-owned entry/exit methodology throu
 - paper-only and broker-disabled safety flags.
 
 If Swing uses multiple entry methodologies, Swing should preserve the method that actually owns an open position and must not silently switch exit logic mid-position. If multiple Swing methods simultaneously qualify a new candidate, Swing should publish its own documented selection/precedence rule or fail closed until one is selected. Dividend's current fail-closed ambiguity policy is not automatically Swing's required policy; the semantic requirement is that ownership and precedence be explicit and auditable.
+
+Swing should persist ownership in its own authoritative paper lifecycle/state rather than relying only on a transient dashboard field. The AI CIO may display that ownership, but it must not become the system of record for Swing lifecycle ownership.
 
 If Swing uses RSI, EMA, Stochastic, Stochastic RSI, HMA, ATR, volume, breakout structure, committee votes, or another model, those values remain Swing-owned evidence. The AI CIO should aggregate/display them without applying Dividend formulas to Swing.
 
@@ -187,17 +208,21 @@ Swing development should add tests proving that:
 8. if Swing supports multiple timing methods, open-position method ownership is sticky;
 9. one Swing method cannot sell a position owned by another method unless a documented migration/override policy explicitly permits it;
 10. ambiguous multiple-method entry qualification has an explicit selection policy or fails closed;
-11. cross-strategy evidence cannot be consumed as SWING-001 evidence;
-12. paper-only, no-order, and broker-disabled flags remain locked;
-13. canonical Swing evidence reaches the Enterprise registry at its declared path.
+11. ownership is persisted in Swing's authoritative paper position lifecycle/state after a position opens;
+12. a failed/waiting entry does not fabricate ownership;
+13. cross-strategy evidence cannot be consumed as SWING-001 evidence;
+14. paper-only, no-order, and broker-disabled flags remain locked;
+15. canonical Swing evidence reaches the Enterprise registry at its declared path.
 
 ## Dividend files changed for this strategy timing / ownership milestone
 
 - `src/dividend_bot/dividend_entry_strategy_signals.py`
 - `src/dividend_bot/dividend_technical_entry_evidence.py`
 - `src/dividend_bot/dividend_strategy_ownership.py`
+- `paper_trading_engine.py`
 - `tests/test_dividend_entry_strategy_signals.py`
 - `tests/test_dividend_entry_score_market_evidence.py`
 - `tests/test_dividend_strategy_ownership.py`
+- `tests/test_paper_trading_strategy_ownership_persistence.py`
 
 This addendum should be consolidated into `SWING_ENTERPRISE_UI_COMPATIBILITY_TRACKER.md` during the next documentation consolidation pass.
