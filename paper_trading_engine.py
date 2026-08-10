@@ -2,8 +2,9 @@
 
 The accounting, dividend, earnings, and SGOV implementation remains in
 ``paper_trading_engine_core``. This compatibility layer changes permission to
-open/re-open ETF exposure and binds paper sizing to the Enterprise AI CIO's
-DIVIDEND-001 allocation.
+open/re-open ETF exposure, binds paper sizing to the Enterprise AI CIO's
+DIVIDEND-001 allocation, and persists the strategy methodology that owns every
+qualified paper entry.
 
 PAPER ONLY - NO REAL TRADES EXECUTED.
 """
@@ -81,6 +82,41 @@ class PaperTradingEngine(CorePaperTradingEngine):
             "source": "paper_trading_engine.approved_daily_signal",
         }
 
+    @staticmethod
+    def _persist_pair_strategy_owner(entry: dict[str, Any], decision: Mapping[str, Any]) -> None:
+        """Persist one unambiguous owner across a pair-managed open position.
+
+        Pair-managed positions are one lifecycle. If the gate cannot provide one
+        common strategy owner, ownership remains unset instead of fabricating a
+        precedence rule.
+        """
+        owners = [str(value).upper() for value in decision.get("strategy_owners", []) if value]
+        unique = sorted(set(owners))
+        if len(unique) != 1:
+            entry["strategy_owner"] = None
+            entry["a_strategy_owner"] = None
+            entry["b_strategy_owner"] = None
+            entry["strategy_ownership_source"] = "ENTRY_GATE_UNRESOLVED"
+            return
+        owner = unique[0]
+        entry["strategy_owner"] = owner
+        entry["a_strategy_owner"] = owner
+        entry["b_strategy_owner"] = owner
+        entry["strategy_ownership_source"] = "QUALIFIED_ENTRY_GATE"
+
+    @staticmethod
+    def _persist_sleeve_strategy_owner(
+        entry: dict[str, Any], side: str, decision: Mapping[str, Any]
+    ) -> None:
+        owner = decision.get("strategy_owner")
+        key = side.lower()
+        if owner:
+            entry[f"{key}_strategy_owner"] = str(owner).upper()
+            entry[f"{key}_strategy_ownership_source"] = "QUALIFIED_ENTRY_GATE"
+        else:
+            entry[f"{key}_strategy_owner"] = None
+            entry[f"{key}_strategy_ownership_source"] = "ENTRY_GATE_UNRESOLVED"
+
     def _gate_sleeve(
         self,
         *,
@@ -147,6 +183,10 @@ class PaperTradingEngine(CorePaperTradingEngine):
                     entry["a_sgov_balance"] = 0.0
                     entry["b_sgov_balance"] = 0.0
                     entry["sgov_balance"] = a_capital + b_capital
+                    entry["strategy_owner"] = None
+                    entry["a_strategy_owner"] = None
+                    entry["b_strategy_owner"] = None
+                    entry["strategy_ownership_source"] = "WAIT_IN_SGOV"
                     entry["last_action"] = "PAPER_WAIT_IN_SGOV"
                 else:
                     entry["a_in_sgov"] = False
@@ -154,6 +194,7 @@ class PaperTradingEngine(CorePaperTradingEngine):
                     entry["a_sgov_balance"] = 0.0
                     entry["b_sgov_balance"] = 0.0
                     entry["sgov_balance"] = 0.0
+                    self._persist_pair_strategy_owner(entry, decision)
                     entry["last_action"] = "PAPER_BUY_OPEN"
 
                 for side, capital in (("A", a_capital), ("B", b_capital)):
@@ -182,6 +223,7 @@ class PaperTradingEngine(CorePaperTradingEngine):
                 if decision["approved"]:
                     entry[f"{key}_in_sgov"] = False
                     entry[f"{key}_sgov_balance"] = 0.0
+                    self._persist_sleeve_strategy_owner(entry, side, decision)
                     logs.append(self.log_row(
                         as_of, pair, side, signals[side], "PAPER_BUY_OPEN",
                         config[key], entry[f"{key}_shares"], entry["last_prices"][side],
@@ -191,6 +233,8 @@ class PaperTradingEngine(CorePaperTradingEngine):
                     entry[f"{key}_shares"] = 0.0
                     entry[f"{key}_in_sgov"] = True
                     entry[f"{key}_sgov_balance"] = capital
+                    entry[f"{key}_strategy_owner"] = None
+                    entry[f"{key}_strategy_ownership_source"] = "WAIT_IN_SGOV"
                     logs.append(self.log_row(
                         as_of, pair, side, signals[side], "PAPER_WAIT_IN_SGOV",
                         "SGOV", 0.0, self.price(frames["SGOV"], as_of), capital,
@@ -231,6 +275,8 @@ class PaperTradingEngine(CorePaperTradingEngine):
             pair, entry, config, signals, prices, as_of,
             "Qualified entry gate approved re-entry: " + reason, logs,
         )
+        if not self.is_pair_in_sgov(entry):
+            self._persist_pair_strategy_owner(entry, decision)
 
     def buy_sleeve(self, pair, entry, config, side, signal, price, as_of, reason, logs):
         decision = self._gate_sleeve(
@@ -248,6 +294,8 @@ class PaperTradingEngine(CorePaperTradingEngine):
             pair, entry, config, side, signal, price, as_of,
             "Qualified entry gate approved re-entry: " + reason, logs,
         )
+        if not self.sleeve_in_sgov(entry, side):
+            self._persist_sleeve_strategy_owner(entry, side, decision)
 
 
 def main() -> int:
