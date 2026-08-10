@@ -115,7 +115,7 @@ The Dividend dashboard evidence layer normalizes persisted ownership into Enterp
 
 Current holdings can publish `strategy_owner`, `entry_method`, and `strategy_ownership_source`. Completed lifecycle rows can publish `entry_method`, `last_exit_strategy_owner`, `exit_method`, `last_exit_strategy_reasons`, `last_exit_reason`, and `strategy_exit_evidence_source`.
 
-Strategy A current-exit evidence can additionally publish or propagate the semantic equivalents of:
+Strategy A current-exit evidence now propagates from the already-calculated symbol-specific `entry_score_report.json` strategy signals through the owner router into current Dividend holdings. The dashboard does **not** recompute RSI, Stochastic Oscillator, or Stochastic RSI. For an owned current holding it can publish:
 
 - `exit_state`
 - `exit_warning_active`
@@ -123,12 +123,16 @@ Strategy A current-exit evidence can additionally publish or propagate the seman
 - `exit_warning_reasons`
 - `sell_trigger`
 - `sell_reasons`
+- `exit_authority_reason`
+- `exit_evidence_source`
 
-The AI CIO should render a buffered warning as a HOLD/watch condition, not as a completed or authorized sale.
+`exit_evidence_source = entry_score_report.json` identifies the current calculated signal artifact. If a position has a valid persisted owner but current symbol-specific strategy signal evidence is unavailable, the Enterprise layer publishes `exit_state = UNKNOWN`, `sell_trigger = false`, and `exit_authority_reason = CURRENT_STRATEGY_SIGNAL_EVIDENCE_UNAVAILABLE`. It must not infer an exit from stale ownership alone.
+
+A Strategy A `WARNING_BUFFERED` holding remains `position_status = OPEN`; it is not converted to a completed sale or SGOV lifecycle event. `SELL_CONFIRMED` reports current owner exit authority but likewise does not fabricate a completed sale before the paper trading lifecycle actually records the close.
 
 The Enterprise Position / Sales History UI has explicit columns for **Entry Method**, **Exit Method**, and **Exit Reason**. Missing ownership evidence remains missing; the host must not infer or fabricate a methodology.
 
-These fields flow through the existing DIVIDEND-001 dashboard-detail → Enterprise KPI path, so `enterprise_strategy_kpis.json` can expose the same ownership/lifecycle evidence to jshouseapi.com without changing the Swing repository.
+These current holding fields flow through the existing DIVIDEND-001 dashboard-detail → Enterprise KPI path because `enterprise_strategy_kpi_adapter.py` passes the detailed Dividend `holdings` collection into `enterprise_strategy_kpis.json`. Therefore the AI CIO can consume the state without a second calculation engine.
 
 ## Enterprise evidence fields
 
