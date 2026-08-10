@@ -45,6 +45,11 @@ def _row():
                     "entry_value": 36.98,
                     "last_exit_value": 35.89,
                     "realized_gain_loss": -1.09,
+                    "entry_method": "STRATEGY_A",
+                    "last_exit_strategy_owner": "STRATEGY_A",
+                    "exit_method": "STRATEGY_A",
+                    "last_exit_reason": "STOCH_RSI_D_CROSSED_ABOVE_K",
+                    "strategy_exit_evidence_source": "paper_state.json",
                     "reentry_count": 0,
                     "evidence_source": "paper_trade_log.csv",
                 },
@@ -65,7 +70,7 @@ def test_position_history_renderer_keeps_current_reserve_and_never_entered_out_o
     assert "AMDW" not in output
     assert "PLTW" not in output
     assert ">SGOV<" not in output
-    assert "Candidates that never entered remain outside realized trade history." in output
+    assert "Completed strategy-owned paper positions" in output
 
 
 def test_position_history_renderer_shows_entry_exit_and_gain_loss_for_realized_position() -> None:
@@ -82,11 +87,20 @@ def test_position_history_renderer_shows_entry_exit_and_gain_loss_for_realized_p
     assert "+$2.00" not in output
 
 
+def test_position_history_renderer_shows_strategy_entry_exit_methods_and_reason() -> None:
+    output = render_position_history_panel(_row())
+    assert "Entry Method" in output
+    assert "Exit Method" in output
+    assert "Exit Reason" in output
+    assert output.count("STRATEGY_A") >= 2
+    assert "STOCH_RSI_D_CROSSED_ABOVE_K" in output
+    assert "paper_state.json" in output
+
+
 def test_position_history_renderer_shows_only_real_exit_evidence_and_summary() -> None:
     output = render_position_history_panel(_row())
     assert "PAPER_SELL_TO_SGOV" in output
     assert "PAPER_PARK_IN_SGOV" not in output
-    assert "paper_trade_log.csv" in output
     assert "Reported Realized P&amp;L" in output
     assert "-$1.09" in output
     assert "+$0.91" not in output
