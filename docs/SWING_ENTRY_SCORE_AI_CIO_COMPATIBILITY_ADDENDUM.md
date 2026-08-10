@@ -13,21 +13,25 @@ DIVIDEND-001 now publishes two distinct strategy-owned timing models from alread
 The arming mechanism uses:
 
 - Stochastic Oscillator `(14,3,3)` where `%K > %D` and `%K >= 50`, **or**
-- RSI(14) crossing from below into `>= 50`.
+- RSI(14) at or above `50`.
+
+A fresh RSI cross is retained as audit evidence, but RSI does not have to cross 50 again every day. While RSI remains in the 50–100 regime, Strategy A remains allowed to use its Stochastic RSI lever.
 
 Once armed, the execution lever is Stochastic RSI `(14,7,3,3)`.
 
-A Strategy A BUY trigger requires:
+A Strategy A BUY-active state requires:
 
-- Stochastic RSI `%K` genuinely crossing above `%D`; and
-- `%K` entering/crossing the 50 level or the 80 level.
+- the arming mechanism above; and
+- Stochastic RSI `%K > %D`.
+
+A fresh Stochastic RSI `%K/%D` crossover is **not** required on every BUY evaluation. If the mechanism remains armed and `%K` is already above `%D`, the BUY lever remains active. Rising `%K`, a fresh K-over-D crossover, and K entering 50 or 80 are published as supporting audit evidence when they occur, but they are not mandatory repeated prerequisites.
 
 A Strategy A SELL trigger occurs when either:
 
 - Stochastic RSI `%D` genuinely crosses above `%K`; or
 - Stochastic Oscillator `%D` genuinely crosses above `%K`.
 
-Touching/equality by itself is not a crossover. The implementation requires an actual side change between the previous and current observations.
+Touching/equality by itself is not a SELL crossover. The implementation requires an actual side change between the previous and current observations.
 
 ### Strategy B — EMA Trend
 
@@ -52,9 +56,26 @@ The authoritative Dividend oscillator evidence is now:
 - RSI(14);
 - Stochastic RSI `(14,7,3,3)`.
 
+## Strategy ownership and lifecycle routing
+
+DIVIDEND-001 now has a dedicated strategy-ownership router for paper lifecycle governance.
+
+Permanent ownership rules:
+
+- an existing open position keeps its valid strategy owner for the life of that open cycle;
+- if only Strategy A is BUY-active for a new position, Strategy A may own that position;
+- if only Strategy B is BUY-active for a new position, Strategy B may own that position;
+- if neither strategy is BUY-active, entry waits with `NO_ACTIVE_ENTRY_STRATEGY`;
+- if both strategies are BUY-active and no explicit precedence/selection policy exists, the router fails closed with `MULTIPLE_ACTIVE_ENTRY_STRATEGIES_REQUIRE_SELECTION_POLICY` rather than arbitrarily assigning ownership;
+- an A-owned position ignores Strategy B SELL triggers;
+- a B-owned position ignores Strategy A SELL triggers;
+- unknown ownership cannot generate a strategy-routed SELL.
+
+This ownership layer is analysis/governance only at the current milestone. It is being introduced before wiring the paper engine so a later execution change cannot silently mix Strategy A and Strategy B exit rules.
+
 ## Enterprise evidence fields
 
-Dividend symbol-specific Entry Score evidence can now include a `strategy_signals` object containing:
+Dividend symbol-specific Entry Score evidence can include a `strategy_signals` object containing:
 
 - `available`;
 - `source_timeframe`;
@@ -68,11 +89,22 @@ Dividend symbol-specific Entry Score evidence can now include a `strategy_signal
 - `strategy_a.rsi14`;
 - Stochastic Oscillator `(14,3,3)` K/D and prior K/D;
 - Stochastic RSI `(14,7,3,3)` K/D and prior K/D;
+- `strategy_a.stoch_rsi.k_above_d`;
+- `strategy_a.stoch_rsi.k_rising`;
 - `strategy_b.buy_eligible`;
 - `strategy_b.sell_trigger`;
 - `strategy_b.buy_reason`;
 - `strategy_b.sell_reason`;
 - Strategy B Price, EMA20, and EMA50.
+
+Strategy ownership evidence can include:
+
+- `strategy_owner`;
+- `eligible_strategies`;
+- `ownership_source`;
+- `entry_allowed_by_ownership`;
+- explicit ownership resolution/wait reason;
+- owner-specific SELL authority and reason codes.
 
 Missing or insufficient market evidence remains fail-closed.
 
@@ -91,13 +123,17 @@ Opportunity Quality and Entry Timing remain separate. High Opportunity Quality d
 
 ## AI CIO implications
 
-The AI CIO should eventually be able to explain which Dividend timing strategy is active and why. Examples:
+The AI CIO should eventually be able to explain which Dividend timing strategy is active, which strategy owns an open position, and why. Examples:
 
 - `Strategy A armed by STOCH_OSC_K_ABOVE_D_AND_AT_OR_ABOVE_50`;
-- `Strategy A BUY lever waiting for STOCH_RSI_K_CROSSED_ABOVE_D`;
+- `Strategy A remains armed because RSI14_AT_OR_ABOVE_50`;
+- `Strategy A BUY lever active because STOCH_RSI_K_ABOVE_D`;
 - `Strategy A SELL caused by STOCH_RSI_D_CROSSED_ABOVE_K`;
 - `Strategy B BUY eligible because PRICE_ABOVE_EMA20_ABOVE_EMA50`;
-- `Strategy B SELL because PRICE_BELOW_EMA20`.
+- `Strategy B SELL because PRICE_BELOW_EMA20`;
+- `WAIT because NO_ACTIVE_ENTRY_STRATEGY`;
+- `WAIT because MULTIPLE_ACTIVE_ENTRY_STRATEGIES_REQUIRE_SELECTION_POLICY`;
+- `Existing position remains owned by STRATEGY_A despite a Strategy B signal`.
 
 The Enterprise host must display supplied strategy evidence; it must not recompute Dividend or Swing trading logic.
 
@@ -114,12 +150,15 @@ Swing should instead publish its own strategy-owned entry/exit methodology throu
 - whether its entry mechanism is armed/eligible;
 - exact BUY trigger evidence;
 - exact SELL trigger evidence;
-- prior/current values needed to prove a crossover rather than a touch;
+- prior/current values needed to prove a crossover rather than a touch when Swing uses crossover rules;
+- strategy owner/method owner for an open lifecycle if Swing supports multiple timing methods;
 - explicit WAIT/rejection reasons;
 - requirements/next trigger;
 - market-data freshness;
 - source/provenance;
 - paper-only and broker-disabled safety flags.
+
+If Swing uses multiple entry methodologies, Swing should preserve the method that actually owns an open position and must not silently switch exit logic mid-position. If multiple Swing methods simultaneously qualify a new candidate, Swing should publish its own documented selection/precedence rule or fail closed until one is selected. Dividend's current fail-closed ambiguity policy is not automatically Swing's required policy; the semantic requirement is that ownership and precedence be explicit and auditable.
 
 If Swing uses RSI, EMA, Stochastic, Stochastic RSI, HMA, ATR, volume, breakout structure, committee votes, or another model, those values remain Swing-owned evidence. The AI CIO should aggregate/display them without applying Dividend formulas to Swing.
 
@@ -129,7 +168,8 @@ If Swing uses RSI, EMA, Stochastic, Stochastic RSI, HMA, ATR, volume, breakout s
 - Entry Timing answers whether capital should be deployed now.
 - A WAIT must have an explicit reason whenever strategy evidence supports one.
 - Missing/UNKNOWN evidence fails closed.
-- Crossovers require prior/current evidence and cannot be inferred from lines merely touching.
+- SELL crossovers require prior/current evidence and cannot be inferred from lines merely touching.
+- Open-position strategy ownership remains stable until that lifecycle is closed or explicitly migrated by a documented policy.
 - Strategy calculations remain owned by their source strategy.
 - The Enterprise AI CIO aggregates, governs, and displays; it does not silently replace strategy logic.
 
@@ -142,17 +182,22 @@ Swing development should add tests proving that:
 3. candidate-specific evidence is not replaced by a global score;
 4. high Opportunity Quality cannot bypass failed Entry Timing;
 5. every WAIT/rejected entry has a reason code;
-6. any crossover-based Swing rule distinguishes a true cross from equality/touching;
+6. any crossover-based Swing SELL rule distinguishes a true cross from equality/touching;
 7. entry and exit reasons identify the responsible Swing mechanism;
-8. cross-strategy evidence cannot be consumed as SWING-001 evidence;
-9. paper-only, no-order, and broker-disabled flags remain locked;
-10. canonical Swing evidence reaches the Enterprise registry at its declared path.
+8. if Swing supports multiple timing methods, open-position method ownership is sticky;
+9. one Swing method cannot sell a position owned by another method unless a documented migration/override policy explicitly permits it;
+10. ambiguous multiple-method entry qualification has an explicit selection policy or fails closed;
+11. cross-strategy evidence cannot be consumed as SWING-001 evidence;
+12. paper-only, no-order, and broker-disabled flags remain locked;
+13. canonical Swing evidence reaches the Enterprise registry at its declared path.
 
-## Dividend files changed for this strategy timing milestone
+## Dividend files changed for this strategy timing / ownership milestone
 
 - `src/dividend_bot/dividend_entry_strategy_signals.py`
 - `src/dividend_bot/dividend_technical_entry_evidence.py`
+- `src/dividend_bot/dividend_strategy_ownership.py`
 - `tests/test_dividend_entry_strategy_signals.py`
 - `tests/test_dividend_entry_score_market_evidence.py`
+- `tests/test_dividend_strategy_ownership.py`
 
 This addendum should be consolidated into `SWING_ENTERPRISE_UI_COMPATIBILITY_TRACKER.md` during the next documentation consolidation pass.
