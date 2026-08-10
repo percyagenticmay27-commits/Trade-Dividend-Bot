@@ -159,10 +159,15 @@ class PaperTradingEngine(CorePaperTradingEngine):
         key = side.lower()
         owner = entry.get(f"{key}_strategy_owner")
         symbol = str(config.get(key) or "")
-        decision = owned_exit_signal(self._strategy_signals_for_symbol(symbol), owner)
+        signal_symbol = str(config.get(f"{key}_signal") or symbol)
+        decision = owned_exit_signal(
+            self._strategy_signals_for_symbol(signal_symbol),
+            owner,
+        )
         return {
             **decision,
             "symbol": symbol,
+            "signal_symbol": signal_symbol,
             "sleeve": side,
             "ownership_source": entry.get(f"{key}_strategy_ownership_source"),
         }
@@ -175,8 +180,17 @@ class PaperTradingEngine(CorePaperTradingEngine):
         for side in ("A", "B"):
             key = side.lower()
             symbol = str(config.get(key) or "")
-            detail = owned_exit_signal(self._strategy_signals_for_symbol(symbol), owner)
-            decisions.append({**detail, "symbol": symbol, "sleeve": side})
+            signal_symbol = str(config.get(f"{key}_signal") or symbol)
+            detail = owned_exit_signal(
+                self._strategy_signals_for_symbol(signal_symbol),
+                owner,
+            )
+            decisions.append({
+                **detail,
+                "symbol": symbol,
+                "signal_symbol": signal_symbol,
+                "sleeve": side,
+            })
         triggered = [item for item in decisions if item.get("sell_trigger")]
         reasons = sorted({reason for item in triggered for reason in item.get("sell_reasons", [])})
         return {
