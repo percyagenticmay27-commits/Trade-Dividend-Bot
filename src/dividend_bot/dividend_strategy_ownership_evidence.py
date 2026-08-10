@@ -93,6 +93,10 @@ def enrich_lifecycle_with_strategy_ownership(
                 row["entry_method"] = detail.get("entry_method")
                 row["strategy_ownership_source"] = detail.get("strategy_ownership_source")
             if str(row.get("lifecycle_status") or "").upper() not in {"OPEN", "REENTERED", "RESERVE", "NEVER_ENTERED"}:
+                # The owner preserved at exit is also the methodology that owned
+                # the just-completed lifecycle. We expose it as both entry_method
+                # and exit_method so the UI can show one auditable methodology.
+                row["entry_method"] = detail.get("last_exit_strategy_owner")
                 row["last_exit_strategy_owner"] = detail.get("last_exit_strategy_owner")
                 row["exit_method"] = detail.get("exit_method")
                 row["last_exit_strategy_reasons"] = detail.get("last_exit_strategy_reasons") or []
