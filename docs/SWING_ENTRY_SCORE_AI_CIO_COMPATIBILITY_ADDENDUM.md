@@ -66,28 +66,29 @@ The daily Dividend paper loop reads the persisted owner before an ordinary techn
 
 When an owner-controlled exit closes a position, current ownership is cleared and the paper state preserves `last_exit_strategy_owner` plus the owner-specific exit reason codes. Independent sleeves preserve the equivalent side-specific last-exit owner/reason fields.
 
+## Legacy pre-ownership positions
+
+Positions opened before the ownership fields were introduced can legitimately have `strategy_owner = null`. The Enterprise host must not rewrite those historical positions as Strategy A or Strategy B merely because one of those methods is active today.
+
+Dividend now includes a **read-only legacy ownership reconstruction audit**. It reconstructs Strategy A/B evidence at the current open cycle's original entry date using the shared historical market snapshot and the configured signal symbol. For pair-managed positions, the underlying signal symbol from `paper_portfolio_config.py` is used (for example AMD for AMDW/AMDL, NVDA for NVDW/NVDX, AVGO for AVGW/AVGX). The audit:
+
+- never mutates `paper_state.json`;
+- never moves capital;
+- never places or simulates an order;
+- only marks a position `ELIGIBLE_FOR_EXPLICIT_BACKFILL` when exactly one strategy would have been BUY-active at that historical entry date;
+- keeps the position `KEEP_LEGACY_UNASSIGNED` when neither strategy, both strategies, missing history, or incomplete evidence prevents an unambiguous reconstruction.
+
+The output is `results/legacy_strategy_ownership_audit.json`. Any future ownership backfill must be an explicit migration step after this evidence is reviewed; automatic retroactive ownership is prohibited.
+
+Swing should apply the same semantic principle if it later introduces method ownership after legacy positions already exist: reconstruct historical method evidence read-only first, do not silently assign current methodology to old positions, and require explicit migration when historical evidence is unambiguous.
+
 ## Enterprise / AI CIO ownership evidence
 
-The Dividend dashboard evidence layer now normalizes persisted ownership into Enterprise-facing fields instead of requiring the AI CIO UI to inspect raw paper state.
+The Dividend dashboard evidence layer normalizes persisted ownership into Enterprise-facing fields instead of requiring the AI CIO UI to inspect raw paper state.
 
-Current holdings can publish:
+Current holdings can publish `strategy_owner`, `entry_method`, and `strategy_ownership_source`. Completed lifecycle rows can publish `entry_method`, `last_exit_strategy_owner`, `exit_method`, `last_exit_strategy_reasons`, `last_exit_reason`, and `strategy_exit_evidence_source`.
 
-- `strategy_owner`;
-- `entry_method`;
-- `strategy_ownership_source`.
-
-Completed lifecycle rows can publish:
-
-- `entry_method`;
-- `last_exit_strategy_owner`;
-- `exit_method`;
-- `last_exit_strategy_reasons`;
-- `last_exit_reason`;
-- `strategy_exit_evidence_source`.
-
-For a normal owner-controlled lifecycle, `entry_method` and `exit_method` identify the strategy methodology that owned that completed position. Risk/governance overrides remain separately attributable in the preserved reason evidence.
-
-The Enterprise Position / Sales History UI now has explicit columns for **Entry Method**, **Exit Method**, and **Exit Reason**. Missing ownership evidence is rendered as `Not reported`; the host must not infer or fabricate a methodology.
+The Enterprise Position / Sales History UI has explicit columns for **Entry Method**, **Exit Method**, and **Exit Reason**. Missing ownership evidence remains missing; the host must not infer or fabricate a methodology.
 
 These fields flow through the existing DIVIDEND-001 dashboard-detail → Enterprise KPI path, so `enterprise_strategy_kpis.json` can expose the same ownership/lifecycle evidence to jshouseapi.com without changing the Swing repository.
 
@@ -101,9 +102,7 @@ The Enterprise host can continue consuming `STRONG_ENTRY`, `GOOD_ENTRY`, `WATCH`
 
 ## AI CIO implications
 
-The AI CIO should be able to explain which Dividend timing strategy is active, which strategy owns an open position, why an entry is waiting, and exactly which owning strategy caused an exit. Examples include `Strategy A SELL caused by STOCH_RSI_D_CROSSED_ABOVE_K`, `Strategy B SELL because PRICE_BELOW_EMA20`, and `Existing position remains owned by STRATEGY_A despite a Strategy B signal`.
-
-The Enterprise host must display supplied strategy evidence; it must not recompute Dividend or Swing trading logic.
+The AI CIO should be able to explain which Dividend timing strategy is active, which strategy owns an open position, why an entry is waiting, and exactly which owning strategy caused an exit. The Enterprise host must display supplied strategy evidence; it must not recompute Dividend or Swing trading logic.
 
 ## Swing compatibility requirement
 
@@ -111,20 +110,9 @@ SWING-001 must not copy Dividend's Strategy A or Strategy B formulas unless Swin
 
 If Swing supports multiple entry methodologies, Swing should persist the method that actually owns an open paper position in Swing's own authoritative lifecycle/state. Its ordinary technical exit router should then consult that persisted owner and only honor that owner's exit methodology. A signal from another Swing method must not silently close the position unless Swing explicitly documents an override/migration policy.
 
-Swing should also distinguish normal strategy exits from independent governance/risk exits. If Swing has earnings exits, portfolio-risk exits, hard safety exits, or another governance override, those should be labeled separately rather than presented as if the owning entry methodology generated the SELL.
+Swing should distinguish normal strategy exits from independent governance/risk exits. For AI CIO interoperability, Swing should publish equivalent semantic ownership fields in its own canonical Enterprise artifact where applicable: current method owner, entry method, ownership provenance, latest exit method/owner, machine-readable exit reasons, human-readable exit reason, freshness/provenance, and paper-only/broker-disabled flags.
 
-For AI CIO interoperability, Swing should publish equivalent semantic ownership fields in its own canonical Enterprise artifact where applicable:
-
-- current `strategy_owner` / method owner;
-- `entry_method`;
-- ownership source/provenance;
-- latest `exit_method` or last-exit owner;
-- machine-readable exit reason codes;
-- a human-readable exit reason where available;
-- evidence source/freshness;
-- paper-only/broker-disabled flags.
-
-The AI CIO may display those fields but must not become the system of record for Swing lifecycle ownership and must never manufacture missing Swing ownership values from Dividend conventions.
+If Swing has legacy open positions that predate method ownership, Swing should not assign ownership from current signals. It should reconstruct evidence as of the historical entry date where possible and require explicit migration for any retroactive owner assignment.
 
 ## Cross-strategy permanent rules
 
@@ -136,13 +124,14 @@ The AI CIO may display those fields but must not become the system of record for
 - Open-position strategy ownership remains stable until that lifecycle is closed or explicitly migrated by a documented policy.
 - Ordinary technical exits must route through the persisted owner.
 - Independent risk/governance exits must remain separately attributable.
+- Legacy ownership must not be retroactively fabricated from current signals.
 - Enterprise ownership fields are presentation/audit evidence; strategy state remains authoritative.
 - Strategy calculations remain owned by their source strategy.
 - The Enterprise AI CIO aggregates, governs, and displays; it does not silently replace strategy logic.
 
 ## Swing regression tests to add
 
-Swing development should add tests proving that missing/stale entry evidence fails closed; candidate-specific evidence is not replaced by a global score; high Opportunity Quality cannot bypass failed Entry Timing; every WAIT has a reason; crossover exits distinguish a real cross from touching; ownership is persisted after a position opens; failed entries do not fabricate ownership; an open position's owning method alone controls ordinary technical exits; a different method's SELL is ignored; unknown ownership fails closed; governance/risk exits remain separately attributable; last-exit owner/reason is preserved where applicable; Enterprise KPI/display evidence preserves Swing-supplied ownership without recomputing it; missing ownership displays as missing rather than fabricated; cross-strategy evidence cannot be consumed as SWING-001 evidence; paper-only/no-order flags remain locked; and canonical Swing evidence reaches the Enterprise registry.
+Swing development should test missing/stale evidence fail-closed behavior; candidate-specific Entry Timing; WAIT reasons; real crossover semantics; sticky method ownership; owner-only exits; risk override attribution; last-exit owner/reason preservation; legacy-position historical reconstruction without automatic mutation; ambiguous legacy reconstruction remaining unassigned; Enterprise propagation without host-side recomputation; and paper-only/no-order locks.
 
 ## Dividend files changed for this strategy timing / ownership milestone
 
@@ -150,15 +139,11 @@ Swing development should add tests proving that missing/stale entry evidence fai
 - `src/dividend_bot/dividend_technical_entry_evidence.py`
 - `src/dividend_bot/dividend_strategy_ownership.py`
 - `src/dividend_bot/dividend_strategy_ownership_evidence.py`
+- `src/dividend_bot/dividend_legacy_strategy_ownership_audit.py`
 - `src/dividend_bot/dividend_dashboard_evidence.py`
 - `src/dividend_bot/enterprise_position_history_ui.py`
 - `paper_trading_engine.py`
-- `tests/test_dividend_entry_strategy_signals.py`
-- `tests/test_dividend_entry_score_market_evidence.py`
-- `tests/test_dividend_strategy_ownership.py`
-- `tests/test_dividend_strategy_ownership_evidence.py`
-- `tests/test_paper_trading_strategy_ownership_persistence.py`
-- `tests/test_paper_trading_strategy_owner_exit_routing.py`
-- `tests/test_enterprise_position_history_ui.py`
+- `audit_legacy_strategy_ownership.py`
+- related regression tests
 
 This addendum should be consolidated into `SWING_ENTERPRISE_UI_COMPATIBILITY_TRACKER.md` during the next documentation consolidation pass.
