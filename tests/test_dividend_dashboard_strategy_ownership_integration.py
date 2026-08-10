@@ -202,3 +202,55 @@ def test_completed_owner_controlled_exit_reaches_lifecycle_evidence(tmp_path: Pa
     assert life["last_exit_strategy_reasons"] == ["PRICE_BELOW_EMA20"]
     assert life["last_exit_reason"] == "PRICE_BELOW_EMA20"
     assert life["strategy_exit_evidence_source"] == "paper_state.json"
+
+def test_legacy_unassigned_holding_uses_current_underlying_consensus_without_closing(tmp_path: Path) -> None:
+    _write_json(tmp_path / "paper_state.json", {
+        "pairs": {
+            "AMDW / AMDL": {
+                "a_shares": 4.0,
+                "b_shares": 3.0,
+                "last_prices": {"A": 10.0, "B": 20.0},
+                "sgov_balance": 0.0,
+                "total_dividends_received": 0.0,
+                "strategy_owner": "LEGACY_UNASSIGNED",
+                "strategy_ownership_source": "LEGACY_PRE_OWNERSHIP_POSITION",
+                "last_signal": {"A": "BUY", "B": "BUY"},
+            }
+        }
+    })
+    _write_json(tmp_path / "entry_score_report.json", {
+        "generated_at_utc": "2026-08-10T21:00:00Z",
+        "entries": [{
+            "symbol": "AMD",
+            "strategy_signals": {
+                "strategy_a": {
+                    "sell_trigger": True,
+                    "sell_reasons": ["STOCH_OSC_D_CROSSED_ABOVE_K"],
+                    "exit_warning_active": False,
+                    "exit_buffered": False,
+                    "exit_warning_reasons": [],
+                },
+                "strategy_b": {
+                    "sell_trigger": True,
+                    "sell_reason": "PRICE_BELOW_EMA20",
+                },
+            },
+        }],
+    })
+
+    payload = build_dividend_dashboard_evidence(tmp_path)
+    holdings = [
+        row for row in payload["holdings"]
+        if row["symbol"] in {"AMDW", "AMDL"}
+    ]
+
+    assert len(holdings) == 2
+    assert all(row["strategy_owner"] == "LEGACY_UNASSIGNED" for row in holdings)
+    assert all(row["strategy_ownership_source"] == "LEGACY_PRE_OWNERSHIP_POSITION" for row in holdings)
+    assert all(row["position_status"] == "OPEN" for row in holdings)
+    assert all(row["exit_state"] == "SELL_CONFIRMED" for row in holdings)
+    assert all(row["sell_trigger"] is True for row in holdings)
+    assert all(row["exit_signal_symbol"] == "AMD" for row in holdings)
+    assert all(row["exit_evidence_source"] == "entry_score_report.json" for row in holdings)
+    assert all(row["exit_evidence_generated_at_utc"] == "2026-08-10T21:00:00Z" for row in holdings)
+
