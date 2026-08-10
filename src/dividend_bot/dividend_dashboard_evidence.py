@@ -16,6 +16,7 @@ from .dividend_income_analytics import enrich_holdings_with_income_analytics, to
 from .dividend_position_analytics import enrich_holdings_with_position_analytics, total_unrealized_pnl
 from .dividend_position_lifecycle import build_position_lifecycle, enrich_current_holdings_with_lifecycle
 from .dividend_realized_income import build_realized_income_evidence
+from .dividend_strategy_ownership import owned_exit_signal
 from .dividend_strategy_ownership_evidence import (
     enrich_holdings_with_strategy_ownership,
     enrich_lifecycle_with_strategy_ownership,
@@ -128,6 +129,59 @@ def _watchlist_from_report(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, Mapping)]
 
 
+def _strategy_signal_index(payload: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    rows = payload.get("entries")
+    if not isinstance(rows, list):
+        return {}
+    result: dict[str, Mapping[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, Mapping):
+            continue
+        symbol = str(row.get("symbol") or "").strip().upper()
+        signals = row.get("strategy_signals")
+        if symbol and isinstance(signals, Mapping):
+            result[symbol] = signals
+    return result
+
+
+def _enrich_holdings_with_owner_exit_state(
+    holdings: list[dict[str, Any]],
+    entry_score_payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    signal_index = _strategy_signal_index(entry_score_payload)
+    enriched: list[dict[str, Any]] = []
+    for raw in holdings:
+        row = dict(raw)
+        symbol = str(row.get("symbol") or "").strip().upper()
+        owner = row.get("strategy_owner")
+        signals = signal_index.get(symbol)
+        if owner in {"STRATEGY_A", "STRATEGY_B"} and isinstance(signals, Mapping):
+            exit_detail = owned_exit_signal(signals, str(owner))
+            row.update({
+                "exit_state": exit_detail.get("exit_state"),
+                "exit_warning_active": bool(exit_detail.get("exit_warning_active")),
+                "exit_buffered": bool(exit_detail.get("exit_buffered")),
+                "exit_warning_reasons": list(exit_detail.get("exit_warning_reasons") or []),
+                "sell_trigger": bool(exit_detail.get("sell_trigger")),
+                "sell_reasons": list(exit_detail.get("sell_reasons") or []),
+                "exit_authority_reason": exit_detail.get("reason"),
+                "exit_evidence_source": "entry_score_report.json",
+            })
+        elif owner in {"STRATEGY_A", "STRATEGY_B"}:
+            row.update({
+                "exit_state": "UNKNOWN",
+                "exit_warning_active": False,
+                "exit_buffered": False,
+                "exit_warning_reasons": [],
+                "sell_trigger": False,
+                "sell_reasons": [],
+                "exit_authority_reason": "CURRENT_STRATEGY_SIGNAL_EVIDENCE_UNAVAILABLE",
+                "exit_evidence_source": None,
+            })
+        enriched.append(row)
+    return enriched
+
+
 def _alerts(*, state: Mapping[str, Any], candidate_payload: Mapping[str, Any], performance: Mapping[str, Any]) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
     pairs = state.get("pairs")
@@ -162,6 +216,8 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     candidate_payload = candidate_payload if isinstance(candidate_payload, Mapping) else {}
     watchlist_payload = _read_json(root / "watchlist_report.json")
     watchlist_payload = watchlist_payload if isinstance(watchlist_payload, Mapping) else {}
+    entry_score_payload = _read_json(root / "entry_score_report.json")
+    entry_score_payload = entry_score_payload if isinstance(entry_score_payload, Mapping) else {}
     performance = _read_json(root / "results" / "dividend_paper_trade_performance.json")
     performance = performance if isinstance(performance, Mapping) else {}
     market_snapshot = _read_json(root / "market_data_snapshot.json")
@@ -170,6 +226,7 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
 
     holdings, portfolio_value, state_income = _holdings_from_state(state)
     holdings = enrich_holdings_with_strategy_ownership(holdings, state)
+    holdings = _enrich_holdings_with_owner_exit_state(holdings, entry_score_payload)
     holdings = enrich_holdings_with_position_analytics(holdings, log_rows, market_snapshot)
     holdings = enrich_holdings_with_income_analytics(holdings, market_snapshot=market_snapshot, income_snapshot=income_snapshot)
     position_lifecycle = build_position_lifecycle(log_rows, holdings)
@@ -195,6 +252,7 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "paper_trade_log.csv" if (root / "paper_trade_log.csv").is_file() else None,
         "candidate_discovery.json" if (root / "candidate_discovery.json").is_file() else None,
         "watchlist_report.json" if (root / "watchlist_report.json").is_file() else None,
+        "entry_score_report.json" if (root / "entry_score_report.json").is_file() else None,
         "market_data_snapshot.json" if (root / "market_data_snapshot.json").is_file() else None,
         income_snapshot_path,
         "results/dividend_paper_trade_performance.json" if (root / "results" / "dividend_paper_trade_performance.json").is_file() else None,
