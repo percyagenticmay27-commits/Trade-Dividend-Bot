@@ -183,8 +183,6 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
     hma_rising = hma50 > hma50_prior
     five_day_up = len(close) >= 6 and float(close.iloc[-1]) > float(close.iloc[-6])
 
-    # These are contextual diagnostics only. They are not shared blockers because
-    # Strategy A and Strategy B intentionally use different entry methodologies.
     legacy_context_reasons: list[str] = []
     if rsi14 < 50:
         legacy_context_reasons.append("RSI14_BELOW_50")
@@ -233,7 +231,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
 
     owner = ownership.get("strategy_owner")
     if owner == "STRATEGY_A":
-        timing_context = "OSCILLATOR_MOMENTUM"
+        timing_context = "TREND_CONTINUATION"
     elif owner == "STRATEGY_B":
         timing_context = "TREND_CONTINUATION"
     else:
@@ -265,6 +263,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
             "five_day_price_up": five_day_up,
             "component_scores": scores,
             "legacy_context_reasons": legacy_context_reasons,
+            "strategy_timing_model": "OSCILLATOR_MOMENTUM" if owner == "STRATEGY_A" else ("EMA_TREND" if owner == "STRATEGY_B" else None),
             "legacy_fast_stochastic_audit": {
                 "period": STOCH_PERIOD,
                 "k": round(fast_k, 4),
