@@ -175,6 +175,10 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
             "sell_trigger": strategy_a_sell,
             "sell_warning": strategy_a_sell_warning,
             "exit_buffer_active": exit_buffer_active,
+            # Canonical ownership/lifecycle contract. The legacy aliases above
+            # remain for backward-compatible report consumers.
+            "exit_warning_active": exit_buffer_active,
+            "exit_buffered": exit_buffer_active,
             "buy_reasons": [reason for reason, met in (
                 ("STOCH_RSI_K_ABOVE_D", srsi_k_above_d),
                 ("STOCH_RSI_K_RISING", srsi_k_rising),
@@ -188,6 +192,10 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
                 ("STOCH_OSC_K_AND_D_BELOW_80", osc_exit_below_80),
             ) if met and strategy_a_sell],
             "warning_reasons": [reason for reason, met in (
+                ("STOCH_RSI_D_CROSSED_ABOVE_K_EARLY_WARNING", srsi_d_cross_above_k),
+                ("STOCH_OSC_BEARISH_CROSS_BUFFERED_AT_OR_ABOVE_80", osc_d_cross_above_k and not osc_exit_below_80),
+            ) if met],
+            "exit_warning_reasons": [reason for reason, met in (
                 ("STOCH_RSI_D_CROSSED_ABOVE_K_EARLY_WARNING", srsi_d_cross_above_k),
                 ("STOCH_OSC_BEARISH_CROSS_BUFFERED_AT_OR_ABOVE_80", osc_d_cross_above_k and not osc_exit_below_80),
             ) if met],
