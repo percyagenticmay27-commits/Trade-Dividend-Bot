@@ -16,6 +16,10 @@ from .dividend_income_analytics import enrich_holdings_with_income_analytics, to
 from .dividend_position_analytics import enrich_holdings_with_position_analytics, total_unrealized_pnl
 from .dividend_position_lifecycle import build_position_lifecycle, enrich_current_holdings_with_lifecycle
 from .dividend_realized_income import build_realized_income_evidence
+from .dividend_strategy_ownership_evidence import (
+    enrich_holdings_with_strategy_ownership,
+    enrich_lifecycle_with_strategy_ownership,
+)
 
 STRATEGY_ID = "DIVIDEND-001"
 PAPER_TRADE_MODE = True
@@ -165,9 +169,11 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     log_rows = _read_csv(root / "paper_trade_log.csv")
 
     holdings, portfolio_value, state_income = _holdings_from_state(state)
+    holdings = enrich_holdings_with_strategy_ownership(holdings, state)
     holdings = enrich_holdings_with_position_analytics(holdings, log_rows, market_snapshot)
     holdings = enrich_holdings_with_income_analytics(holdings, market_snapshot=market_snapshot, income_snapshot=income_snapshot)
     position_lifecycle = build_position_lifecycle(log_rows, holdings)
+    position_lifecycle = enrich_lifecycle_with_strategy_ownership(position_lifecycle, state)
     holdings = enrich_current_holdings_with_lifecycle(holdings, position_lifecycle)
     active_holdings = [dict(item) for item in holdings if str(item.get("sleeve") or "").upper() != "RESERVE" and str(item.get("symbol") or "").upper() != "SGOV"]
     reserve_holdings = [dict(item) for item in holdings if str(item.get("sleeve") or "").upper() == "RESERVE" or str(item.get("symbol") or "").upper() == "SGOV"]
