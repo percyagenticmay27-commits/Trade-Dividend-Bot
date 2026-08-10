@@ -35,7 +35,7 @@ def test_default_no_snapshot_preserves_unknown_fail_closed_contract() -> None:
     assert report["symbol_specific"] is False
 
 
-def test_symbol_specific_entry_uses_real_history_and_publishes_reasons() -> None:
+def test_symbol_specific_entry_uses_real_history_and_publishes_strategy_authority() -> None:
     closes = [100 + i * 0.25 for i in range(89)] + [122.0, 121.6, 123.5]
     report = entry_engine.build_entry_score_report(_snapshot(_record("AAA", closes)))
     assert report["symbol_specific"] is True
@@ -50,18 +50,22 @@ def test_symbol_specific_entry_uses_real_history_and_publishes_reasons() -> None
     assert row["strategy_signals"]["available"] is True
     assert row["strategy_signals"]["strategy_a"]["stoch_oscillator"]["settings"] == "14,3,3"
     assert row["strategy_signals"]["strategy_a"]["stoch_rsi"]["settings"] == "14,7,3,3"
+    assert "strategy_entry_approved" in row
+    assert "strategy_ownership" in row
     assert row["entry_status"] in {"GOOD_ENTRY", "STRONG_ENTRY", "WATCH", "WAIT", "AVOID"}
     assert row["reasons"]
 
 
-def test_below_50_rsi_is_explicit_wait_blocker() -> None:
+def test_below_50_rsi_is_context_not_shared_strategy_blocker() -> None:
     closes = [150 - i * 0.35 for i in range(90)]
     report = entry_engine.build_entry_score_report(_snapshot(_record("BAD", closes)))
     row = report["entries"][0]
     assert row["technical_evidence"]["rsi14"] < 50
-    assert "RSI14_BELOW_50" in row["reasons"]
-    assert row["entry_status"] not in {"GOOD_ENTRY", "STRONG_ENTRY"}
-    assert "RSI14 must recover above 55" in row["requirements_for_buy"]
+    assert "RSI14_BELOW_50" in row["technical_evidence"]["legacy_context_reasons"]
+    assert row["strategy_entry_approved"] is False
+    assert row["strategy_ownership"]["reason"] == "NO_ACTIVE_ENTRY_STRATEGY"
+    assert row["entry_status"] == "WAIT"
+    assert "NO_ACTIVE_ENTRY_STRATEGY" in row["reasons"]
 
 
 def test_insufficient_history_remains_unknown_instead_of_fabricated() -> None:
@@ -69,14 +73,16 @@ def test_insufficient_history_remains_unknown_instead_of_fabricated() -> None:
     row = report["entries"][0]
     assert row["entry_score"] == 0
     assert row["entry_status"] == "UNKNOWN"
+    assert row["strategy_entry_approved"] is False
     assert any(reason.startswith("INSUFFICIENT_") for reason in row["reasons"])
 
 
-def test_stale_market_data_cannot_be_good_entry() -> None:
+def test_stale_market_data_cannot_be_strategy_approved_entry() -> None:
     closes = [100 + i * 0.2 for i in range(90)]
     report = entry_engine.build_entry_score_report(_snapshot(_record("STALE", closes, stale=True)))
     row = report["entries"][0]
     assert "STALE_MARKET_DATA" in row["reasons"]
+    assert row["strategy_entry_approved"] is False
     assert row["entry_status"] not in {"GOOD_ENTRY", "STRONG_ENTRY"}
 
 
@@ -92,7 +98,7 @@ def test_raw_fast_stochastic_is_audit_only_not_entry_authority() -> None:
     assert row["strategy_signals"]["strategy_a"]["stoch_rsi"]["settings"] == "14,7,3,3"
 
 
-def test_gate_selects_symbol_specific_entry_instead_of_global_aggregate() -> None:
+def test_gate_selects_symbol_specific_legacy_entry_instead_of_global_aggregate() -> None:
     report = {
         "entry_score": 90,
         "entry_status": "STRONG_ENTRY",
@@ -101,8 +107,8 @@ def test_gate_selects_symbol_specific_entry_instead_of_global_aggregate() -> Non
             "symbol": "NUGT",
             "entry_score": 61,
             "entry_status": "WATCH",
-            "reasons": ["RSI14_NOT_ABOVE_55"],
-            "requirements_for_buy": ["RSI14 must rise above 55"],
+            "reasons": ["LEGACY_CONTEXT"],
+            "requirements_for_buy": ["Wait for candidate evidence"],
         }],
     }
     watchlist = {"watchlist": [{"symbol": "NUGT", "status": "READY", "market_data_stale": False, "currently_held": False, "opportunity_score": 82}]}
@@ -114,8 +120,63 @@ def test_gate_selects_symbol_specific_entry_instead_of_global_aggregate() -> Non
     assert decision["approved"] is False
     assert decision["entry_status"] == "WATCH"
     assert "ENTRY_STATUS_NOT_APPROVED_WATCH" in decision["reasons"]
-    assert "ENTRY_EVIDENCE_RSI14_NOT_ABOVE_55" in decision["reasons"]
-    assert decision["entry_requirements"] == ["RSI14 must rise above 55"]
+    assert "ENTRY_EVIDENCE_LEGACY_CONTEXT" in decision["reasons"]
+
+
+def test_gate_uses_strategy_owned_entry_authority_over_legacy_signal() -> None:
+    report = {
+        "symbol_specific": True,
+        "entries": [{
+            "symbol": "NUGT",
+            "entry_score": 82,
+            "entry_status": "GOOD_ENTRY",
+            "strategy_entry_approved": True,
+            "strategy_ownership": {
+                "strategy_owner": "STRATEGY_A",
+                "reason": "SINGLE_ACTIVE_ENTRY_STRATEGY",
+            },
+            "reasons": ["STRATEGY_ENTRY_TRIGGER_ACTIVE"],
+            "requirements_for_buy": [],
+        }],
+    }
+    watchlist = {"watchlist": [{"symbol": "NUGT", "status": "READY", "market_data_stale": False, "currently_held": False, "opportunity_score": 82}]}
+    decision = evaluate_entry_gate(
+        symbol="NUGT", pair="GLDW / NUGT", sleeve="B", signal_symbol="GLD",
+        technical_snapshot={"signal": "SELL"}, watchlist_report=watchlist,
+        entry_score_report=report, currently_held=False,
+    )
+    assert decision["approved"] is True
+    assert decision["technical_signal"] == "BUY"
+    assert decision["strategy_owner"] == "STRATEGY_A"
+    assert decision["technical_snapshot"]["legacy_signal"] == "SELL"
+    assert decision["technical_snapshot"]["entry_authority"] == "STRATEGY_A_B"
+
+
+def test_gate_waits_with_explicit_ownership_reason_when_no_strategy_active() -> None:
+    report = {
+        "symbol_specific": True,
+        "entries": [{
+            "symbol": "NUGT",
+            "entry_score": 70,
+            "entry_status": "WAIT",
+            "strategy_entry_approved": False,
+            "strategy_ownership": {
+                "strategy_owner": None,
+                "reason": "NO_ACTIVE_ENTRY_STRATEGY",
+            },
+            "reasons": ["NO_ACTIVE_ENTRY_STRATEGY"],
+            "requirements_for_buy": ["Strategy A or Strategy B must become active"],
+        }],
+    }
+    watchlist = {"watchlist": [{"symbol": "NUGT", "status": "READY", "market_data_stale": False, "currently_held": False, "opportunity_score": 82}]}
+    decision = evaluate_entry_gate(
+        symbol="NUGT", pair="GLDW / NUGT", sleeve="B", signal_symbol="GLD",
+        technical_snapshot={"signal": "BUY"}, watchlist_report=watchlist,
+        entry_score_report=report, currently_held=False,
+    )
+    assert decision["approved"] is False
+    assert "STRATEGY_OWNERSHIP_NO_ACTIVE_ENTRY_STRATEGY" in decision["reasons"]
+    assert decision["strategy_owner"] is None
 
 
 def test_portfolio_adapter_propagates_symbol_specific_entry_score() -> None:
@@ -123,7 +184,7 @@ def test_portfolio_adapter_propagates_symbol_specific_entry_score() -> None:
         "opportunity_pairing": {"opportunities": [{"symbol": "AAA", "combined_score": 80}, {"symbol": "BBB", "combined_score": 70}]},
         "entry_score": {"entry_score": 10, "entry_status": "AVOID", "entries": [
             {"symbol": "AAA", "entry_score": 88, "entry_status": "STRONG_ENTRY", "reasons": []},
-            {"symbol": "BBB", "entry_score": 52, "entry_status": "WAIT", "reasons": ["RSI14_BELOW_50"]},
+            {"symbol": "BBB", "entry_score": 52, "entry_status": "WAIT", "reasons": ["NO_ACTIVE_ENTRY_STRATEGY"]},
         ]},
         "dividend_ranking": {"rankings": []},
         "conviction": {},
@@ -135,4 +196,4 @@ def test_portfolio_adapter_propagates_symbol_specific_entry_score() -> None:
     assert by_symbol["AAA"]["entry_status"] == "STRONG_ENTRY"
     assert by_symbol["BBB"]["entry_score"] == 52
     assert by_symbol["BBB"]["entry_status"] == "WAIT"
-    assert by_symbol["BBB"]["entry_reasons"] == ["RSI14_BELOW_50"]
+    assert by_symbol["BBB"]["entry_reasons"] == ["NO_ACTIVE_ENTRY_STRATEGY"]
