@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Iterable, Mapping
 
-VALID_OWNERS = {"STRATEGY_A", "STRATEGY_B"}
+VALID_OWNERS = {"STRATEGY_A", "STRATEGY_B", "LEGACY_UNASSIGNED"}
 
 
 def _owner(value: Any) -> str | None:
@@ -17,7 +17,11 @@ def _pair_symbols(pair: str) -> tuple[str | None, str | None]:
 
 
 def build_strategy_ownership_index(state: Mapping[str, Any] | None) -> dict[str, dict[str, Any]]:
-    """Return current and latest-exit ownership evidence keyed by symbol."""
+    """Return current and latest-exit ownership evidence keyed by symbol.
+
+    LEGACY_UNASSIGNED is retained as an explicit lifecycle-management status. It
+    does not mean Strategy A or Strategy B was reconstructed retroactively.
+    """
     result: dict[str, dict[str, Any]] = {}
     pairs = state.get("pairs") if isinstance(state, Mapping) else None
     if not isinstance(pairs, Mapping):
@@ -93,9 +97,6 @@ def enrich_lifecycle_with_strategy_ownership(
                 row["entry_method"] = detail.get("entry_method")
                 row["strategy_ownership_source"] = detail.get("strategy_ownership_source")
             if str(row.get("lifecycle_status") or "").upper() not in {"OPEN", "REENTERED", "RESERVE", "NEVER_ENTERED"}:
-                # The owner preserved at exit is also the methodology that owned
-                # the just-completed lifecycle. We expose it as both entry_method
-                # and exit_method so the UI can show one auditable methodology.
                 row["entry_method"] = detail.get("last_exit_strategy_owner")
                 row["last_exit_strategy_owner"] = detail.get("last_exit_strategy_owner")
                 row["exit_method"] = detail.get("exit_method")
