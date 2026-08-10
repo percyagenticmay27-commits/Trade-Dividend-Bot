@@ -4,8 +4,9 @@ This module does not fetch market data and does not place or simulate orders. It
 converts already-fetched daily OHLC history into symbol-specific entry-timing
 metrics used by ``entry_score_engine``. Missing or stale evidence fails closed.
 
-The legacy raw Fast Stochastic values are retained for compatibility/audit only.
-Dividend Strategy A/B timing is published by ``dividend_entry_strategy_signals``.
+Dividend Strategy A/B timing is authoritative for entry eligibility. Legacy RSI,
+EMA, HMA, and raw Fast Stochastic calculations remain available as context/audit
+and must not silently impose Strategy B rules on Strategy A.
 """
 from __future__ import annotations
 
@@ -15,10 +16,11 @@ from typing import Any, Mapping
 import pandas as pd
 
 from .dividend_entry_strategy_signals import build_strategy_signals
+from .dividend_strategy_ownership import resolve_strategy_ownership
 from .indicators import calculate_indicators
 
 MODULE_NAME = "dividend_technical_entry_evidence"
-MODULE_VERSION = "1.1.0"
+MODULE_VERSION = "1.2.0"
 MIN_HISTORY_ROWS = 60
 STOCH_PERIOD = 14
 HMA_PERIOD = 50
@@ -92,15 +94,7 @@ def _rsi_score(value: float) -> float:
     return 35.0
 
 
-def _status(score: float, blockers: list[str]) -> str:
-    if any(reason.startswith("INSUFFICIENT_") for reason in blockers):
-        return "UNKNOWN"
-    if blockers:
-        if score < 45:
-            return "AVOID"
-        if score < 60:
-            return "WAIT"
-        return "WATCH"
+def _context_status(score: float) -> str:
     if score >= 85:
         return "STRONG_ENTRY"
     if score >= 75:
@@ -112,22 +106,33 @@ def _status(score: float, blockers: list[str]) -> str:
     return "AVOID"
 
 
+def _ownership_requirements(reason: str) -> list[str]:
+    if reason == "NO_ACTIVE_ENTRY_STRATEGY":
+        return [
+            "Strategy A: Stoch Oscillator 14,3,3 K>D with K>=50 OR RSI14>=50, then Stoch RSI 14,7,3,3 K>D",
+            "OR Strategy B: Price > EMA20 > EMA50",
+        ]
+    if reason == "MULTIPLE_ACTIVE_ENTRY_STRATEGIES_REQUIRE_SELECTION_POLICY":
+        return ["Resolve which qualifying strategy owns the new position before entry"]
+    return []
+
+
 def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
     symbol = str(record.get("symbol") or "").strip().upper()
     rows = _history_rows(record)
     stale = bool(record.get("is_stale"))
-    blockers: list[str] = []
     warnings: list[str] = []
 
+    history_reasons: list[str] = []
     if len(rows) < MIN_HISTORY_ROWS:
-        blockers.append(f"INSUFFICIENT_HISTORY_{len(rows)}_ROWS")
+        history_reasons.append(f"INSUFFICIENT_HISTORY_{len(rows)}_ROWS")
     if stale:
-        blockers.append("STALE_MARKET_DATA")
+        history_reasons.append("STALE_MARKET_DATA")
 
     frame = _frame(rows)
     if len(frame) < MIN_HISTORY_ROWS:
-        if not any(reason.startswith("INSUFFICIENT_HISTORY") for reason in blockers):
-            blockers.append(f"INSUFFICIENT_VALID_HISTORY_{len(frame)}_ROWS")
+        if not any(reason.startswith("INSUFFICIENT_HISTORY") for reason in history_reasons):
+            history_reasons.append(f"INSUFFICIENT_VALID_HISTORY_{len(frame)}_ROWS")
         return {
             "symbol": symbol,
             "entry_score": 0.0,
@@ -136,10 +141,19 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
             "confidence": 0.0,
             "confidence_level": "LOW",
             "technical_signal": "UNKNOWN",
-            "reasons": blockers,
+            "strategy_entry_approved": False,
+            "reasons": history_reasons,
             "requirements_for_buy": ["At least 60 valid daily OHLC rows", "Fresh market data"],
             "technical_evidence": {},
             "strategy_signals": {"available": False, "reason": "INSUFFICIENT_STRATEGY_SIGNAL_HISTORY"},
+            "strategy_ownership": {
+                "resolved": False,
+                "strategy_owner": None,
+                "eligible_strategies": [],
+                "reason": "INSUFFICIENT_STRATEGY_SIGNAL_HISTORY",
+                "entry_allowed_by_ownership": False,
+                "ownership_source": "market_evidence",
+            },
             "history_row_count": len(rows),
             "market_data_stale": stale,
             "source": "market_data_snapshot.json",
@@ -151,6 +165,8 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
     hma = _hma(close)
     legacy_fast_stochastic = _fast_stochastic(frame)
     strategy_signals = build_strategy_signals(frame)
+    ownership = resolve_strategy_ownership(strategy_signals)
+
     latest = indicators.iloc[-1]
     price = float(latest["Close"])
     ema20 = float(latest["EMA20"])
@@ -167,19 +183,19 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
     hma_rising = hma50 > hma50_prior
     five_day_up = len(close) >= 6 and float(close.iloc[-1]) > float(close.iloc[-6])
 
-    # Legacy confirmation remains for Entry Score V1.1 compatibility. Raw Fast
-    # Stochastic is no longer an entry blocker; Strategy A uses Stochastic
-    # Oscillator 14,3,3 plus Stoch RSI 14,7,3,3 instead.
+    # These are contextual diagnostics only. They are not shared blockers because
+    # Strategy A and Strategy B intentionally use different entry methodologies.
+    legacy_context_reasons: list[str] = []
     if rsi14 < 50:
-        blockers.append("RSI14_BELOW_50")
+        legacy_context_reasons.append("RSI14_BELOW_50")
     elif rsi14 <= 55:
-        blockers.append("RSI14_NOT_ABOVE_55")
+        legacy_context_reasons.append("RSI14_NOT_ABOVE_55")
     if not ema_aligned:
-        blockers.append("EMA20_EMA50_BULLISH_ALIGNMENT_NOT_CONFIRMED")
+        legacy_context_reasons.append("EMA20_EMA50_BULLISH_ALIGNMENT_NOT_CONFIRMED")
     if not above_hma:
-        blockers.append("PRICE_BELOW_HMA50")
+        legacy_context_reasons.append("PRICE_BELOW_HMA50")
     if not hma_rising:
-        blockers.append("HMA50_NOT_RISING")
+        legacy_context_reasons.append("HMA50_NOT_RISING")
 
     ema_score = 100.0 if ema_aligned else (60.0 if price > ema20 else 20.0)
     hma_score = 100.0 if above_hma and hma_rising else (65.0 if above_hma else 20.0)
@@ -190,42 +206,52 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
         "hma50": hma_score,
         "five_day_price_trend": trend_score,
     }
-    score = round(sum(scores.values()) / len(scores), 2)
-    status = _status(score, blockers)
+    context_score = round(sum(scores.values()) / len(scores), 2)
 
-    technical_signal = "BUY" if not blockers and status in {"GOOD_ENTRY", "STRONG_ENTRY"} else "HOLD"
-    if rsi14 < 45 or price < ema20 or ema20 < ema50:
-        technical_signal = "SELL"
-
-    requirements: list[str] = []
-    requirement_map = {
-        "RSI14_BELOW_50": "RSI14 must recover above 55",
-        "RSI14_NOT_ABOVE_55": "RSI14 must rise above 55",
-        "EMA20_EMA50_BULLISH_ALIGNMENT_NOT_CONFIRMED": "Price > EMA20 > EMA50",
-        "PRICE_BELOW_HMA50": "Price must close above HMA50",
-        "HMA50_NOT_RISING": "HMA50 must turn upward",
-        "STALE_MARKET_DATA": "Refresh market data",
-    }
-    for reason in blockers:
-        requirement = requirement_map.get(reason)
-        if requirement and requirement not in requirements:
-            requirements.append(requirement)
+    hard_blockers = list(history_reasons)
+    strategy_entry_approved = bool(ownership.get("entry_allowed_by_ownership")) and not hard_blockers
+    if strategy_entry_approved:
+        score = max(context_score, 75.0)
+        status = "GOOD_ENTRY" if score < 85 else "STRONG_ENTRY"
+        reasons = ["STRATEGY_ENTRY_TRIGGER_ACTIVE"]
+        requirements: list[str] = []
+        technical_signal = "BUY"
+    else:
+        score = context_score
+        status = "WAIT" if ownership.get("reason") in {
+            "NO_ACTIVE_ENTRY_STRATEGY",
+            "MULTIPLE_ACTIVE_ENTRY_STRATEGIES_REQUIRE_SELECTION_POLICY",
+        } else _context_status(score)
+        if hard_blockers:
+            status = "UNKNOWN" if any(reason.startswith("INSUFFICIENT_") for reason in hard_blockers) else "WAIT"
+        reasons = hard_blockers + ([str(ownership.get("reason"))] if ownership.get("reason") else [])
+        requirements = (["Refresh market data"] if stale else []) + _ownership_requirements(str(ownership.get("reason") or ""))
+        technical_signal = "HOLD"
 
     confidence = round(min(1.0, len(frame) / 200.0) * (0.5 if stale else 1.0), 4)
     confidence_level = "HIGH" if confidence >= 0.70 else ("MEDIUM" if confidence >= 0.40 else "LOW")
-    timing_context = "TREND_CONTINUATION" if ema_aligned and above_hma else ("PULLBACK_ENTRY" if price > ema50 else "RANGE_BOUND")
+
+    owner = ownership.get("strategy_owner")
+    if owner == "STRATEGY_A":
+        timing_context = "OSCILLATOR_MOMENTUM"
+    elif owner == "STRATEGY_B":
+        timing_context = "TREND_CONTINUATION"
+    else:
+        timing_context = "RANGE_BOUND"
 
     return {
         "symbol": symbol,
-        "entry_score": score,
+        "entry_score": round(score, 2),
         "entry_status": status,
         "timing_context": timing_context,
         "confidence": confidence,
         "confidence_level": confidence_level,
         "technical_signal": technical_signal,
-        "reasons": blockers or ["ENTRY_TECHNICAL_CONFIRMATION_COMPLETE"],
+        "strategy_entry_approved": strategy_entry_approved,
+        "reasons": reasons,
         "requirements_for_buy": requirements,
         "strategy_signals": strategy_signals,
+        "strategy_ownership": ownership,
         "technical_evidence": {
             "price": round(price, 6),
             "ema20": round(ema20, 6),
@@ -238,6 +264,7 @@ def build_symbol_entry_evidence(record: Mapping[str, Any]) -> dict[str, Any]:
             "price_above_hma50": above_hma,
             "five_day_price_up": five_day_up,
             "component_scores": scores,
+            "legacy_context_reasons": legacy_context_reasons,
             "legacy_fast_stochastic_audit": {
                 "period": STOCH_PERIOD,
                 "k": round(fast_k, 4),
