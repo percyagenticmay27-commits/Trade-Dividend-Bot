@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from typing import Any, Mapping
 
+from paper_portfolio_config import PAPER_PAIRS
+
 from .dividend_income_analytics import enrich_holdings_with_income_analytics, total_projected_annual_income
 from .dividend_position_analytics import enrich_holdings_with_position_analytics, total_unrealized_pnl
 from .dividend_position_lifecycle import build_position_lifecycle, enrich_current_holdings_with_lifecycle
@@ -144,6 +146,16 @@ def _strategy_signal_index(payload: Mapping[str, Any]) -> dict[str, Mapping[str,
     return result
 
 
+def _configured_signal_symbol(holding: Mapping[str, Any]) -> str:
+    symbol = str(holding.get("symbol") or "").strip().upper()
+    pair = str(holding.get("pair") or "")
+    sleeve = str(holding.get("sleeve") or "").strip().lower()
+    config = PAPER_PAIRS.get(pair)
+    if isinstance(config, Mapping) and sleeve in {"a", "b"}:
+        return str(config.get(f"{sleeve}_signal") or config.get(sleeve) or symbol).strip().upper()
+    return symbol
+
+
 def _enrich_holdings_with_owner_exit_state(
     holdings: list[dict[str, Any]],
     entry_score_payload: Mapping[str, Any],
@@ -152,10 +164,11 @@ def _enrich_holdings_with_owner_exit_state(
     enriched: list[dict[str, Any]] = []
     for raw in holdings:
         row = dict(raw)
-        symbol = str(row.get("symbol") or "").strip().upper()
         owner = row.get("strategy_owner")
-        signals = signal_index.get(symbol)
-        if owner in {"STRATEGY_A", "STRATEGY_B"} and isinstance(signals, Mapping):
+        signal_symbol = _configured_signal_symbol(row)
+        signals = signal_index.get(signal_symbol)
+        managed_owners = {"STRATEGY_A", "STRATEGY_B", "LEGACY_UNASSIGNED"}
+        if owner in managed_owners and isinstance(signals, Mapping):
             exit_detail = owned_exit_signal(signals, str(owner))
             row.update({
                 "exit_state": exit_detail.get("exit_state"),
@@ -165,9 +178,11 @@ def _enrich_holdings_with_owner_exit_state(
                 "sell_trigger": bool(exit_detail.get("sell_trigger")),
                 "sell_reasons": list(exit_detail.get("sell_reasons") or []),
                 "exit_authority_reason": exit_detail.get("reason"),
+                "exit_signal_symbol": signal_symbol,
                 "exit_evidence_source": "entry_score_report.json",
+                "exit_evidence_generated_at_utc": entry_score_payload.get("generated_at_utc"),
             })
-        elif owner in {"STRATEGY_A", "STRATEGY_B"}:
+        elif owner in managed_owners:
             row.update({
                 "exit_state": "UNKNOWN",
                 "exit_warning_active": False,
@@ -176,7 +191,9 @@ def _enrich_holdings_with_owner_exit_state(
                 "sell_trigger": False,
                 "sell_reasons": [],
                 "exit_authority_reason": "CURRENT_STRATEGY_SIGNAL_EVIDENCE_UNAVAILABLE",
+                "exit_signal_symbol": signal_symbol,
                 "exit_evidence_source": None,
+                "exit_evidence_generated_at_utc": None,
             })
         enriched.append(row)
     return enriched
