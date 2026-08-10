@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from src.dividend_bot.dividend_strategy_ownership import (
+    LEGACY_UNASSIGNED,
     STRATEGY_A,
     STRATEGY_B,
+    legacy_unassigned_exit_signal,
     owned_exit_signal,
     resolve_strategy_ownership,
 )
@@ -71,6 +73,13 @@ def test_existing_owner_is_sticky_even_if_other_strategy_now_has_buy_signal() ->
     assert result["reason"] == "EXISTING_POSITION_STRATEGY_OWNERSHIP_PRESERVED"
 
 
+def test_legacy_unassigned_is_not_treated_as_new_entry_owner() -> None:
+    result = resolve_strategy_ownership(_signals(), existing_owner=LEGACY_UNASSIGNED)
+    assert result["resolved"] is False
+    assert result["strategy_owner"] is None
+    assert result["entry_allowed_by_ownership"] is False
+
+
 def test_strategy_a_position_ignores_strategy_b_sell() -> None:
     result = owned_exit_signal(_signals(a_sell=False, b_sell=True), STRATEGY_A)
     assert result["strategy_owner"] == STRATEGY_A
@@ -95,10 +104,7 @@ def test_owner_specific_sell_reason_is_preserved() -> None:
 
 
 def test_strategy_a_fast_warning_is_preserved_without_authorizing_sell() -> None:
-    result = owned_exit_signal(
-        _signals(a_warning=True, a_buffered=True),
-        STRATEGY_A,
-    )
+    result = owned_exit_signal(_signals(a_warning=True, a_buffered=True), STRATEGY_A)
     assert result["strategy_owner"] == STRATEGY_A
     assert result["sell_trigger"] is False
     assert result["exit_warning_active"] is True
@@ -129,3 +135,39 @@ def test_unknown_owner_cannot_generate_sell() -> None:
     assert result["sell_trigger"] is False
     assert result["exit_state"] == "UNKNOWN"
     assert result["reason"] == "STRATEGY_OWNERSHIP_UNKNOWN_FAIL_CLOSED"
+
+
+def test_legacy_unassigned_requires_both_strategy_sell_confirmations() -> None:
+    a_only = owned_exit_signal(_signals(a_sell=True), LEGACY_UNASSIGNED)
+    b_only = owned_exit_signal(_signals(b_sell=True), LEGACY_UNASSIGNED)
+    assert a_only["sell_trigger"] is False
+    assert a_only["exit_state"] == "WARNING_BUFFERED"
+    assert a_only["strategy_a_sell_trigger"] is True
+    assert a_only["strategy_b_sell_trigger"] is False
+    assert b_only["sell_trigger"] is False
+    assert b_only["exit_state"] == "WARNING_BUFFERED"
+    assert b_only["strategy_a_sell_trigger"] is False
+    assert b_only["strategy_b_sell_trigger"] is True
+
+
+def test_legacy_unassigned_consensus_allows_exit_without_fabricating_a_b_owner() -> None:
+    result = legacy_unassigned_exit_signal(_signals(a_sell=True, b_sell=True))
+    assert result["strategy_owner"] == LEGACY_UNASSIGNED
+    assert result["sell_trigger"] is True
+    assert result["exit_state"] == "SELL_CONFIRMED"
+    assert result["reason"] == "LEGACY_UNASSIGNED_A_B_EXIT_CONSENSUS"
+    assert result["legacy_management_policy"] == "REQUIRE_STRATEGY_A_AND_B_SELL_CONSENSUS"
+    assert result["sell_reasons"] == [
+        "STOCH_OSC_D_CROSSED_ABOVE_K_BELOW_80",
+        "PRICE_BELOW_EMA20",
+    ]
+
+
+def test_legacy_unassigned_preserves_fast_strategy_a_warning() -> None:
+    result = owned_exit_signal(
+        _signals(a_warning=True, a_buffered=True),
+        LEGACY_UNASSIGNED,
+    )
+    assert result["sell_trigger"] is False
+    assert result["exit_state"] == "WARNING_BUFFERED"
+    assert result["exit_warning_reasons"] == ["STOCH_RSI_D_CROSSED_ABOVE_K"]
