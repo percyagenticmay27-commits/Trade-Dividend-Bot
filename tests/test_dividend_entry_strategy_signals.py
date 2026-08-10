@@ -99,6 +99,9 @@ def test_stoch_rsi_bearish_cross_is_warning_not_sell(monkeypatch) -> None:
     assert strategy_a["sell_warning"] is True
     assert strategy_a["sell_trigger"] is False
     assert strategy_a["exit_buffer_active"] is True
+    assert strategy_a["exit_warning_active"] is True
+    assert strategy_a["exit_buffered"] is True
+    assert strategy_a["exit_warning_reasons"] == strategy_a["warning_reasons"]
     assert "STOCH_RSI_D_CROSSED_ABOVE_K_EARLY_WARNING" in strategy_a["warning_reasons"]
 
 
@@ -118,4 +121,7 @@ def test_stoch_osc_bearish_cross_at_or_above_80_is_buffered(monkeypatch) -> None
     assert strategy_a["stoch_oscillator"]["both_below_80"] is False
     assert strategy_a["sell_trigger"] is False
     assert strategy_a["exit_buffer_active"] is True
+    assert strategy_a["exit_warning_active"] is True
+    assert strategy_a["exit_buffered"] is True
+    assert strategy_a["exit_warning_reasons"] == strategy_a["warning_reasons"]
     assert "STOCH_OSC_BEARISH_CROSS_BUFFERED_AT_OR_ABOVE_80" in strategy_a["warning_reasons"]
