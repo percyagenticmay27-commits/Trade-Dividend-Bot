@@ -40,8 +40,6 @@ def _history_rows(row: Mapping[str, Any]) -> list[dict[str, Any]]:
         if not isinstance(item, Mapping):
             continue
         status = str(item.get("lifecycle_status") or "").upper()
-        # Sales history is for positions that actually owned ETF exposure.
-        # NEVER_ENTERED belongs to watchlist/decision evidence, not realized P&L.
         if status in {"OPEN", "REENTERED", "RESERVE", "NEVER_ENTERED"}:
             continue
         result.append(dict(item))
@@ -91,33 +89,36 @@ def render_position_history_panel(row: Mapping[str, Any]) -> str:
                 f"<td><strong>{_text(item.get('symbol'))}</strong><div class='position-history-pair'>{_text(item.get('pair'))}</div></td>"
                 f"<td>{_text(item.get('sleeve'))}</td>"
                 f"<td><span class='position-history-status'>{_text(item.get('lifecycle_status'))}</span></td>"
+                f"<td>{_text(item.get('entry_method'))}</td>"
                 f"<td>{_text(item.get('first_purchase_date'))}</td>"
                 f"<td>{_text(item.get('last_exit_date'))}</td>"
                 f"<td class='money'>{_money(item.get('entry_value'))}</td>"
                 f"<td class='money'>{_money(item.get('last_exit_value'))}</td>"
                 f"<td class='money {gain_class}'>{gain}</td>"
+                f"<td>{_text(item.get('exit_method') or item.get('last_exit_strategy_owner'))}</td>"
+                f"<td>{_text(item.get('last_exit_reason'))}</td>"
                 f"<td>{_text(item.get('last_exit_action'))}</td>"
                 f"<td>{_text(item.get('reentry_count'))}</td>"
-                f"<td>{_text(item.get('evidence_source'))}</td>"
+                f"<td>{_text(item.get('strategy_exit_evidence_source') or item.get('evidence_source'))}</td>"
                 "</tr>"
             )
         body = (
             "<div class='position-history-scroll'><table class='position-history-table'>"
-            "<thead><tr><th>Symbol / Pair</th><th>Sleeve</th><th>Status</th>"
+            "<thead><tr><th>Symbol / Pair</th><th>Sleeve</th><th>Status</th><th>Entry Method</th>"
             "<th>Entry Date</th><th>Exit Date</th><th>Entry Value</th><th>Exit Value</th>"
-            "<th>Gain / Loss</th><th>Exit Action</th><th>Re-entry</th><th>Evidence</th>"
+            "<th>Gain / Loss</th><th>Exit Method</th><th>Exit Reason</th><th>Exit Action</th><th>Re-entry</th><th>Evidence</th>"
             "</tr></thead><tbody>" + "".join(rows) + "</tbody></table></div>"
         )
 
     return (
         "<section class='position-history-pro' aria-label='Position sales history'>"
         "<div class='position-history-heading'><div><h3>Position / Sales History</h3>"
-        "<p>Completed strategy-owned paper positions only. Candidates that never entered remain outside realized trade history.</p>"
+        "<p>Completed strategy-owned paper positions with entry methodology, owner-controlled exit evidence, and realized P&amp;L.</p>"
         "</div></div>" + summary + body + "</section>"
     )
 
 
 def position_history_ui_css() -> str:
     return """
-.position-history-pro{margin-top:24px}.position-history-heading h3{margin:0 0 4px;font-size:18px}.position-history-heading p{margin:0 0 14px;color:#667085}.position-history-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}.position-history-summary>div{border:1px solid #e4e7ec;border-radius:10px;padding:12px;background:#fff}.position-history-summary span{display:block;color:#667085;font-size:12px}.position-history-summary strong{display:block;margin-top:4px;font-size:18px}.position-history-scroll{overflow-x:auto;border:1px solid #e4e7ec;border-radius:12px;background:#fff}.position-history-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1180px}.position-history-table th{position:sticky;top:0;background:#f8fafc;color:#475467;text-align:left;padding:11px 12px;font-size:12px;border-bottom:1px solid #e4e7ec;white-space:nowrap}.position-history-table td{padding:11px 12px;border-bottom:1px solid #f0f2f5;vertical-align:top}.position-history-table tbody tr:nth-child(even){background:#fcfcfd}.position-history-table tbody tr:hover{background:#f8fafc}.position-history-table .money{text-align:right;white-space:nowrap}.position-history-pair{font-size:12px;color:#667085;margin-top:3px}.position-history-status{display:inline-block;border-radius:999px;padding:3px 8px;background:#eef2f6;font-size:11px;font-weight:700}.positive{color:#027a48}.negative{color:#b42318}.neutral{color:#475467}.position-history-empty{padding:20px;border:1px dashed #d0d5dd;border-radius:10px;color:#667085}@media(max-width:900px){.position-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.position-history-summary{grid-template-columns:1fr}}
+.position-history-pro{margin-top:24px}.position-history-heading h3{margin:0 0 4px;font-size:18px}.position-history-heading p{margin:0 0 14px;color:#667085}.position-history-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}.position-history-summary>div{border:1px solid #e4e7ec;border-radius:10px;padding:12px;background:#fff}.position-history-summary span{display:block;color:#667085;font-size:12px}.position-history-summary strong{display:block;margin-top:4px;font-size:18px}.position-history-scroll{overflow-x:auto;border:1px solid #e4e7ec;border-radius:12px;background:#fff}.position-history-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1580px}.position-history-table th{position:sticky;top:0;background:#f8fafc;color:#475467;text-align:left;padding:11px 12px;font-size:12px;border-bottom:1px solid #e4e7ec;white-space:nowrap}.position-history-table td{padding:11px 12px;border-bottom:1px solid #f0f2f5;vertical-align:top}.position-history-table tbody tr:nth-child(even){background:#fcfcfd}.position-history-table tbody tr:hover{background:#f8fafc}.position-history-table .money{text-align:right;white-space:nowrap}.position-history-pair{font-size:12px;color:#667085;margin-top:3px}.position-history-status{display:inline-block;border-radius:999px;padding:3px 8px;background:#eef2f6;font-size:11px;font-weight:700}.positive{color:#027a48}.negative{color:#b42318}.neutral{color:#475467}.position-history-empty{padding:20px;border:1px dashed #d0d5dd;border-radius:10px;color:#667085}@media(max-width:900px){.position-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.position-history-summary{grid-template-columns:1fr}}
 """
