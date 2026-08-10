@@ -6,22 +6,48 @@ This addendum records the Enterprise-facing consequences of the Dividend Entry S
 
 ## Dividend-side Strategy A / Strategy B timing model
 
-DIVIDEND-001 now publishes two distinct strategy-owned timing models from already-fetched daily OHLC evidence.
+DIVIDEND-001 publishes two distinct strategy-owned timing models from already-fetched daily OHLC evidence.
 
 ### Strategy A — Oscillator / Momentum
 
-The arming mechanism uses:
+Strategy A deliberately uses a slower momentum gate plus a faster execution lever.
 
-- Stochastic Oscillator `(14,3,3)` where `%K > %D` and `%K >= 50`, **or**
+The arming mechanism uses either:
+
+- Stochastic Oscillator `(14,3,3)` where `%K > %D` and **both `%K` and `%D` are at or above 50**, or
 - RSI(14) at or above `50`.
 
 A fresh RSI cross is retained as audit evidence, but RSI does not have to cross 50 again every day. While RSI remains in the 50–100 regime, Strategy A remains allowed to use its Stochastic RSI lever.
 
 Once armed, the execution lever is Stochastic RSI `(14,7,3,3)`.
 
-A Strategy A BUY-active state requires the arming mechanism above and Stochastic RSI `%K > %D`. A fresh Stochastic RSI `%K/%D` crossover is not required on every BUY evaluation. Rising `%K`, a fresh K-over-D crossover, and K entering 50 or 80 remain audit/supporting evidence rather than repeated mandatory prerequisites.
+A Strategy A BUY-active state requires:
 
-A Strategy A SELL trigger occurs when either Stochastic RSI `%D` genuinely crosses above `%K` or Stochastic Oscillator `%D` genuinely crosses above `%K`. Touching/equality alone is not a SELL crossover.
+- the slower arming mechanism above;
+- Stochastic RSI `%K > %D`; and
+- Stochastic RSI `%K` rising versus the prior daily value.
+
+A fresh Stochastic RSI `%K/%D` crossover is not required on every BUY evaluation. A prior crossover and K entering 50 or 80 remain supporting/audit evidence.
+
+### Strategy A buffered exit architecture
+
+Stochastic RSI is intentionally faster than the Stochastic Oscillator. Therefore a Stochastic RSI bearish crossover is treated as an **early exit warning**, not automatic SELL authority.
+
+The stages are:
+
+1. `STOCH_RSI_D_CROSSED_ABOVE_K` → `exit_warning_active = true`.
+2. If the slower Stochastic Oscillator has not confirmed deterioration, the position remains HOLD and the warning is buffered.
+3. A normal Strategy A SELL is confirmed only when Stochastic Oscillator `%D` genuinely crosses above `%K` **and both oscillator lines are below 80**.
+4. A Stochastic Oscillator bearish crossover while either line remains at or above 80 is buffered and does not force an exit.
+5. Equality/touching alone is never treated as a crossover.
+
+This creates three explicit owner-routed exit states for Strategy A:
+
+- `HOLD`
+- `WARNING_BUFFERED`
+- `SELL_CONFIRMED`
+
+The owner router preserves the warning fields even when `sell_trigger = false`, allowing the paper lifecycle and AI CIO to distinguish a fast momentum warning from a confirmed strategy exit.
 
 ### Strategy B — EMA Trend
 
@@ -56,10 +82,11 @@ For a pair-managed qualified entry, the paper state can persist `strategy_owner`
 
 The daily Dividend paper loop reads the persisted owner before an ordinary technical exit is allowed.
 
-- `STRATEGY_A` ownership routes SELL authority only through Strategy A's current `strategy_signals.strategy_a.sell_trigger` evidence.
+- `STRATEGY_A` ownership routes SELL authority only through Strategy A's current buffered exit evidence.
 - `STRATEGY_B` ownership routes SELL authority only through Strategy B's current `strategy_signals.strategy_b.sell_trigger` evidence.
 - A SELL emitted by the non-owning strategy is ignored.
 - Missing/unknown ownership fails closed for strategy-routed exits; it does not fall back to a legacy technical SELL.
+- Strategy A warning evidence can be retained while the final `sell_trigger` remains false.
 - Legacy aggregate signals remain report/audit context and no longer own ordinary technical exits when the Strategy A/B lifecycle is in use.
 - Scheduled pre-earnings exits remain a separate risk/governance override and can close a position regardless of Strategy A/B ownership.
 - Post-earnings re-entry still passes through the qualified entry gate and receives a newly persisted owner only if the position actually re-opens.
@@ -70,7 +97,7 @@ When an owner-controlled exit closes a position, current ownership is cleared an
 
 Positions opened before the ownership fields were introduced can legitimately have `strategy_owner = null`. The Enterprise host must not rewrite those historical positions as Strategy A or Strategy B merely because one of those methods is active today.
 
-Dividend now includes a **read-only legacy ownership reconstruction audit**. It reconstructs Strategy A/B evidence at the current open cycle's original entry date using the shared historical market snapshot and the configured signal symbol. For pair-managed positions, the underlying signal symbol from `paper_portfolio_config.py` is used (for example AMD for AMDW/AMDL, NVDA for NVDW/NVDX, AVGO for AVGW/AVGX). The audit:
+Dividend includes a **read-only legacy ownership reconstruction audit**. It reconstructs Strategy A/B evidence at the current open cycle's original entry date using the shared historical market snapshot and the configured signal symbol. For pair-managed positions, the underlying signal symbol from `paper_portfolio_config.py` is used (for example AMD for AMDW/AMDL, NVDA for NVDW/NVDX, AVGO for AVGW/AVGX). The audit:
 
 - never mutates `paper_state.json`;
 - never moves capital;
@@ -88,6 +115,17 @@ The Dividend dashboard evidence layer normalizes persisted ownership into Enterp
 
 Current holdings can publish `strategy_owner`, `entry_method`, and `strategy_ownership_source`. Completed lifecycle rows can publish `entry_method`, `last_exit_strategy_owner`, `exit_method`, `last_exit_strategy_reasons`, `last_exit_reason`, and `strategy_exit_evidence_source`.
 
+Strategy A current-exit evidence can additionally publish or propagate the semantic equivalents of:
+
+- `exit_state`
+- `exit_warning_active`
+- `exit_buffered`
+- `exit_warning_reasons`
+- `sell_trigger`
+- `sell_reasons`
+
+The AI CIO should render a buffered warning as a HOLD/watch condition, not as a completed or authorized sale.
+
 The Enterprise Position / Sales History UI has explicit columns for **Entry Method**, **Exit Method**, and **Exit Reason**. Missing ownership evidence remains missing; the host must not infer or fabricate a methodology.
 
 These fields flow through the existing DIVIDEND-001 dashboard-detail → Enterprise KPI path, so `enterprise_strategy_kpis.json` can expose the same ownership/lifecycle evidence to jshouseapi.com without changing the Swing repository.
@@ -102,7 +140,7 @@ The Enterprise host can continue consuming `STRONG_ENTRY`, `GOOD_ENTRY`, `WATCH`
 
 ## AI CIO implications
 
-The AI CIO should be able to explain which Dividend timing strategy is active, which strategy owns an open position, why an entry is waiting, and exactly which owning strategy caused an exit. The Enterprise host must display supplied strategy evidence; it must not recompute Dividend or Swing trading logic.
+The AI CIO should be able to explain which Dividend timing strategy is active, which strategy owns an open position, why an entry is waiting, whether a Strategy A fast exit warning is currently buffered, and exactly which owning strategy caused a confirmed exit. The Enterprise host must display supplied strategy evidence; it must not recompute Dividend or Swing trading logic.
 
 ## Swing compatibility requirement
 
@@ -110,7 +148,9 @@ SWING-001 must not copy Dividend's Strategy A or Strategy B formulas unless Swin
 
 If Swing supports multiple entry methodologies, Swing should persist the method that actually owns an open paper position in Swing's own authoritative lifecycle/state. Its ordinary technical exit router should then consult that persisted owner and only honor that owner's exit methodology. A signal from another Swing method must not silently close the position unless Swing explicitly documents an override/migration policy.
 
-Swing should distinguish normal strategy exits from independent governance/risk exits. For AI CIO interoperability, Swing should publish equivalent semantic ownership fields in its own canonical Enterprise artifact where applicable: current method owner, entry method, ownership provenance, latest exit method/owner, machine-readable exit reasons, human-readable exit reason, freshness/provenance, and paper-only/broker-disabled flags.
+If Swing has a fast-warning/slow-confirmation architecture of its own, it should publish warning state separately from final exit authority. The Enterprise host should display that state but must not convert a warning into a SELL.
+
+Swing should distinguish normal strategy exits from independent governance/risk exits. For AI CIO interoperability, Swing should publish equivalent semantic ownership fields in its own canonical Enterprise artifact where applicable: current method owner, entry method, ownership provenance, latest exit method/owner, machine-readable exit reasons, human-readable exit reason, warning/buffer state where applicable, freshness/provenance, and paper-only/broker-disabled flags.
 
 If Swing has legacy open positions that predate method ownership, Swing should not assign ownership from current signals. It should reconstruct evidence as of the historical entry date where possible and require explicit migration for any retroactive owner assignment.
 
@@ -121,6 +161,7 @@ If Swing has legacy open positions that predate method ownership, Swing should n
 - A WAIT must have an explicit reason whenever strategy evidence supports one.
 - Missing/UNKNOWN evidence fails closed.
 - SELL crossovers require prior/current evidence and cannot be inferred from lines merely touching.
+- Fast warning evidence must remain distinct from confirmed exit authority.
 - Open-position strategy ownership remains stable until that lifecycle is closed or explicitly migrated by a documented policy.
 - Ordinary technical exits must route through the persisted owner.
 - Independent risk/governance exits must remain separately attributable.
@@ -131,7 +172,7 @@ If Swing has legacy open positions that predate method ownership, Swing should n
 
 ## Swing regression tests to add
 
-Swing development should test missing/stale evidence fail-closed behavior; candidate-specific Entry Timing; WAIT reasons; real crossover semantics; sticky method ownership; owner-only exits; risk override attribution; last-exit owner/reason preservation; legacy-position historical reconstruction without automatic mutation; ambiguous legacy reconstruction remaining unassigned; Enterprise propagation without host-side recomputation; and paper-only/no-order locks.
+Swing development should test missing/stale evidence fail-closed behavior; candidate-specific Entry Timing; WAIT reasons; real crossover semantics; sticky method ownership; owner-only exits; separation of fast warning from confirmed exit where applicable; risk override attribution; last-exit owner/reason preservation; legacy-position historical reconstruction without automatic mutation; ambiguous legacy reconstruction remaining unassigned; Enterprise propagation without host-side recomputation; and paper-only/no-order locks.
 
 ## Dividend files changed for this strategy timing / ownership milestone
 
