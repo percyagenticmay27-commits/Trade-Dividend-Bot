@@ -7,18 +7,20 @@ orders.
 Strategy A
 ----------
 Arming mechanism:
-* Stochastic Oscillator (14, 3, 3): %K > %D and %K >= 50, OR
+* Stochastic Oscillator (14, 3, 3): %K > %D with both %K and %D >= 50, OR
 * RSI(14) is >= 50.
 
 Execution lever while armed:
-* Stochastic RSI (14, 7, 3, 3) %K > %D.
-* A fresh %K/%D crossover is NOT required for BUY. If RSI or Stochastic
-  Oscillator keeps the mechanism armed and Stochastic RSI %K is already above
-  %D and moving upward, the setup remains BUY-active.
+* Stochastic RSI (14, 7, 3, 3) %K > %D and %K is moving upward.
+* A fresh %K/%D crossover is NOT required for BUY. The fast Stoch RSI is the
+  execution lever; RSI/Stochastic Oscillator are the slower permission layer.
 
-Exit:
-* Stochastic RSI %D crosses above %K, OR
-* Stochastic Oscillator %D crosses above %K.
+Buffered exit:
+* A Stochastic RSI %D cross above %K is an EARLY WARNING only.
+* Strategy A exits only when the slower Stochastic Oscillator confirms
+  deterioration: %D crosses above %K and both current values are below 80.
+* A bearish Stochastic Oscillator cross while either line remains >= 80 is
+  buffered as HOLD so strong overbought momentum is not exited prematurely.
 
 Strategy B
 ----------
@@ -34,7 +36,7 @@ from typing import Any
 import pandas as pd
 
 MODULE_NAME = "dividend_entry_strategy_signals"
-MODULE_VERSION = "1.0.1"
+MODULE_VERSION = "1.1.0"
 
 STOCH_OSC_LENGTH = 14
 STOCH_OSC_K_SMOOTH = 3
@@ -44,6 +46,7 @@ STOCH_RSI_LENGTH = 7
 STOCH_RSI_K_SMOOTH = 3
 STOCH_RSI_D_SMOOTH = 3
 ARM_LEVEL = 50.0
+EXIT_BUFFER_LEVEL = 80.0
 LEVER_LEVELS = (50.0, 80.0)
 
 
@@ -116,11 +119,9 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
 
     idx = len(frame) - 1
     prev = idx - 1
-    values = [
-        close.iloc[idx], ema20.iloc[idx], ema50.iloc[idx], rsi14.iloc[idx], rsi14.iloc[prev],
-        stoch_k.iloc[idx], stoch_k.iloc[prev], stoch_d.iloc[idx], stoch_d.iloc[prev],
-        stoch_rsi_k.iloc[idx], stoch_rsi_k.iloc[prev], stoch_rsi_d.iloc[idx], stoch_rsi_d.iloc[prev],
-    ]
+    values = [close.iloc[idx], ema20.iloc[idx], ema50.iloc[idx], rsi14.iloc[idx], rsi14.iloc[prev],
+              stoch_k.iloc[idx], stoch_k.iloc[prev], stoch_d.iloc[idx], stoch_d.iloc[prev],
+              stoch_rsi_k.iloc[idx], stoch_rsi_k.iloc[prev], stoch_rsi_d.iloc[idx], stoch_rsi_d.iloc[prev]]
     if any(pd.isna(value) for value in values):
         return {
             "available": False,
@@ -129,35 +130,32 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
             "strategy_b": {"buy_eligible": False, "sell_trigger": False},
         }
 
-    price = float(close.iloc[idx])
-    ema20_now = float(ema20.iloc[idx])
-    ema50_now = float(ema50.iloc[idx])
-    rsi_now = float(rsi14.iloc[idx])
-    rsi_prev = float(rsi14.iloc[prev])
-    osc_k = float(stoch_k.iloc[idx])
-    osc_k_prev = float(stoch_k.iloc[prev])
-    osc_d = float(stoch_d.iloc[idx])
-    osc_d_prev = float(stoch_d.iloc[prev])
-    srsi_k = float(stoch_rsi_k.iloc[idx])
-    srsi_k_prev = float(stoch_rsi_k.iloc[prev])
-    srsi_d = float(stoch_rsi_d.iloc[idx])
-    srsi_d_prev = float(stoch_rsi_d.iloc[prev])
+    price = float(close.iloc[idx]); ema20_now = float(ema20.iloc[idx]); ema50_now = float(ema50.iloc[idx])
+    rsi_now = float(rsi14.iloc[idx]); rsi_prev = float(rsi14.iloc[prev])
+    osc_k = float(stoch_k.iloc[idx]); osc_k_prev = float(stoch_k.iloc[prev])
+    osc_d = float(stoch_d.iloc[idx]); osc_d_prev = float(stoch_d.iloc[prev])
+    srsi_k = float(stoch_rsi_k.iloc[idx]); srsi_k_prev = float(stoch_rsi_k.iloc[prev])
+    srsi_d = float(stoch_rsi_d.iloc[idx]); srsi_d_prev = float(stoch_rsi_d.iloc[prev])
 
-    oscillator_armed = osc_k > osc_d and osc_k >= ARM_LEVEL
+    oscillator_armed = osc_k > osc_d and osc_k >= ARM_LEVEL and osc_d >= ARM_LEVEL
     rsi_above_50 = rsi_now >= ARM_LEVEL
     rsi_entered_50 = _entered_level(rsi_prev, rsi_now, ARM_LEVEL)
     entry_armed = oscillator_armed or rsi_above_50
 
     srsi_k_above_d = srsi_k > srsi_d
     srsi_k_rising = srsi_k > srsi_k_prev
+    srsi_d_rising = srsi_d > srsi_d_prev
     srsi_k_cross_above_d = _cross_above(srsi_k_prev, srsi_d_prev, srsi_k, srsi_d)
     srsi_entered_50 = _entered_level(srsi_k_prev, srsi_k, 50.0)
     srsi_entered_80 = _entered_level(srsi_k_prev, srsi_k, 80.0)
-    strategy_a_buy = entry_armed and srsi_k_above_d
+    strategy_a_buy = entry_armed and srsi_k_above_d and srsi_k_rising
 
     srsi_d_cross_above_k = _cross_above(srsi_d_prev, srsi_k_prev, srsi_d, srsi_k)
     osc_d_cross_above_k = _cross_above(osc_d_prev, osc_k_prev, osc_d, osc_k)
-    strategy_a_sell = srsi_d_cross_above_k or osc_d_cross_above_k
+    osc_exit_below_80 = osc_k < EXIT_BUFFER_LEVEL and osc_d < EXIT_BUFFER_LEVEL
+    strategy_a_sell_warning = srsi_d_cross_above_k
+    strategy_a_sell = osc_d_cross_above_k and osc_exit_below_80
+    exit_buffer_active = (srsi_d_cross_above_k and not strategy_a_sell) or (osc_d_cross_above_k and not osc_exit_below_80)
 
     strategy_b_buy = price > ema20_now > ema50_now
     strategy_b_sell = price < ema20_now
@@ -168,57 +166,49 @@ def build_strategy_signals(frame: pd.DataFrame) -> dict[str, Any]:
         "strategy_a": {
             "name": "OSCILLATOR_MOMENTUM",
             "entry_armed": entry_armed,
-            "arming_reasons": [
-                reason for reason, met in (
-                    ("STOCH_OSC_K_ABOVE_D_AND_AT_OR_ABOVE_50", oscillator_armed),
-                    ("RSI14_AT_OR_ABOVE_50", rsi_above_50),
-                    ("RSI14_ENTERED_50", rsi_entered_50),
-                ) if met
-            ],
+            "arming_reasons": [reason for reason, met in (
+                ("STOCH_OSC_K_ABOVE_D_BOTH_AT_OR_ABOVE_50", oscillator_armed),
+                ("RSI14_AT_OR_ABOVE_50", rsi_above_50),
+                ("RSI14_ENTERED_50", rsi_entered_50),
+            ) if met],
             "buy_trigger": strategy_a_buy,
             "sell_trigger": strategy_a_sell,
-            "buy_reasons": [
-                reason for reason, met in (
-                    ("STOCH_RSI_K_ABOVE_D", srsi_k_above_d),
-                    ("STOCH_RSI_K_RISING", srsi_k_rising),
-                    ("STOCH_RSI_K_CROSSED_ABOVE_D", srsi_k_cross_above_d),
-                    ("STOCH_RSI_K_ENTERED_50", srsi_entered_50),
-                    ("STOCH_RSI_K_ENTERED_80", srsi_entered_80),
-                ) if met
-            ],
-            "sell_reasons": [
-                reason for reason, met in (
-                    ("STOCH_RSI_D_CROSSED_ABOVE_K", srsi_d_cross_above_k),
-                    ("STOCH_OSC_D_CROSSED_ABOVE_K", osc_d_cross_above_k),
-                ) if met
-            ],
+            "sell_warning": strategy_a_sell_warning,
+            "exit_buffer_active": exit_buffer_active,
+            "buy_reasons": [reason for reason, met in (
+                ("STOCH_RSI_K_ABOVE_D", srsi_k_above_d),
+                ("STOCH_RSI_K_RISING", srsi_k_rising),
+                ("STOCH_RSI_D_RISING", srsi_d_rising),
+                ("STOCH_RSI_K_CROSSED_ABOVE_D", srsi_k_cross_above_d),
+                ("STOCH_RSI_K_ENTERED_50", srsi_entered_50),
+                ("STOCH_RSI_K_ENTERED_80", srsi_entered_80),
+            ) if met],
+            "sell_reasons": [reason for reason, met in (
+                ("STOCH_OSC_D_CROSSED_ABOVE_K", osc_d_cross_above_k),
+                ("STOCH_OSC_K_AND_D_BELOW_80", osc_exit_below_80),
+            ) if met and strategy_a_sell],
+            "warning_reasons": [reason for reason, met in (
+                ("STOCH_RSI_D_CROSSED_ABOVE_K_EARLY_WARNING", srsi_d_cross_above_k),
+                ("STOCH_OSC_BEARISH_CROSS_BUFFERED_AT_OR_ABOVE_80", osc_d_cross_above_k and not osc_exit_below_80),
+            ) if met],
             "rsi14": round(rsi_now, 4),
             "rsi14_previous": round(rsi_prev, 4),
             "stoch_oscillator": {
-                "settings": "14,3,3",
-                "k": round(osc_k, 4),
-                "d": round(osc_d, 4),
-                "k_previous": round(osc_k_prev, 4),
-                "d_previous": round(osc_d_prev, 4),
+                "settings": "14,3,3", "k": round(osc_k, 4), "d": round(osc_d, 4),
+                "k_previous": round(osc_k_prev, 4), "d_previous": round(osc_d_prev, 4),
+                "both_at_or_above_50": osc_k >= ARM_LEVEL and osc_d >= ARM_LEVEL,
+                "both_below_80": osc_exit_below_80,
             },
             "stoch_rsi": {
-                "settings": "14,7,3,3",
-                "k": round(srsi_k, 4),
-                "d": round(srsi_d, 4),
-                "k_previous": round(srsi_k_prev, 4),
-                "d_previous": round(srsi_d_prev, 4),
-                "k_above_d": srsi_k_above_d,
-                "k_rising": srsi_k_rising,
+                "settings": "14,7,3,3", "k": round(srsi_k, 4), "d": round(srsi_d, 4),
+                "k_previous": round(srsi_k_prev, 4), "d_previous": round(srsi_d_prev, 4),
+                "k_above_d": srsi_k_above_d, "k_rising": srsi_k_rising, "d_rising": srsi_d_rising,
             },
         },
         "strategy_b": {
-            "name": "EMA_TREND",
-            "buy_eligible": strategy_b_buy,
-            "sell_trigger": strategy_b_sell,
+            "name": "EMA_TREND", "buy_eligible": strategy_b_buy, "sell_trigger": strategy_b_sell,
             "buy_reason": "PRICE_ABOVE_EMA20_ABOVE_EMA50" if strategy_b_buy else None,
             "sell_reason": "PRICE_BELOW_EMA20" if strategy_b_sell else None,
-            "price": round(price, 6),
-            "ema20": round(ema20_now, 6),
-            "ema50": round(ema50_now, 6),
+            "price": round(price, 6), "ema20": round(ema20_now, 6), "ema50": round(ema50_now, 6),
         },
     }
