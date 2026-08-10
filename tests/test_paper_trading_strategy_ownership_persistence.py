@@ -168,3 +168,96 @@ def test_pair_owner_helper_refuses_multiple_owners() -> None:
     assert entry["a_strategy_owner"] is None
     assert entry["b_strategy_owner"] is None
     assert entry["strategy_ownership_source"] == "ENTRY_GATE_UNRESOLVED"
+
+def test_legacy_pair_exit_uses_configured_current_signal_symbol_not_persisted_last_signal(tmp_path) -> None:
+    engine = _engine(tmp_path)
+    engine.entry_score_path.write_text(
+        json.dumps({
+            "symbol_specific": True,
+            "entries": [{
+                "symbol": "AMD",
+                "strategy_signals": {
+                    "strategy_a": {
+                        "sell_trigger": True,
+                        "sell_reasons": ["STOCH_OSC_D_CROSSED_ABOVE_K"],
+                        "exit_warning_active": False,
+                        "exit_buffered": False,
+                        "exit_warning_reasons": [],
+                    },
+                    "strategy_b": {
+                        "sell_trigger": True,
+                        "sell_reason": "PRICE_BELOW_EMA20",
+                    },
+                },
+            }],
+        }),
+        encoding="utf-8",
+    )
+    entry = {
+        "strategy_owner": "LEGACY_UNASSIGNED",
+        "strategy_ownership_source": "LEGACY_PRE_OWNERSHIP_POSITION",
+        "last_signal": {"A": "BUY", "B": "BUY"},
+    }
+    config = {
+        "a": "AMDW",
+        "b": "AMDL",
+        "a_signal": "AMD",
+        "b_signal": "AMD",
+        "architecture": "pair_managed",
+    }
+
+    result = engine._owned_pair_exit_decision(entry=entry, config=config)
+
+    assert result["strategy_owner"] == "LEGACY_UNASSIGNED"
+    assert result["sell_trigger"] is True
+    assert result["reason"] == "PAIR_OWNER_EXIT_TRIGGERED"
+    assert result["ownership_source"] == "LEGACY_PRE_OWNERSHIP_POSITION"
+    assert {row["symbol"] for row in result["sleeves"]} == {"AMDW", "AMDL"}
+    assert {row["signal_symbol"] for row in result["sleeves"]} == {"AMD"}
+    assert all(row["exit_state"] == "SELL_CONFIRMED" for row in result["sleeves"])
+
+
+def test_legacy_pair_single_current_strategy_sell_is_buffered(tmp_path) -> None:
+    engine = _engine(tmp_path)
+    engine.entry_score_path.write_text(
+        json.dumps({
+            "symbol_specific": True,
+            "entries": [{
+                "symbol": "AMD",
+                "strategy_signals": {
+                    "strategy_a": {
+                        "sell_trigger": True,
+                        "sell_reasons": ["STOCH_OSC_D_CROSSED_ABOVE_K"],
+                        "exit_warning_active": False,
+                        "exit_buffered": False,
+                        "exit_warning_reasons": [],
+                    },
+                    "strategy_b": {
+                        "sell_trigger": False,
+                        "sell_reason": None,
+                    },
+                },
+            }],
+        }),
+        encoding="utf-8",
+    )
+    entry = {
+        "strategy_owner": "LEGACY_UNASSIGNED",
+        "strategy_ownership_source": "LEGACY_PRE_OWNERSHIP_POSITION",
+        "last_signal": {"A": "SELL", "B": "SELL"},
+    }
+    config = {
+        "a": "AMDW",
+        "b": "AMDL",
+        "a_signal": "AMD",
+        "b_signal": "AMD",
+        "architecture": "pair_managed",
+    }
+
+    result = engine._owned_pair_exit_decision(entry=entry, config=config)
+
+    assert result["sell_trigger"] is False
+    assert all(row["exit_state"] == "WARNING_BUFFERED" for row in result["sleeves"])
+    assert all(row["strategy_a_sell_trigger"] is True for row in result["sleeves"])
+    assert all(row["strategy_b_sell_trigger"] is False for row in result["sleeves"])
+
