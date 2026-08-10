@@ -3,8 +3,9 @@
 The accounting, dividend, earnings, and SGOV implementation remains in
 ``paper_trading_engine_core``. This compatibility layer changes permission to
 open/re-open ETF exposure, binds paper sizing to the Enterprise AI CIO's
-DIVIDEND-001 allocation, and persists the strategy methodology that owns every
-qualified paper entry.
+DIVIDEND-001 allocation, persists the strategy methodology that owns every
+qualified paper entry, and routes normal technical exits only through that
+persisted owner.
 
 PAPER ONLY - NO REAL TRADES EXECUTED.
 """
@@ -13,6 +14,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from typing import Any, Mapping
+
+import pandas as pd
 
 from dividend_entry_gate import evaluate_entry_gate, evaluate_pair_entry_gate
 from paper_portfolio_config import (
@@ -39,6 +42,7 @@ from src.dividend_bot.dividend_enterprise_capital_contract import (
     read_enterprise_dividend_allocation,
     scale_paper_state_to_allocation,
 )
+from src.dividend_bot.dividend_strategy_ownership import owned_exit_signal
 
 WATCHLIST_PATH = Path("watchlist_report.json")
 ENTRY_SCORE_PATH = Path("entry_score_report.json")
@@ -56,7 +60,7 @@ def _read_json(path: Path) -> Mapping[str, Any]:
 
 
 class PaperTradingEngine(CorePaperTradingEngine):
-    """Legacy paper ledger with fail-closed qualification before every BUY."""
+    """Paper ledger with strategy-owned qualification and lifecycle routing."""
 
     watchlist_path: Path = WATCHLIST_PATH
     entry_score_path: Path = ENTRY_SCORE_PATH
@@ -74,6 +78,23 @@ class PaperTradingEngine(CorePaperTradingEngine):
     def _entry_evidence(self) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
         return _read_json(self.watchlist_path), _read_json(self.entry_score_path)
 
+    def _entry_row_for_symbol(self, symbol: str) -> Mapping[str, Any] | None:
+        _watchlist, report = self._entry_evidence()
+        rows = report.get("entries") if isinstance(report, Mapping) else None
+        target = str(symbol or "").strip().upper()
+        if isinstance(rows, list):
+            for row in rows:
+                if isinstance(row, Mapping) and str(row.get("symbol") or "").strip().upper() == target:
+                    return row
+            if report.get("symbol_specific"):
+                return None
+        return report if isinstance(report, Mapping) and report else None
+
+    def _strategy_signals_for_symbol(self, symbol: str) -> Mapping[str, Any]:
+        row = self._entry_row_for_symbol(symbol)
+        value = row.get("strategy_signals") if isinstance(row, Mapping) else None
+        return value if isinstance(value, Mapping) else {}
+
     @staticmethod
     def _technical_snapshot(signal: str, signal_symbol: str) -> dict[str, Any]:
         return {
@@ -84,12 +105,6 @@ class PaperTradingEngine(CorePaperTradingEngine):
 
     @staticmethod
     def _persist_pair_strategy_owner(entry: dict[str, Any], decision: Mapping[str, Any]) -> None:
-        """Persist one unambiguous owner across a pair-managed open position.
-
-        Pair-managed positions are one lifecycle. If the gate cannot provide one
-        common strategy owner, ownership remains unset instead of fabricating a
-        precedence rule.
-        """
         owners = [str(value).upper() for value in decision.get("strategy_owners", []) if value]
         unique = sorted(set(owners))
         if len(unique) != 1:
@@ -116,6 +131,62 @@ class PaperTradingEngine(CorePaperTradingEngine):
         else:
             entry[f"{key}_strategy_owner"] = None
             entry[f"{key}_strategy_ownership_source"] = "ENTRY_GATE_UNRESOLVED"
+
+    @staticmethod
+    def _clear_pair_strategy_owner(entry: dict[str, Any], exit_decision: Mapping[str, Any]) -> None:
+        owner = entry.get("strategy_owner")
+        entry["last_exit_strategy_owner"] = owner
+        entry["last_exit_strategy_reasons"] = list(exit_decision.get("sell_reasons") or [])
+        entry["strategy_owner"] = None
+        entry["a_strategy_owner"] = None
+        entry["b_strategy_owner"] = None
+        entry["strategy_ownership_source"] = "CLOSED_TO_SGOV"
+
+    @staticmethod
+    def _clear_sleeve_strategy_owner(
+        entry: dict[str, Any], side: str, exit_decision: Mapping[str, Any]
+    ) -> None:
+        key = side.lower()
+        owner = entry.get(f"{key}_strategy_owner")
+        entry[f"{key}_last_exit_strategy_owner"] = owner
+        entry[f"{key}_last_exit_strategy_reasons"] = list(exit_decision.get("sell_reasons") or [])
+        entry[f"{key}_strategy_owner"] = None
+        entry[f"{key}_strategy_ownership_source"] = "CLOSED_TO_SGOV"
+
+    def _owned_sleeve_exit_decision(
+        self, *, entry: Mapping[str, Any], config: Mapping[str, Any], side: str
+    ) -> dict[str, Any]:
+        key = side.lower()
+        owner = entry.get(f"{key}_strategy_owner")
+        symbol = str(config.get(key) or "")
+        decision = owned_exit_signal(self._strategy_signals_for_symbol(symbol), owner)
+        return {
+            **decision,
+            "symbol": symbol,
+            "sleeve": side,
+            "ownership_source": entry.get(f"{key}_strategy_ownership_source"),
+        }
+
+    def _owned_pair_exit_decision(
+        self, *, entry: Mapping[str, Any], config: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        owner = entry.get("strategy_owner")
+        decisions = []
+        for side in ("A", "B"):
+            key = side.lower()
+            symbol = str(config.get(key) or "")
+            detail = owned_exit_signal(self._strategy_signals_for_symbol(symbol), owner)
+            decisions.append({**detail, "symbol": symbol, "sleeve": side})
+        triggered = [item for item in decisions if item.get("sell_trigger")]
+        reasons = sorted({reason for item in triggered for reason in item.get("sell_reasons", [])})
+        return {
+            "strategy_owner": owner,
+            "sell_trigger": bool(triggered),
+            "sell_reasons": reasons,
+            "reason": "PAIR_OWNER_EXIT_TRIGGERED" if triggered else "PAIR_OWNER_EXIT_NOT_TRIGGERED",
+            "sleeves": decisions,
+            "ownership_source": entry.get("strategy_ownership_source"),
+        }
 
     def _gate_sleeve(
         self,
@@ -252,7 +323,6 @@ class PaperTradingEngine(CorePaperTradingEngine):
         return state, logs
 
     def run(self, reinitialize_signal_aware: bool = False) -> dict:
-        """Normalize existing paper state to the current Enterprise allocation."""
         allocation = self._enterprise_allocation()
         if self.state_path.exists() and not reinitialize_signal_aware:
             try:
@@ -296,6 +366,143 @@ class PaperTradingEngine(CorePaperTradingEngine):
         )
         if not self.sleeve_in_sgov(entry, side):
             self._persist_sleeve_strategy_owner(entry, side, decision)
+
+    def process_pair(self, pair, entry, config, frames, as_of, logs, report_rows):
+        """Route ordinary paper exits through the persisted strategy owner.
+
+        Earnings exits remain an independent risk/governance override. Ordinary
+        technical SELL/BUY decisions no longer use the legacy aggregate signal as
+        execution authority when Strategy A/B evidence is available.
+        """
+        entry["last_action"] = "NO_PAPER_TRADE"
+        prices = {
+            "A": self.price(frames[config["a"]], as_of),
+            "B": self.price(frames[config["b"]], as_of),
+        }
+        # Preserve legacy signal values for reporting/audit only.
+        signals = {
+            "A": self.signal(frames[config["a_signal"]], as_of),
+            "B": self.signal(frames[config["b_signal"]], as_of),
+        }
+        eligible_a_shares = entry["a_shares"]
+        status = self.earnings_status(as_of, self.load_earnings(config["earnings_source"]))
+
+        if config["architecture"] == PAIR_MANAGED:
+            if status["exit_now"]:
+                exit_decision = {
+                    "sell_reasons": ["SCHEDULED_PRE_EARNINGS_EXIT"],
+                    "reason": "RISK_GOVERNANCE_OVERRIDE",
+                }
+                super().sell_pair(
+                    pair, entry, config, signals, prices, as_of,
+                    "Scheduled pre-earnings exit", logs,
+                )
+                if self.is_pair_in_sgov(entry):
+                    self._clear_pair_strategy_owner(entry, exit_decision)
+                entry["a_earnings_lock"] = entry["b_earnings_lock"] = True
+                entry["a_locked_earnings_date"] = status["earnings_date"]
+                entry["b_locked_earnings_date"] = status["earnings_date"]
+            elif entry["a_earnings_lock"]:
+                earnings_date = entry["a_locked_earnings_date"]
+                if earnings_date and as_of > pd.Timestamp(earnings_date):
+                    self.buy_pair(
+                        pair, entry, config, signals, prices, as_of,
+                        "Post-earnings qualified re-entry", logs,
+                    )
+                    if not self.is_pair_in_sgov(entry):
+                        entry["a_earnings_lock"] = entry["b_earnings_lock"] = False
+                        entry["a_locked_earnings_date"] = entry["b_locked_earnings_date"] = None
+            elif self.is_pair_in_sgov(entry):
+                self.buy_pair(
+                    pair, entry, config, signals, prices, as_of,
+                    "Strategy-owned qualified entry", logs,
+                )
+            else:
+                exit_decision = self._owned_pair_exit_decision(entry=entry, config=config)
+                entry["exit_gate"] = exit_decision
+                if exit_decision["sell_trigger"]:
+                    reason = "Strategy-owner exit: " + ", ".join(exit_decision["sell_reasons"])
+                    super().sell_pair(pair, entry, config, signals, prices, as_of, reason, logs)
+                    if self.is_pair_in_sgov(entry):
+                        self._clear_pair_strategy_owner(entry, exit_decision)
+        else:
+            for side in ["A", "B"]:
+                follows = side == "A" or config["b_follows_earnings"]
+                lock = f"{side.lower()}_earnings_lock"
+                key = side.lower()
+                if follows and status["exit_now"]:
+                    exit_decision = {
+                        "sell_reasons": ["SCHEDULED_PRE_EARNINGS_EXIT"],
+                        "reason": "RISK_GOVERNANCE_OVERRIDE",
+                    }
+                    super().sell_sleeve(
+                        pair, entry, config, side, signals[side], prices[side], as_of,
+                        "Scheduled pre-earnings exit", logs,
+                    )
+                    if self.sleeve_in_sgov(entry, side):
+                        self._clear_sleeve_strategy_owner(entry, side, exit_decision)
+                    entry[lock] = True
+                    entry[f"{key}_locked_earnings_date"] = status["earnings_date"]
+                elif entry[lock]:
+                    earnings_date = entry[f"{key}_locked_earnings_date"]
+                    if earnings_date and as_of > pd.Timestamp(earnings_date):
+                        self.buy_sleeve(
+                            pair, entry, config, side, signals[side], prices[side], as_of,
+                            "Post-earnings qualified re-entry", logs,
+                        )
+                        if not self.sleeve_in_sgov(entry, side):
+                            entry[lock] = False
+                            entry[f"{key}_locked_earnings_date"] = None
+                elif self.sleeve_in_sgov(entry, side):
+                    self.buy_sleeve(
+                        pair, entry, config, side, signals[side], prices[side], as_of,
+                        "Strategy-owned qualified entry", logs,
+                    )
+                else:
+                    exit_decision = self._owned_sleeve_exit_decision(
+                        entry=entry, config=config, side=side
+                    )
+                    gates = entry.get("exit_gate")
+                    if not isinstance(gates, dict) or "sell_trigger" in gates:
+                        gates = {}
+                    gates[side] = exit_decision
+                    entry["exit_gate"] = gates
+                    if exit_decision["sell_trigger"]:
+                        reason = "Strategy-owner exit: " + ", ".join(exit_decision["sell_reasons"])
+                        super().sell_sleeve(
+                            pair, entry, config, side, signals[side], prices[side], as_of,
+                            reason, logs,
+                        )
+                        if self.sleeve_in_sgov(entry, side):
+                            self._clear_sleeve_strategy_owner(entry, side, exit_decision)
+
+        dividend = float(frames[config["a"]].reindex([as_of])["Dividends"].fillna(0).iloc[0])
+        dividend_cash = self.apply_dividend(
+            entry,
+            dividend,
+            prices,
+            eligible_a_shares=eligible_a_shares,
+        )
+        if dividend_cash > 0:
+            logs.append(
+                self.log_row(
+                    as_of,
+                    pair,
+                    "A",
+                    signals["A"],
+                    "PAPER_DIVIDEND_RECEIVED",
+                    config["a"],
+                    eligible_a_shares,
+                    dividend,
+                    dividend_cash,
+                    "Income ETF dividend split 50/50 between A and B",
+                )
+            )
+        entry["last_signal"] = signals
+        entry["last_prices"] = prices
+        report_rows.append(
+            self.report_row(pair, entry, signals, prices, status, dividend_cash, entry["last_action"])
+        )
 
 
 def main() -> int:
