@@ -236,7 +236,7 @@ def _render_strategy_comparison(
         for row in requests
         if isinstance(row, Mapping)
     }
-    rows: list[str] = []
+    cards: list[str] = []
     for pair, assignment in sorted(assignments.items()):
         evidence = by_pair.get(pair, [])
         primary_id = str(assignment.get("primary_strategy") or "STRATEGY_A")
@@ -244,19 +244,28 @@ def _render_strategy_comparison(
             (row for row in evidence if str(row.get("strategy_id")) == primary_id),
             None,
         )
-        candidates = [
-            row for row in evidence if str(row.get("strategy_id") or "") != primary_id
-        ]
-        if primary is None or not candidates:
-            rows.append(
-                "<tr>"
-                f"<td><strong>{html.escape(pair)}</strong></td>"
-                f"<td>{html.escape(primary_id)}</td>"
-                "<td colspan='9'><span class='status collecting'>Evidence unavailable</span> "
-                "The daily shadow comparison has not published both strategies.</td></tr>"
+        candidates = sorted(
+            [
+                row
+                for row in evidence
+                if str(row.get("strategy_id") or "") != primary_id
+            ],
+            key=lambda row: _metric(row, "total_return_percent"),
+            reverse=True,
+        )
+        if primary is None:
+            cards.append(
+                "<details class='pair-strategy-card'><summary>"
+                f"<strong>{html.escape(pair)}</strong>"
+                f"<span>Primary: {html.escape(primary_id)}</span>"
+                "<span class='status collecting'>Evidence unavailable</span>"
+                "</summary><p>The daily shadow report has not published the current primary.</p></details>"
             )
             continue
-        for candidate in candidates:
+
+        basis = _metric(primary, "virtual_capital_basis")
+        candidate_rows: list[str] = []
+        for index, candidate in enumerate(candidates):
             candidate_id = str(candidate.get("strategy_id") or "Not reported")
             request = latest_request.get(pair)
             if request and str(request.get("proposed_primary_strategy") or "") != candidate_id:
@@ -277,31 +286,51 @@ def _render_strategy_comparison(
                 int(_metric(primary, "completed_trade_count")),
                 int(_metric(candidate, "completed_trade_count")),
             )
-            rows.append(
+            leader = (
+                "<span class='leader-badge'>Leading by return</span>"
+                if index == 0 and len(candidates) > 1
+                else ""
+            )
+            candidate_rows.append(
                 "<tr>"
-                f"<td><strong>{html.escape(pair)}</strong></td>"
-                f"<td>{html.escape(primary_id)}</td>"
-                f"<td>{html.escape(candidate_id)}</td>"
+                f"<td><strong>{html.escape(candidate_id)}</strong>{leader}</td>"
                 f"<td>${_metric(candidate, 'virtual_capital_basis'):,.2f}</td>"
-                f"<td>{_metric(primary, 'total_return_percent'):.2f}%</td>"
                 f"<td>{_metric(candidate, 'total_return_percent'):.2f}%</td>"
-                f"<td>{_metric(primary, 'max_drawdown_percent'):.2f}% / "
-                f"{_metric(candidate, 'max_drawdown_percent'):.2f}%</td>"
+                f"<td>{_metric(candidate, 'max_drawdown_percent'):.2f}%</td>"
                 f"<td>{days}/90</td><td>{observations}/60</td><td>{trades}/1</td>"
                 f"<td><span class='status {css}'>{html.escape(label)}</span>"
                 f"<small>{html.escape(explanation)}</small></td></tr>"
             )
-    if not rows:
+        candidates_body = (
+            "<div class='candidate-table-wrap'><table class='candidate-table'>"
+            "<thead><tr><th>Test Candidate</th><th>Virtual Basis</th><th>Return</th>"
+            "<th>Max Drawdown</th><th>Days</th><th>Observations</th>"
+            "<th>Closed Trades</th><th>Qualification / Why</th></tr></thead><tbody>"
+            + "".join(candidate_rows)
+            + "</tbody></table></div>"
+            if candidate_rows
+            else "<p class='empty-state'>No registered test candidate has published evidence for this pair.</p>"
+        )
+        cards.append(
+            "<details class='pair-strategy-card'>"
+            "<summary>"
+            f"<strong>{html.escape(pair)}</strong>"
+            f"<span>Primary: {html.escape(primary_id)}</span>"
+            f"<span>Assigned basis: ${basis:,.2f}</span>"
+            f"<span>{len(candidates)} test candidate{'s' if len(candidates) != 1 else ''}</span>"
+            "</summary>"
+            "<div class='primary-strategy-summary'>"
+            f"<div><small>Current Primary</small><strong>{html.escape(primary_id)}</strong></div>"
+            f"<div><small>Primary Return</small><strong>{_metric(primary, 'total_return_percent'):.2f}%</strong></div>"
+            f"<div><small>Primary Drawdown</small><strong>{_metric(primary, 'max_drawdown_percent'):.2f}%</strong></div>"
+            f"<div><small>Virtual Basis</small><strong>${basis:,.2f}</strong></div>"
+            "</div>"
+            f"{candidates_body}</details>"
+        )
+    if not cards:
         return "<p class='empty-state'>No pair strategy comparison evidence is available yet.</p>"
-    return (
-        "<div class='comparison-table-wrap'><table class='comparison-table'>"
-        "<thead><tr><th>Pair</th><th>Current Primary</th><th>Test Candidate</th>"
-        "<th>Virtual Basis</th><th>Primary Return</th><th>Candidate Return</th>"
-        "<th>Drawdown P / C</th><th>Days</th><th>Observations</th>"
-        "<th>Closed Trades</th><th>Qualification / Next Step</th></tr></thead><tbody>"
-        + "".join(rows)
-        + "</tbody></table></div>"
-    )
+    return "<div class='pair-strategy-list'>" + "".join(cards) + "</div>"
+
 
 def render_strategy_review_page(
     requests: Sequence[Mapping[str, Any]],
