@@ -15,6 +15,7 @@ from typing import Any, Mapping
 from paper_portfolio_config import PAPER_PAIRS
 
 from .dividend_income_analytics import enrich_holdings_with_income_analytics, total_projected_annual_income
+from .dividend_decision_journal import build_dividend_decision_journal
 from .dividend_position_analytics import enrich_holdings_with_position_analytics, total_unrealized_pnl
 from .dividend_position_lifecycle import build_position_lifecycle, enrich_current_holdings_with_lifecycle
 from .dividend_realized_income import build_realized_income_evidence
@@ -359,6 +360,15 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     projected_annual_income = total_projected_annual_income(holdings)
     realized_gain = round(sum(_number(item.get("pnl"), 0.0) or 0.0 for item in performance.get("closed_trades", []) if isinstance(item, Mapping)), 2) if isinstance(performance.get("closed_trades"), list) else None
     unrealized_gain = total_unrealized_pnl(holdings)
+    decision_journal = build_dividend_decision_journal(
+        holdings=active_holdings,
+        watchlist=watchlist,
+        historical_positions=historical_positions,
+        generated_at=(
+            entry_score_payload.get("generated_at_utc")
+            or (market_snapshot.get("generated_at_utc") if isinstance(market_snapshot, Mapping) else None)
+        ),
+    )
 
     evidence_sources = [path for path in (
         "paper_state.json" if (root / "paper_state.json").is_file() else None,
@@ -411,6 +421,9 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "projected_annual_income": projected_annual_income,
         "income_events": income_events,
         "realized_gain": realized_gain, "unrealized_gain": unrealized_gain,
+        "decision_journal_status": "AVAILABLE",
+        "decision_journal": decision_journal,
+        "decision_count": decision_journal["decision_count"],
         "alerts": alerts, "risk_flags": alerts,
         "performance_detail": {
             "trade_count": performance.get("trade_count"),
