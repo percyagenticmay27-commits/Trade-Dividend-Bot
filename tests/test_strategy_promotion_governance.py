@@ -291,12 +291,20 @@ def test_pair_card_groups_and_ranks_multiple_test_strategies() -> None:
             "AMDW / AMDL": {
                 "primary_strategy": "STRATEGY_A",
                 "shadow_strategies": ["STRATEGY_B", "STRATEGY_C"],
+                "assignment_source": "DEFAULT_PRODUCTION_BASELINE",
+                "effective_at_utc": "2026-08-11T18:08:00Z",
             }
         },
         performance_rows=rows,
     )
     assert page.count("class='pair-strategy-card'") == 1
-    assert "2 test candidates" in page
+    assert "class='pair-strategy-card' open" in page
+    assert "View 2 candidates and evidence" in page
+    assert "Assigned since: 2026-08-11T18:08:00Z" in page
+    assert "Assigned Since" in page
+    assert "Assignment Reason" in page
+    assert "Default Production Baseline" in page
+    assert "<th>Pair</th><th>Primary</th><th>Test Candidate</th>" in page
     assert "STRATEGY_B" in page
     assert "STRATEGY_C" in page
     assert "Leading by return" in page
