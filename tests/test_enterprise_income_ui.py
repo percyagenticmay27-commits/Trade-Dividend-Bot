@@ -140,3 +140,14 @@ def test_income_renderer_explains_state_to_ledger_mismatch() -> None:
     assert "Income ledger needs review" in output
     assert "differ by +$7.50" in output
     assert "does not invent a missing receipt" in output
+
+
+def test_income_renderer_labels_cadence_based_ex_date_as_estimated() -> None:
+    row = _row()
+    row["holdings"][1]["next_ex_dividend_date"] = None
+    row["holdings"][1]["estimated_next_ex_dividend_date"] = "2026-08-17"
+    output = render_income_panel(row)
+    assert "2026-08-17 (Estimated from observed cadence)" in output
+    assert "income-date-estimated'>Estimated" in output
+    assert "Projection uses observed distribution history and the current holding price." in output
+    assert "Audit source" in output
