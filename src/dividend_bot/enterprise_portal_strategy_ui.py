@@ -23,6 +23,17 @@ def _value(value: Any, suffix: str = "") -> str:
     return f"{html.escape(str(value))}{suffix}"
 
 
+def _gain_loss_money(value: Any) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "Not reported"
+    css_class = "metric-positive" if number > 0 else "metric-negative" if number < 0 else "metric-neutral"
+    prefix = "+" if number > 0 else ""
+    formatted = f"{prefix}${number:,.2f}" if number >= 0 else f"-${abs(number):,.2f}"
+    return f"<strong class='{css_class}'>{formatted}</strong>"
+
+
 def render_left_navigation(active: str) -> str:
     items = (
         ("Cash Account", "/cash"),
@@ -231,8 +242,8 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
             + _metric_table((
                 ("Allocated Capital", _money(row.get("allocated_capital"))),
                 ("Portfolio Value", _money(row.get("portfolio_value"))),
-                ("Realized Gain", _money(row.get("realized_gain"))),
-                ("Unrealized Gain", _money(row.get("unrealized_gain"))),
+                ("Realized Gain", _gain_loss_money(row.get("realized_gain"))),
+                ("Unrealized Gain", _gain_loss_money(row.get("unrealized_gain"))),
             ))
         )
         watchlist_body = render_watchlist_panel(row)
