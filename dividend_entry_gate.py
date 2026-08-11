@@ -144,7 +144,6 @@ def evaluate_entry_gate(
         if isinstance(strategy_signals, Mapping):
             assigned = resolve_strategy_ownership(
                 strategy_signals,
-                existing_owner=strategy_owner,
                 pair_primary_strategy=pair_primary_strategy,
             )
             strategy_entry_approved = bool(assigned.get("entry_allowed_by_ownership"))
