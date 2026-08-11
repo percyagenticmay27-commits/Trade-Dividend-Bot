@@ -36,48 +36,64 @@ def _signals(
     }
 
 
-def test_single_strategy_a_entry_resolves_owner() -> None:
+def test_strategy_a_is_default_primary_and_owns_its_active_entry() -> None:
     result = resolve_strategy_ownership(_signals(a_buy=True))
     assert result["resolved"] is True
     assert result["strategy_owner"] == STRATEGY_A
+    assert result["management_strategy"] == STRATEGY_A
     assert result["entry_allowed_by_ownership"] is True
 
 
-def test_single_strategy_b_entry_resolves_owner() -> None:
+def test_strategy_b_signal_is_shadow_only_while_a_is_primary() -> None:
     result = resolve_strategy_ownership(_signals(b_buy=True))
+    assert result["resolved"] is False
+    assert result["strategy_owner"] is None
+    assert result["management_strategy"] == STRATEGY_A
+    assert result["shadow_active_strategies"] == [STRATEGY_B]
+    assert result["entry_allowed_by_ownership"] is False
+
+
+def test_promoted_strategy_b_may_own_entry_for_that_pair() -> None:
+    result = resolve_strategy_ownership(
+        _signals(b_buy=True),
+        pair_primary_strategy=STRATEGY_B,
+    )
     assert result["resolved"] is True
     assert result["strategy_owner"] == STRATEGY_B
-    assert result["entry_allowed_by_ownership"] is True
+    assert result["management_strategy"] == STRATEGY_B
 
 
-def test_no_active_strategy_waits_with_reason() -> None:
+def test_no_primary_signal_waits_with_reason() -> None:
     result = resolve_strategy_ownership(_signals())
     assert result["resolved"] is False
     assert result["strategy_owner"] is None
-    assert result["entry_allowed_by_ownership"] is False
-    assert result["reason"] == "NO_ACTIVE_ENTRY_STRATEGY"
+    assert result["reason"] == "PAIR_PRIMARY_ENTRY_SIGNAL_NOT_ACTIVE"
 
 
-def test_both_active_strategies_fail_closed_until_selection_policy_exists() -> None:
+def test_both_active_strategies_still_use_only_pair_primary() -> None:
     result = resolve_strategy_ownership(_signals(a_buy=True, b_buy=True))
-    assert result["resolved"] is False
-    assert result["strategy_owner"] is None
-    assert result["eligible_strategies"] == [STRATEGY_A, STRATEGY_B]
-    assert result["reason"] == "MULTIPLE_ACTIVE_ENTRY_STRATEGIES_REQUIRE_SELECTION_POLICY"
-    assert result["entry_allowed_by_ownership"] is False
-
-
-def test_existing_owner_is_sticky_even_if_other_strategy_now_has_buy_signal() -> None:
-    result = resolve_strategy_ownership(_signals(a_buy=False, b_buy=True), existing_owner=STRATEGY_A)
+    assert result["resolved"] is True
     assert result["strategy_owner"] == STRATEGY_A
-    assert result["reason"] == "EXISTING_POSITION_STRATEGY_OWNERSHIP_PRESERVED"
+    assert result["eligible_strategies"] == [STRATEGY_A]
+    assert result["shadow_active_strategies"] == [STRATEGY_B]
 
 
-def test_legacy_unassigned_is_not_treated_as_new_entry_owner() -> None:
+def test_promoted_primary_overrides_historical_entry_owner_for_management() -> None:
+    result = resolve_strategy_ownership(
+        _signals(a_buy=False, b_buy=True),
+        existing_owner=STRATEGY_A,
+        pair_primary_strategy=STRATEGY_B,
+    )
+    assert result["strategy_owner"] == STRATEGY_B
+    assert result["historical_entry_strategy"] == STRATEGY_A
+    assert result["ownership_source"] == "PAIR_PRIMARY_PROMOTION_OVERRIDES_HISTORICAL_ENTRY_OWNER"
+
+
+def test_legacy_entry_history_does_not_create_entry_authority() -> None:
     result = resolve_strategy_ownership(_signals(), existing_owner=LEGACY_UNASSIGNED)
     assert result["resolved"] is False
     assert result["strategy_owner"] is None
-    assert result["entry_allowed_by_ownership"] is False
+    assert result["management_strategy"] == STRATEGY_A
 
 
 def test_strategy_a_position_ignores_strategy_b_sell() -> None:
