@@ -196,3 +196,22 @@ def test_legacy_100_dollar_state_is_rebased_without_changing_return_history(
     assert row["virtual_gain_loss"] == 60.0
     assert row["total_return_percent"] == 10.0
     assert row["observation_count"] == 2
+
+
+def test_missing_authoritative_pair_capital_is_reported_and_not_fabricated(
+    tmp_path: Path,
+) -> None:
+    paper = _state("2026-08-11", 20.0, 10.0)
+    del paper["pairs"]["AMDW / AMDL"]["capital_bucket"]
+    report = update_shadow_strategy_performance(
+        paper_state=paper,
+        entry_score_report=_evidence(a_buy=True, b_buy=True),
+        pair_config=CONFIG,
+        state_path=tmp_path / "shadow.json",
+        report_path=tmp_path / "report.json",
+    )
+    assert report["performance"] == []
+    assert report["warnings"] == [
+        "AMDW / AMDL: pair paper state has no valid capital_bucket; "
+        "shadow comparison skipped"
+    ]
