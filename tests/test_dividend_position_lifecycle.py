@@ -10,7 +10,7 @@ def test_reconstructs_open_parked_and_closed_lifecycle() -> None:
         {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "PLTW", "Pair": "PLTW / PLTU", "Sleeve": "A", "Paper_Value": "26.00"},
         {"Date": "2026-06-18", "Action": "PAPER_PARK_IN_SGOV", "Ticker": "PLTW", "Pair": "PLTW / PLTU", "Sleeve": "A", "Paper_Value": "28.00"},
         {"Date": "2026-06-18", "Action": "PAPER_BUY_OPEN", "Ticker": "AVGW", "Pair": "AVGW / AVGX", "Sleeve": "A", "Paper_Value": "36.98"},
-        {"Date": "2026-06-26", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "AVGW", "Pair": "AVGW / AVGX", "Sleeve": "A", "Paper_Value": "35.89"},
+        {"Date": "2026-06-26", "Action": "PAPER_SELL_TO_SGOV", "Ticker": "AVGW", "Pair": "AVGW / AVGX", "Sleeve": "A", "Paper_Value": "35.89", "Reason": "Strategy-owner exit: PRICE_BELOW_EMA20"},
     ]
     holdings = [
         {"symbol": "AMDW", "pair": "AMDW / AMDL", "sleeve": "A", "position_status": "OPEN", "market_value": 52.0},
@@ -30,6 +30,7 @@ def test_reconstructs_open_parked_and_closed_lifecycle() -> None:
     assert by_symbol["AVGW"]["last_exit_date"] == "2026-06-26"
     assert by_symbol["AVGW"]["entry_value"] == 36.98
     assert by_symbol["AVGW"]["realized_gain_loss"] == -1.09
+    assert by_symbol["AVGW"]["last_exit_reason"] == "Strategy-owner exit: PRICE_BELOW_EMA20"
     assert by_symbol["SGOV"]["lifecycle_status"] == "RESERVE"
     assert by_symbol["SGOV"]["reserve_value"] == 400.0
 
