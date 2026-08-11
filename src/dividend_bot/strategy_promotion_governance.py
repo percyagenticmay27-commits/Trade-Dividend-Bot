@@ -259,6 +259,8 @@ def _render_strategy_comparison(
         for candidate in candidates:
             candidate_id = str(candidate.get("strategy_id") or "Not reported")
             request = latest_request.get(pair)
+            if request and str(request.get("proposed_primary_strategy") or "") != candidate_id:
+                request = None
             label, explanation = _comparison_state(primary, candidate, request)
             css = (
                 "pending" if label == "PENDING REVIEW"
