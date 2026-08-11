@@ -98,3 +98,32 @@ def test_total_projected_annual_income_sums_only_reported_values() -> None:
         [{"annual_income": 10.25}, {}, {"annual_income": 4.75}]
     ) == 15.0
     assert total_projected_annual_income([{}, {}]) is None
+
+
+def test_estimates_next_ex_date_from_observed_weekly_cadence() -> None:
+    rows = enrich_holdings_with_income_analytics(
+        [_holding(symbol="AMDW", shares=4.0)],
+        market_snapshot={
+            "AMDW": {
+                "history": {
+                    "rows": [
+                        {"date": "2026-08-10", "close": 50.0},
+                        {"date": "2026-08-11", "close": 51.0},
+                    ]
+                },
+                "dividends": {
+                    "payments": [
+                        {"date": "2026-07-27", "amount": 0.845},
+                        {"date": "2026-08-03", "amount": 1.648},
+                        {"date": "2026-08-10", "amount": 0.797},
+                    ]
+                },
+            }
+        },
+    )
+
+    row = rows[0]
+    assert row["estimated_next_ex_dividend_date"] == "2026-08-17"
+    assert row["next_ex_dividend_date_status"] == "ESTIMATED_FROM_OBSERVED_CADENCE"
+    assert row["next_ex_dividend_date_method"] == "OBSERVED_MEDIAN_CADENCE_7_DAYS"
+    assert row["payment_frequency"] == "QUARTERLY_OBSERVED"
