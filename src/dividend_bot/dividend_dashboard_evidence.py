@@ -359,8 +359,17 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "historical_positions": historical_positions,
         "never_entered_candidates": never_entered_candidates,
         "watchlist_count": len(watchlist), "watchlist": watchlist,
-        "income": realized_income["net_income_received"],
+        "income": state_income,
         "state_reported_income": state_income,
+        "ledger_net_income_received": realized_income["net_income_received"],
+        "income_reconciliation_status": (
+            "RECONCILED"
+            if abs(float(state_income or 0.0) - float(realized_income["net_income_received"] or 0.0)) <= 0.01
+            else "MISMATCH"
+        ),
+        "income_reconciliation_difference": round(
+            float(state_income or 0.0) - float(realized_income["net_income_received"] or 0.0), 2
+        ),
         "gross_distribution_income": realized_income["gross_distribution_income"],
         "income_adjustments": realized_income["income_adjustments"],
         "net_income_received": realized_income["net_income_received"],
