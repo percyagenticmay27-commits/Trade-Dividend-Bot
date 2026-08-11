@@ -183,6 +183,7 @@ def build_dividend_decision_journal(
         "decisions": decisions,
         "decision_count": len(decisions),
         "paper_trade_mode": True,
+        "read_only": True,
         "reporting_only": True,
         "live_trading_enabled": False,
         "broker_execution_enabled": False,
