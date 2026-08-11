@@ -418,6 +418,8 @@ def main() -> int:
         investor_dashboard_json=os.environ.get("DIVIDEND_INVESTOR_DASHBOARD_JSON", str(DEFAULT_INVESTOR_DASHBOARD_JSON)),
         promotion_requests_path=os.environ.get("DIVIDEND_STRATEGY_PROMOTION_REQUESTS", str(DEFAULT_PROMOTION_REQUESTS_PATH)),
         strategy_assignments_path=os.environ.get("DIVIDEND_PAIR_STRATEGY_ASSIGNMENTS", str(DEFAULT_ASSIGNMENTS_PATH)),
+        strategy_performance_path=os.environ.get("DIVIDEND_STRATEGY_SHADOW_PERFORMANCE", str(DEFAULT_STRATEGY_PERFORMANCE_PATH)),
+        paper_state_path=os.environ.get("DIVIDEND_PAPER_STATE", str(DEFAULT_PAPER_STATE_PATH)),
         promotion_journal_path=os.environ.get("DIVIDEND_STRATEGY_PROMOTION_JOURNAL", str(DEFAULT_PROMOTION_JOURNAL_PATH)),
         owner_review_csrf_secret=os.environ.get(DEFAULT_OWNER_REVIEW_CSRF_SECRET_ENV),
         investor_id=os.environ.get("DIVIDEND_INVESTOR_ID", "default-investor"),
