@@ -447,6 +447,17 @@ def main() -> int:
         print(f"Paper cycle blocked: {exc}")
         return 1
     print(f"Current Strategy A/B evidence: {preflight['run_status']}")
+
+    # Apply any expired, non-vetoed pair promotion before the paper engine makes
+    # today\'s entry or exit decision. Assignment corruption fails closed.
+    try:
+        pretrade_promotion = refresh_strategy_promotion_governance(".")
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"Paper cycle blocked: strategy assignment governance failed ({exc})")
+        return 1
+    print(f"Pretrade pair strategy assignments: {len(pretrade_promotion['assignments'])}")
+    print(f"Pretrade strategy promotions activated: {len(pretrade_promotion['activated'])}")
+
     result = run_daily_cycle()
     print(f"Daily cycle complete through: {result['state']['as_of_date']}")
     print(f"New log rows: {len(result['new_log_rows'])}")
