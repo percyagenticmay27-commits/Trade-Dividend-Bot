@@ -394,6 +394,26 @@ def refresh_current_strategy_evidence(root_path: str | Path = ".") -> dict:
 
 
 
+
+def refresh_shadow_strategy_evidence(
+    paper_state: Mapping[str, Any],
+    root_path: str | Path = ".",
+) -> dict:
+    """Update isolated Strategy A/B virtual benchmarks from current evidence."""
+    from src.dividend_bot.dividend_shadow_strategy_tracker import (
+        update_shadow_strategy_performance,
+    )
+
+    root = Path(root_path)
+    entry_report = read_json(root / "entry_score_report.json") or {}
+    return update_shadow_strategy_performance(
+        paper_state=paper_state,
+        entry_score_report=entry_report,
+        pair_config=PAPER_PAIRS,
+        state_path=root / "state/dividend_strategy_shadow_state.json",
+        report_path=root / "results/dividend_strategy_shadow_performance.json",
+    )
+
 def refresh_strategy_promotion_governance(root_path: str | Path = ".") -> dict:
     """Initialize pair assignments and process evidence-backed promotions.
 
@@ -434,6 +454,12 @@ def main() -> int:
     print(f"Change summary: {CHANGE_SUMMARY_PATH}")
     print("Strategy health dashboard refreshed")
     print("Live readiness tracker refreshed")
+
+    try:
+        shadow = refresh_shadow_strategy_evidence(result["state"], ".")
+        print(f"Shadow strategy observations: {len(shadow['performance'])}")
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"Shadow strategy evidence: PARTIAL ({exc})")
 
     try:
         promotion = refresh_strategy_promotion_governance(".")
