@@ -71,7 +71,7 @@ def test_income_renderer_uses_professional_summary_cards() -> None:
     assert ">2<" in output
     assert "Reinvested to Income Sleeve" in output
     assert "Reinvested to Growth Sleeve" in output
-    assert "Next Reported Ex-Date" in output
+    assert "Next Ex-Date" in output
     assert "2026-08-15" in output
 
 
