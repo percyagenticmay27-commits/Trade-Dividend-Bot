@@ -92,6 +92,12 @@ def test_main_orders_current_evidence_before_paper_cycle_and_publication(
     )
     monkeypatch.setattr(
         run_daily_paper_cycle,
+        "refresh_shadow_strategy_evidence",
+        lambda _state, _root: calls.append("shadow_strategy_evidence")
+        or {"performance": []},
+    )
+    monkeypatch.setattr(
+        run_daily_paper_cycle,
         "refresh_strategy_promotion_governance",
         lambda _root: calls.append("strategy_promotion_governance")
         or {"assignments": {}, "requests": [], "activated": []},
@@ -115,6 +121,7 @@ def test_main_orders_current_evidence_before_paper_cycle_and_publication(
     assert calls == [
         "current_evidence",
         "paper_cycle",
+        "shadow_strategy_evidence",
         "strategy_promotion_governance",
         "enterprise_publication",
     ]
@@ -133,3 +140,37 @@ def test_strategy_promotion_governance_initializes_a_as_pair_primary(tmp_path: P
     payload = json.loads(assignment_path.read_text(encoding="utf-8"))
     assert payload["paper_trade_mode"] is True
     assert payload["broker_execution_enabled"] is False
+
+
+
+def test_shadow_evidence_is_written_before_promotion_evaluation(tmp_path: Path) -> None:
+    state = {
+        "as_of_date": "2026-08-11",
+        "pairs": {
+            "AMDW / AMDL": {
+                "last_prices": {"A": 20.0, "B": 10.0},
+            }
+        },
+    }
+    (tmp_path / "entry_score_report.json").write_text(
+        json.dumps({
+            "entries": [{
+                "symbol": "AMD",
+                "strategy_signals": {
+                    "strategy_a": {"buy_trigger": True, "sell_trigger": False},
+                    "strategy_b": {"buy_eligible": False, "sell_trigger": False},
+                },
+            }]
+        }),
+        encoding="utf-8",
+    )
+    report = run_daily_paper_cycle.refresh_shadow_strategy_evidence(state, tmp_path)
+    assert report["shadow_only"] is True
+    assert (tmp_path / "results/dividend_strategy_shadow_performance.json").is_file()
+    rows = {
+        row["strategy_id"]: row
+        for row in report["performance"]
+        if row["pair"] == "AMDW / AMDL"
+    }
+    assert rows["STRATEGY_A"]["last_action"] == "SHADOW_BUY"
+    assert rows["STRATEGY_B"]["last_action"] == "SHADOW_HOLD"
