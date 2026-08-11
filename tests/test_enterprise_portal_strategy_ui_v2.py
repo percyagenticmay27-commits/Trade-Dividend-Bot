@@ -84,3 +84,36 @@ def test_empty_workspace_does_not_fabricate_strategy_data() -> None:
     assert "No registry-driven strategy KPI evidence is available yet." in output
     assert "Dividend" not in output
     assert "Swing" not in output
+
+
+def test_dividend_decision_journal_reaches_decisions_tab() -> None:
+    report = _report()
+    report["strategy_kpis"][0]["decision_journal_status"] = "AVAILABLE"
+    report["strategy_kpis"][0]["decision_journal"] = {
+        "strategy_id": "DIVIDEND-001",
+        "strategy_name": "Dividend Income Strategy",
+        "strategy_type": "DIVIDEND",
+        "generated_at": "2026-08-11T12:00:00Z",
+        "decisions": [{
+            "strategy_id": "DIVIDEND-001",
+            "decision_id": "AMDW-HOLD",
+            "decision_timestamp": "2026-08-11T12:00:00Z",
+            "decision_type": "HOLD",
+            "status": "MONITOR",
+            "ecosystem": {
+                "ecosystem_name": "AMDW / AMDL",
+                "income_leg": "AMDW",
+                "leverage_leg": "AMDL",
+            },
+            "final_rationale": "The warning is buffered; no owner-specific sell is confirmed.",
+            "committee_evidence": [],
+            "images": [],
+        }],
+    }
+
+    output = render_strategy_workspace(report, audience="executive")
+
+    assert "Dividend Income Strategy Decision Journal" in output
+    assert "AMDW / AMDL" in output
+    assert "The warning is buffered" in output
+    assert "Decision Journal status: NOT_REPORTED" not in output
