@@ -273,3 +273,31 @@ def test_strategy_review_route_loads_shadow_performance_and_pending_status(
     assert "PENDING REVIEW" in page
     assert "Qualified; owner may veto through 2099-08-18T17:00:00Z." in page
     assert "Veto Promotion" in page
+
+
+def test_pair_card_groups_and_ranks_multiple_test_strategies() -> None:
+    rows = _shadow_performance_rows()
+    rows.append({
+        **rows[0],
+        "strategy_id": "STRATEGY_C",
+        "display_name": "Strategy C",
+        "strategy_role": "TEST_CANDIDATE",
+        "total_return_percent": 2.0,
+    })
+    page = render_strategy_review_page(
+        [],
+        csrf_secret="secret",
+        assignments={
+            "AMDW / AMDL": {
+                "primary_strategy": "STRATEGY_A",
+                "shadow_strategies": ["STRATEGY_B", "STRATEGY_C"],
+            }
+        },
+        performance_rows=rows,
+    )
+    assert page.count("class='pair-strategy-card'") == 1
+    assert "2 test candidates" in page
+    assert "STRATEGY_B" in page
+    assert "STRATEGY_C" in page
+    assert "Leading by return" in page
+    assert page.index("STRATEGY_C") < page.index("STRATEGY_B")
