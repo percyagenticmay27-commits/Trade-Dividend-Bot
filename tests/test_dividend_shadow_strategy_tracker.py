@@ -215,3 +215,77 @@ def test_missing_authoritative_pair_capital_is_reported_and_not_fabricated(
         "AMDW / AMDL: pair paper state has no valid capital_bucket; "
         "shadow comparison skipped"
     ]
+
+
+def test_registered_strategy_c_is_tracked_without_tracker_code_changes(
+    tmp_path: Path,
+) -> None:
+    registry = tmp_path / "registry.json"
+    registry.write_text(
+        json.dumps({
+            "strategies": [
+                {
+                    "strategy_id": "STRATEGY_A",
+                    "display_name": "Strategy A",
+                    "strategy_role": "PRODUCTION_BASELINE",
+                    "lifecycle_status": "ACTIVE",
+                    "version": "1.0",
+                    "description": "Default.",
+                    "signal_key": "strategy_a",
+                    "buy_signal_field": "buy_trigger",
+                    "sell_signal_field": "sell_trigger",
+                    "eligible_pairs": ["*"],
+                    "promotion_eligible": True,
+                },
+                {
+                    "strategy_id": "STRATEGY_B",
+                    "display_name": "Strategy B",
+                    "strategy_role": "TEST_CANDIDATE",
+                    "lifecycle_status": "ACTIVE",
+                    "version": "1.0",
+                    "description": "Test.",
+                    "signal_key": "strategy_b",
+                    "buy_signal_field": "buy_eligible",
+                    "sell_signal_field": "sell_trigger",
+                    "eligible_pairs": ["*"],
+                    "promotion_eligible": True,
+                },
+                {
+                    "strategy_id": "STRATEGY_C",
+                    "display_name": "Strategy C",
+                    "strategy_role": "TEST_CANDIDATE",
+                    "lifecycle_status": "ACTIVE",
+                    "version": "1.0",
+                    "description": "Explicit fixture strategy.",
+                    "signal_key": "strategy_c",
+                    "buy_signal_field": "buy_ready",
+                    "sell_signal_field": "sell_ready",
+                    "eligible_pairs": ["AMDW / AMDL"],
+                    "promotion_eligible": True,
+                },
+            ]
+        }),
+        encoding="utf-8",
+    )
+    report = update_shadow_strategy_performance(
+        paper_state=_state("2026-08-11", 20.0, 10.0),
+        entry_score_report={
+            "entries": [{
+                "symbol": "AMD",
+                "strategy_signals": {
+                    "strategy_a": {"buy_trigger": False, "sell_trigger": False},
+                    "strategy_b": {"buy_eligible": False, "sell_trigger": False},
+                    "strategy_c": {"buy_ready": True, "sell_ready": False},
+                },
+            }]
+        },
+        pair_config=CONFIG,
+        state_path=tmp_path / "shadow.json",
+        report_path=tmp_path / "report.json",
+        registry_path=registry,
+    )
+    rows = {row["strategy_id"]: row for row in report["performance"]}
+    assert set(rows) == {"STRATEGY_A", "STRATEGY_B", "STRATEGY_C"}
+    assert rows["STRATEGY_C"]["last_action"] == "SHADOW_BUY"
+    assert rows["STRATEGY_C"]["virtual_capital_basis"] == 600.0
+    assert rows["STRATEGY_C"]["display_name"] == "Strategy C"
