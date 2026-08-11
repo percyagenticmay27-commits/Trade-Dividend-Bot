@@ -13,7 +13,7 @@ LIVE_TRADING_ENABLED = False
 BROKER_EXECUTION_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
 
-STARTING_VALUE = 100.0
+LEGACY_STARTING_VALUE = 100.0
 A_WEIGHT = 0.70
 B_WEIGHT = 0.30
 STRATEGIES = ("STRATEGY_A", "STRATEGY_B")
@@ -86,6 +86,37 @@ def _new_strategy_state(as_of: str) -> dict[str, Any]:
     }
 
 
+def _allocation_basis(actual: Mapping[str, Any]) -> float:
+    """Return the authoritative paper-capital bucket assigned to this pair."""
+    try:
+        basis = float(actual["capital_bucket"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("pair paper state has no valid capital_bucket") from exc
+    if basis <= 0:
+        raise ValueError("pair capital_bucket must be positive")
+    return basis
+
+
+def _rebase_strategy_state(row: dict[str, Any], allocation_basis: float) -> dict[str, Any]:
+    """Scale legacy or reallocated virtual money without changing performance."""
+    try:
+        prior_basis = float(row.get("starting_value") or LEGACY_STARTING_VALUE)
+    except (TypeError, ValueError):
+        prior_basis = LEGACY_STARTING_VALUE
+    if prior_basis <= 0:
+        prior_basis = LEGACY_STARTING_VALUE
+    factor = allocation_basis / prior_basis
+    if abs(factor - 1.0) > 1e-12:
+        for field in ("cash", "a_shares", "b_shares", "current_value", "peak_value"):
+            try:
+                row[field] = float(row.get(field, 0.0)) * factor
+            except (TypeError, ValueError):
+                row[field] = 0.0
+    row["starting_value"] = allocation_basis
+    row["allocation_basis"] = allocation_basis
+    return row
+
+
 def _strategy_signal(signals: Mapping[str, Any], strategy_id: str) -> tuple[bool, bool]:
     if strategy_id == "STRATEGY_A":
         row = signals.get("strategy_a") if isinstance(signals.get("strategy_a"), Mapping) else {}
@@ -131,11 +162,19 @@ def update_shadow_strategy_performance(
             continue
         if a_price <= 0 or b_price <= 0:
             continue
+        try:
+            allocation_basis = _allocation_basis(actual)
+        except ValueError:
+            continue
         signals = _signals_for_pair(pair, config, entries)
         pair_shadow = pairs_state.setdefault(pair, {})
         for strategy_id in STRATEGIES:
             row = pair_shadow.get(strategy_id)
-            row = dict(row) if isinstance(row, Mapping) else _new_strategy_state(as_of)
+            row = (
+                _rebase_strategy_state(dict(row), allocation_basis)
+                if isinstance(row, Mapping)
+                else _new_strategy_state(as_of, allocation_basis)
+            )
             duplicate_date = row.get("last_observation_date") == as_of
             buy, sell = _strategy_signal(signals, strategy_id)
             current_before = _value(row, a_price, b_price)
@@ -187,6 +226,7 @@ def update_shadow_strategy_performance(
                     "observation_count": int(row["observation_count"]),
                     "completed_trade_count": int(row["completed_trade_count"]),
                     "current_shadow_value": round(current, 8),
+                    "virtual_gain_loss": round(current - allocation_basis, 8),
                     "in_market": bool(row["in_market"]),
                     "last_action": action,
                     "paper_trade_mode": True,
@@ -208,9 +248,10 @@ def update_shadow_strategy_performance(
         "pairs": pairs_state,
     }
     report = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "as_of_date": as_of,
-        "methodology": "ISOLATED_100_DOLLAR_PAIR_BENCHMARK_70_30_SLEEVES",
+        "methodology": "ISOLATED_PAIR_ALLOCATION_EQUIVALENT_BENCHMARK_70_30_SLEEVES",
+        "capital_basis_policy": "MATCH_AUTHORITATIVE_PAIR_CAPITAL_BUCKET",
         "performance": performance,
         "paper_trade_mode": True,
         "shadow_only": True,
