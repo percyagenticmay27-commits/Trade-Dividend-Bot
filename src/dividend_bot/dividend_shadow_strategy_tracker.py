@@ -151,6 +151,7 @@ def update_shadow_strategy_performance(
     entries = _entry_rows(entry_score_report)
 
     performance: list[dict[str, Any]] = []
+    warnings: list[str] = []
     for pair, config in pair_config.items():
         actual = paper_state.get("pairs", {}).get(pair)
         if not isinstance(actual, Mapping):
@@ -165,7 +166,8 @@ def update_shadow_strategy_performance(
             continue
         try:
             allocation_basis = _allocation_basis(actual)
-        except ValueError:
+        except ValueError as exc:
+            warnings.append(f"{pair}: {exc}; shadow comparison skipped")
             continue
         signals = _signals_for_pair(pair, config, entries)
         pair_shadow = pairs_state.setdefault(pair, {})
@@ -255,6 +257,7 @@ def update_shadow_strategy_performance(
         "methodology": "ISOLATED_PAIR_ALLOCATION_EQUIVALENT_BENCHMARK_70_30_SLEEVES",
         "capital_basis_policy": "MATCH_AUTHORITATIVE_PAIR_CAPITAL_BUCKET",
         "performance": performance,
+        "warnings": warnings,
         "paper_trade_mode": True,
         "shadow_only": True,
         "live_trading_enabled": False,
