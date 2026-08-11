@@ -13,6 +13,7 @@ from src.dividend_bot.strategy_promotion_governance import (
     load_promotion_requests,
     verify_veto_token,
     veto_promotion_request,
+    render_strategy_review_page,
 )
 
 
@@ -168,3 +169,24 @@ def test_strategy_review_button_locks_when_secret_is_missing(tmp_path: Path) -> 
     assert status == "200 OK"
     assert "controls are locked" in page
     assert "Veto Promotion" not in page
+
+
+
+def test_strategy_review_displays_current_pair_assignments() -> None:
+    page = render_strategy_review_page(
+        [],
+        csrf_secret="secret",
+        assignments={
+            "AMDW / AMDL": {
+                "primary_strategy": "STRATEGY_A",
+                "shadow_strategies": ["STRATEGY_B"],
+                "assignment_source": "DEFAULT_PRODUCTION_BASELINE",
+                "effective_at_utc": "2026-08-11T12:00:00Z",
+            }
+        },
+    )
+    assert "Current Pair Strategy Assignments" in page
+    assert "AMDW / AMDL" in page
+    assert "STRATEGY_A" in page
+    assert "STRATEGY_B" in page
+    assert "Default Production Baseline" in page
