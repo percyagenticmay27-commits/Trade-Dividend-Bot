@@ -227,6 +227,9 @@ def _enrich_holdings_with_owner_exit_state(
                 "sell_trigger": bool(exit_detail.get("sell_trigger")),
                 "sell_reasons": list(exit_detail.get("sell_reasons") or []),
                 "exit_authority_reason": exit_detail.get("reason"),
+                "legacy_management_policy": exit_detail.get("legacy_management_policy"),
+                "strategy_a_sell_trigger": exit_detail.get("strategy_a_sell_trigger"),
+                "strategy_b_sell_trigger": exit_detail.get("strategy_b_sell_trigger"),
                 "exit_signal_symbol": signal_symbol,
                 "exit_evidence_source": "entry_score_report.json",
                 "exit_evidence_generated_at_utc": entry_score_payload.get("generated_at_utc"),
@@ -258,24 +261,48 @@ def _alerts(*, state: Mapping[str, Any], candidate_payload: Mapping[str, Any], p
             for sleeve in ("a", "b"):
                 if entry.get(f"{sleeve}_earnings_lock") is True:
                     alerts.append({"alert_type": "EARNINGS_LOCK", "pair": str(pair_name), "sleeve": sleeve.upper(), "severity": "WARNING", "status": "ACTIVE"})
+    seen_exit_alerts: set[tuple[Any, ...]] = set()
     for holding in holdings:
+        reasons = tuple(str(value) for value in (holding.get("sell_reasons") or holding.get("exit_warning_reasons") or []))
+        key = (
+            str(holding.get("pair") or holding.get("exit_signal_symbol") or holding.get("symbol")),
+            bool(holding.get("sell_trigger")),
+            reasons,
+        )
+        if key in seen_exit_alerts:
+            continue
+        seen_exit_alerts.add(key)
+        owner = str(holding.get("strategy_owner") or "")
         if holding.get("sell_trigger") is True:
             alerts.append({
                 "alert_type": "SELL_CONFIRMED",
                 "symbol": holding.get("symbol"),
+                "pair": holding.get("pair"),
                 "severity": "CRITICAL",
                 "status": "ACTION_REQUIRED",
-                "message": "The owning strategy has confirmed its paper exit conditions.",
-                "reasons": list(holding.get("sell_reasons") or []),
+                "message": "The required owner-specific paper exit conditions are confirmed.",
+                "reasons": list(reasons),
             })
         elif holding.get("exit_warning_active") is True or holding.get("exit_buffered") is True:
+            if owner == "LEGACY_UNASSIGNED":
+                a_sell = holding.get("strategy_a_sell_trigger") is True
+                b_sell = holding.get("strategy_b_sell_trigger") is True
+                active = "Strategy A" if a_sell else "Strategy B" if b_sell else "One strategy"
+                waiting = "Strategy B" if a_sell else "Strategy A" if b_sell else "the other strategy"
+                message = (
+                    f"{active} currently has a sell condition, but {waiting} has not confirmed a sale. "
+                    "This pre-ownership legacy position requires both Strategy A and Strategy B to confirm SELL, so it remains held."
+                )
+            else:
+                message = "A sell warning exists, but the owning strategy has not authorized a paper exit."
             alerts.append({
                 "alert_type": "EXIT_WARNING_BUFFERED",
                 "symbol": holding.get("symbol"),
+                "pair": holding.get("pair"),
                 "severity": "WARNING",
                 "status": "MONITOR",
-                "message": "A sell warning exists, but the owning strategy has not authorized a paper exit.",
-                "reasons": list(holding.get("exit_warning_reasons") or []),
+                "message": message,
+                "reasons": list(reasons),
             })
     for warning in candidate_payload.get("warnings", []) if isinstance(candidate_payload.get("warnings"), list) else []:
         alerts.append({"alert_type": "DISCOVERY_WARNING", "severity": "WARNING", "message": str(warning), "status": "ACTIVE"})
