@@ -11,6 +11,8 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass
 from typing import Any, Mapping
 
+from src.dividend_bot.dividend_strategy_ownership import resolve_strategy_ownership
+
 MODULE_NAME = "dividend_entry_gate"
 MODULE_VERSION = "1.2.0"
 STRATEGY_ID = "DIVIDEND-001"
@@ -98,6 +100,7 @@ def evaluate_entry_gate(
     *, symbol: str, pair: str, sleeve: str, signal_symbol: str,
     technical_snapshot: Mapping[str, Any], watchlist_report: Mapping[str, Any] | None,
     entry_score_report: Mapping[str, Any] | None, currently_held: bool = False,
+    pair_primary_strategy: str = "STRATEGY_A",
 ) -> dict[str, Any]:
     """Return a fail-closed paper entry decision with explicit WAIT reasons."""
     symbol = str(symbol or "").strip().upper()
@@ -137,6 +140,16 @@ def evaluate_entry_gate(
             raw_reason = ownership.get("reason")
             strategy_ownership_reason = str(raw_reason) if raw_reason not in (None, "") else None
 
+        strategy_signals = entry.get("strategy_signals")
+        if isinstance(strategy_signals, Mapping):
+            assigned = resolve_strategy_ownership(
+                strategy_signals,
+                existing_owner=strategy_owner,
+                pair_primary_strategy=pair_primary_strategy,
+            )
+            strategy_entry_approved = bool(assigned.get("entry_allowed_by_ownership"))
+            strategy_owner = assigned.get("strategy_owner")
+            strategy_ownership_reason = str(assigned.get("reason") or "")
     # New Strategy A/B evidence owns the technical BUY authority. Legacy signal
     # remains authoritative only for older payloads that do not publish the new
     # explicit strategy_entry_approved field.
@@ -204,6 +217,7 @@ def evaluate_entry_gate(
         reasons=tuple(reasons),
         technical_snapshot={
             **dict(technical_snapshot),
+            "pair_primary_strategy": pair_primary_strategy,
             "legacy_signal": legacy_technical_signal,
             "entry_authority": "STRATEGY_A_B" if strategy_entry_approved is not None else "LEGACY_TECHNICAL_SIGNAL",
         },
@@ -218,6 +232,7 @@ def evaluate_entry_gate(
 def evaluate_pair_entry_gate(
     *, pair: str, config: Mapping[str, Any], technical_snapshot: Mapping[str, Any],
     watchlist_report: Mapping[str, Any] | None, entry_score_report: Mapping[str, Any] | None,
+    pair_primary_strategy: str = "STRATEGY_A",
 ) -> dict[str, Any]:
     """Require both sleeves of a pair-managed position to be independently ready."""
     decisions = []
@@ -232,6 +247,7 @@ def evaluate_pair_entry_gate(
             watchlist_report=watchlist_report,
             entry_score_report=entry_score_report,
             currently_held=False,
+            pair_primary_strategy=pair_primary_strategy,
         ))
     approved = all(item["approved"] for item in decisions)
     reasons = sorted({reason for item in decisions for reason in item["reasons"]})
