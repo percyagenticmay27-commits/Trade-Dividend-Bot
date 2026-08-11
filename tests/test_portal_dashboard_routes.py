@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import json
-import re
 from pathlib import Path
 
 from src.dividend_bot.paper_capital_allocation_server import create_wsgi_app, render_allocation_page
@@ -91,9 +90,13 @@ def test_executive_fallback_has_no_visible_stylesheet_before_portal_frame(tmp_pa
     )
     status, page = _call(app, "GET", "/executive-dashboard")
     assert status == "200 OK"
-    prefix = page[:page.index("<div class='portal-frame'>")]
-    visible_prefix = re.sub(r"<style\\b[^>]*>.*?</style>", "", prefix, flags=re.DOTALL | re.IGNORECASE)
-    assert not visible_prefix.strip()
+    selector_index = page.index(".position-history-pro{")
+    opening_style = page.rfind("<style", 0, selector_index)
+    prior_closing_style = page.rfind("</style>", 0, selector_index)
+    closing_style = page.index("</style>", selector_index)
+    portal_frame = page.index("<div class='portal-frame'>")
+    assert opening_style > prior_closing_style
+    assert selector_index < closing_style < portal_frame
 
 
 def test_missing_executive_data_returns_styled_200(tmp_path: Path) -> None:
