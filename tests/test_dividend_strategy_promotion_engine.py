@@ -183,3 +183,35 @@ def test_vetoed_request_is_never_activated(tmp_path: Path) -> None:
     )
     assert activated == []
     assert load_assignments(assignments)["AMDW / AMDL"]["primary_strategy"] == "STRATEGY_A"
+
+
+def test_multiple_qualified_candidates_select_highest_return_for_one_review(
+    tmp_path: Path,
+) -> None:
+    assignments = tmp_path / "assignments.json"
+    requests = tmp_path / "requests.json"
+    journal = tmp_path / "journal.jsonl"
+    now = datetime(2026, 8, 1, 12, tzinfo=timezone.utc)
+    current = ensure_pair_assignments(
+        ["AMDW / AMDL"],
+        path=assignments,
+        now=now,
+        strategy_ids=["STRATEGY_A", "STRATEGY_B", "STRATEGY_C"],
+    )
+    assert current["AMDW / AMDL"]["shadow_strategies"] == [
+        "STRATEGY_B",
+        "STRATEGY_C",
+    ]
+    created = create_promotion_requests(
+        [
+            _row("STRATEGY_A", total_return=4.0, drawdown=-8.0),
+            _row("STRATEGY_B", total_return=7.0, drawdown=-7.0),
+            _row("STRATEGY_C", total_return=9.0, drawdown=-6.0),
+        ],
+        assignments_path=assignments,
+        requests_path=requests,
+        journal_path=journal,
+        now=now,
+    )
+    assert len(created) == 1
+    assert created[0]["proposed_primary_strategy"] == "STRATEGY_C"
