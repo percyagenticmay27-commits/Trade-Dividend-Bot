@@ -51,61 +51,48 @@ def resolve_strategy_ownership(
     strategy_signals: Mapping[str, Any] | None,
     *,
     existing_owner: str | None = None,
+    pair_primary_strategy: str | None = STRATEGY_A,
 ) -> dict[str, Any]:
-    """Resolve sticky strategy ownership without inventing precedence.
+    """Resolve entry authority from the approved pair-specific primary strategy.
 
-    ``existing_owner`` is authoritative only when it is a valid Strategy A/B
-    owner. LEGACY_UNASSIGNED is a lifecycle-management status, not an entry
-    methodology and is therefore never returned as an eligible new owner.
+    Strategy A is the default production primary. Other strategies are shadow
+    evidence only unless a pair-specific promotion assignment names one as
+    primary. Existing ownership is retained as entry-history evidence; it cannot
+    overrule a subsequently approved management-strategy assignment.
     """
-    owner = _normalized_owner(existing_owner)
-    if owner:
-        return {
-            "resolved": True,
-            "strategy_owner": owner,
-            "eligible_strategies": [owner],
-            "reason": "EXISTING_POSITION_STRATEGY_OWNERSHIP_PRESERVED",
-            "entry_allowed_by_ownership": True,
-            "ownership_source": "existing_position",
-        }
-
+    primary = _normalized_owner(pair_primary_strategy) or STRATEGY_A
+    historical_owner = _normalized_owner(existing_owner)
     signals = strategy_signals if isinstance(strategy_signals, Mapping) else {}
     strategy_a = signals.get("strategy_a") if isinstance(signals.get("strategy_a"), Mapping) else {}
     strategy_b = signals.get("strategy_b") if isinstance(signals.get("strategy_b"), Mapping) else {}
+    active = {
+        STRATEGY_A: bool(strategy_a.get("buy_trigger")),
+        STRATEGY_B: bool(strategy_b.get("buy_eligible")),
+    }
+    primary_active = active.get(primary, False)
+    shadow_active = sorted(name for name, triggered in active.items() if name != primary and triggered)
 
-    a_buy = bool(strategy_a.get("buy_trigger"))
-    b_buy = bool(strategy_b.get("buy_eligible"))
-    eligible = [
-        name for name, active in ((STRATEGY_A, a_buy), (STRATEGY_B, b_buy)) if active
-    ]
-
-    if len(eligible) == 1:
-        return {
-            "resolved": True,
-            "strategy_owner": eligible[0],
-            "eligible_strategies": eligible,
-            "reason": "SINGLE_ACTIVE_ENTRY_STRATEGY",
-            "entry_allowed_by_ownership": True,
-            "ownership_source": "current_entry_signals",
-        }
-
-    if not eligible:
-        return {
-            "resolved": False,
-            "strategy_owner": None,
-            "eligible_strategies": [],
-            "reason": "NO_ACTIVE_ENTRY_STRATEGY",
-            "entry_allowed_by_ownership": False,
-            "ownership_source": "current_entry_signals",
-        }
+    if historical_owner and historical_owner != primary:
+        source = "PAIR_PRIMARY_PROMOTION_OVERRIDES_HISTORICAL_ENTRY_OWNER"
+    elif historical_owner:
+        source = "EXISTING_ENTRY_OWNER_MATCHES_PAIR_PRIMARY"
+    else:
+        source = "PAIR_PRIMARY_ASSIGNMENT"
 
     return {
-        "resolved": False,
-        "strategy_owner": None,
-        "eligible_strategies": eligible,
-        "reason": "MULTIPLE_ACTIVE_ENTRY_STRATEGIES_REQUIRE_SELECTION_POLICY",
-        "entry_allowed_by_ownership": False,
-        "ownership_source": "current_entry_signals",
+        "resolved": primary_active,
+        "strategy_owner": primary if primary_active else None,
+        "management_strategy": primary,
+        "historical_entry_strategy": historical_owner,
+        "eligible_strategies": [primary] if primary_active else [],
+        "shadow_active_strategies": shadow_active,
+        "reason": (
+            "PAIR_PRIMARY_ENTRY_SIGNAL_ACTIVE"
+            if primary_active
+            else "PAIR_PRIMARY_ENTRY_SIGNAL_NOT_ACTIVE"
+        ),
+        "entry_allowed_by_ownership": primary_active,
+        "ownership_source": source,
     }
 
 
