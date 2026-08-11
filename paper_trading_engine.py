@@ -11,6 +11,7 @@ PAPER ONLY - NO REAL TRADES EXECUTED.
 """
 from __future__ import annotations
 
+import csv
 import json
 from pathlib import Path
 from typing import Any, Mapping
@@ -57,6 +58,73 @@ def _read_json(path: Path) -> Mapping[str, Any]:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, Mapping) else {}
+
+
+def _read_log_rows(path: Path) -> list[dict[str, str]]:
+    if not path.is_file():
+        return []
+    try:
+        with path.open(newline="", encoding="utf-8-sig") as handle:
+            return [dict(row) for row in csv.DictReader(handle)]
+    except (OSError, UnicodeError, csv.Error):
+        return []
+
+
+def _dividend_window_starts(
+    state: Mapping[str, Any],
+    log_rows: list[Mapping[str, Any]],
+) -> dict[str, pd.Timestamp]:
+    default = pd.Timestamp(state.get("last_processed_date") or state.get("as_of_date"))
+    pairs = state.get("pairs")
+    if not isinstance(pairs, Mapping):
+        return {}
+    starts: dict[str, pd.Timestamp] = {}
+    for pair, raw_entry in pairs.items():
+        if not isinstance(raw_entry, Mapping):
+            continue
+        pair_name = str(pair)
+        entry = raw_entry
+        starts[pair_name] = default
+        has_recorded_distribution = any(
+            str(row.get("Pair") or row.get("pair") or "") == pair_name
+            and "DIVIDEND" in str(row.get("Action") or row.get("action") or "").upper()
+            for row in log_rows
+        )
+        state_income = float(entry.get("total_dividends_received") or 0.0)
+        if has_recorded_distribution or state_income > 0:
+            continue
+        config = PAPER_PAIRS.get(pair_name)
+        if not isinstance(config, Mapping):
+            continue
+        income_symbol = str(config.get("a") or "").upper()
+        buys = [
+            pd.Timestamp(row.get("Date") or row.get("date"))
+            for row in log_rows
+            if str(row.get("Pair") or row.get("pair") or "") == pair_name
+            and str(row.get("Ticker") or row.get("ticker") or "").upper() == income_symbol
+            and str(row.get("Action") or row.get("action") or "").upper()
+            in {"PAPER_BUY_OPEN", "PAPER_BUY", "PAPER_BUY_FROM_SGOV"}
+            and row.get("Date") or row.get("date")
+        ]
+        if buys:
+            starts[pair_name] = max(buys)
+    return starts
+
+
+def _unprocessed_dividend_payments(
+    frame: pd.DataFrame,
+    *,
+    after: pd.Timestamp,
+    through: pd.Timestamp,
+) -> list[tuple[pd.Timestamp, float]]:
+    eligible = frame.loc[(frame.index > after) & (frame.index <= through)]
+    if eligible.empty or "Dividends" not in eligible:
+        return []
+    return [
+        (pd.Timestamp(date), float(value))
+        for date, value in eligible["Dividends"].fillna(0.0).items()
+        if float(value) > 0
+    ]
 
 
 class PaperTradingEngine(CorePaperTradingEngine):
@@ -338,6 +406,7 @@ class PaperTradingEngine(CorePaperTradingEngine):
 
     def run(self, reinitialize_signal_aware: bool = False) -> dict:
         allocation = self._enterprise_allocation()
+        self._dividend_window_starts: dict[str, pd.Timestamp] = {}
         if self.state_path.exists() and not reinitialize_signal_aware:
             try:
                 existing = json.loads(self.state_path.read_text(encoding="utf-8"))
@@ -345,6 +414,10 @@ class PaperTradingEngine(CorePaperTradingEngine):
                 existing = None
             if isinstance(existing, Mapping):
                 normalized, factor = scale_paper_state_to_allocation(existing, allocation)
+                self._dividend_window_starts = _dividend_window_starts(
+                    normalized,
+                    _read_log_rows(self.log_path),
+                )
                 if abs(factor - 1.0) > 1e-12:
                     self.write_state(normalized)
         return super().run(reinitialize_signal_aware=reinitialize_signal_aware)
@@ -490,28 +563,43 @@ class PaperTradingEngine(CorePaperTradingEngine):
                         if self.sleeve_in_sgov(entry, side):
                             self._clear_sleeve_strategy_owner(entry, side, exit_decision)
 
-        dividend = float(frames[config["a"]].reindex([as_of])["Dividends"].fillna(0).iloc[0])
-        dividend_cash = self.apply_dividend(
-            entry,
-            dividend,
-            prices,
-            eligible_a_shares=eligible_a_shares,
+        window_start = getattr(self, "_dividend_window_starts", {}).get(
+            pair,
+            as_of - pd.Timedelta(days=1),
         )
-        if dividend_cash > 0:
-            logs.append(
-                self.log_row(
-                    as_of,
-                    pair,
-                    "A",
-                    signals["A"],
-                    "PAPER_DIVIDEND_RECEIVED",
-                    config["a"],
-                    eligible_a_shares,
-                    dividend,
-                    dividend_cash,
-                    "Income ETF dividend split 50/50 between A and B",
-                )
+        dividend_cash = 0.0
+        for payment_date, dividend in _unprocessed_dividend_payments(
+            frames[config["a"]],
+            after=window_start,
+            through=as_of,
+        ):
+            payment_prices = {
+                "A": self.price(frames[config["a"]], payment_date),
+                "B": self.price(frames[config["b"]], payment_date),
+            }
+            payment_shares = entry["a_shares"]
+            payment_cash = self.apply_dividend(
+                entry,
+                dividend,
+                payment_prices,
+                eligible_a_shares=payment_shares,
             )
+            dividend_cash += payment_cash
+            if payment_cash > 0:
+                logs.append(
+                    self.log_row(
+                        payment_date,
+                        pair,
+                        "A",
+                        signals["A"],
+                        "PAPER_DIVIDEND_RECEIVED",
+                        config["a"],
+                        payment_shares,
+                        dividend,
+                        payment_cash,
+                        "Income ETF dividend split 50/50 between A and B",
+                    )
+                )
         entry["last_signal"] = signals
         entry["last_prices"] = prices
         report_rows.append(
