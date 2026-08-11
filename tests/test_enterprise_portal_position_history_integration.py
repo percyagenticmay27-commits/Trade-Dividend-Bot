@@ -16,6 +16,15 @@ def _report():
                 "health_status": "HEALTHY",
                 "evidence_status": "AVAILABLE",
                 "runtime_status": "READY",
+                "alerts": [
+                    {
+                        "symbol": "AMDW / AMDL",
+                        "alert_type": "EXIT_WARNING_BUFFERED",
+                        "message": "Strategy B has a sell condition, but Strategy A has not confirmed. The legacy position remains held.",
+                        "reasons": ["PRICE_BELOW_EMA20", "LEGACY_CONSENSUS_PENDING"],
+                        "severity": "WARNING",
+                    }
+                ],
                 "performance_detail": {
                     "position_lifecycle": [
                         {
@@ -63,4 +72,15 @@ def test_strategy_css_includes_position_history_styles() -> None:
 def test_performance_gain_and_loss_metrics_are_semantically_colored() -> None:
     output = render_strategy_workspace(_report(), audience="executive")
     assert "metric-positive'>+$12.50" in output
-    assert "metric-negative'>-$203.06" in output
+    assert output.count("metric-negative'>-$203.06") == 2
+
+
+
+def test_alert_workspace_explains_signal_without_claiming_exit_authority() -> None:
+    output = render_strategy_workspace(_report(), audience="executive")
+    assert "strategy-alert-card" in output
+    assert "Price is below the 20-day EMA" in output
+    assert "Strategy B&#x27;s sell condition" in output
+    assert "not, by itself, authorization to exit" in output
+    assert "both Strategy A and Strategy B independently confirm a sell" in output
+    assert "Reasons: [&#x27;PRICE_BELOW_EMA20&#x27;" not in output
