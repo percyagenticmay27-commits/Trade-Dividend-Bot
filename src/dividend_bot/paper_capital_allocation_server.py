@@ -26,6 +26,10 @@ from .paper_cash_account import (
     initialize_cash_account,
     read_cash_account,
 )
+from .dividend_strategy_promotion_engine import (
+    DEFAULT_ASSIGNMENTS_PATH,
+    load_assignments,
+)
 from .strategy_promotion_governance import (
     DEFAULT_PROMOTION_JOURNAL_PATH,
     DEFAULT_PROMOTION_REQUESTS_PATH,
@@ -216,6 +220,7 @@ def create_wsgi_app(
     executive_dashboard_json: str | Path = DEFAULT_EXECUTIVE_DASHBOARD_JSON,
     investor_dashboard_json: str | Path = DEFAULT_INVESTOR_DASHBOARD_JSON,
     promotion_requests_path: str | Path = DEFAULT_PROMOTION_REQUESTS_PATH,
+    strategy_assignments_path: str | Path = DEFAULT_ASSIGNMENTS_PATH,
     promotion_journal_path: str | Path = DEFAULT_PROMOTION_JOURNAL_PATH,
     owner_review_csrf_secret: Optional[str] = None,
     investor_id: str = "default-investor",
@@ -231,6 +236,7 @@ def create_wsgi_app(
     executive_json_file = Path(executive_dashboard_json)
     investor_json_file = Path(investor_dashboard_json)
     promotion_requests_file = Path(promotion_requests_path)
+    strategy_assignments_file = Path(strategy_assignments_path)
     promotion_journal_file = Path(promotion_journal_path)
     csrf_secret = owner_review_csrf_secret or ""
     if not cash_file.is_file() and initial_paper_cash is not None:
@@ -273,6 +279,7 @@ def create_wsgi_app(
                 review = render_strategy_review_page(
                     load_promotion_requests(promotion_requests_file),
                     csrf_secret=csrf_secret,
+                    assignments=load_assignments(strategy_assignments_file),
                 )
                 payload = _layout("Strategy Promotion Review", review, "Strategy Review").encode("utf-8")
                 status = "200 OK"
@@ -388,6 +395,7 @@ def main() -> int:
         executive_dashboard_json=os.environ.get("DIVIDEND_EXECUTIVE_DASHBOARD_JSON", str(DEFAULT_EXECUTIVE_DASHBOARD_JSON)),
         investor_dashboard_json=os.environ.get("DIVIDEND_INVESTOR_DASHBOARD_JSON", str(DEFAULT_INVESTOR_DASHBOARD_JSON)),
         promotion_requests_path=os.environ.get("DIVIDEND_STRATEGY_PROMOTION_REQUESTS", str(DEFAULT_PROMOTION_REQUESTS_PATH)),
+        strategy_assignments_path=os.environ.get("DIVIDEND_PAIR_STRATEGY_ASSIGNMENTS", str(DEFAULT_ASSIGNMENTS_PATH)),
         promotion_journal_path=os.environ.get("DIVIDEND_STRATEGY_PROMOTION_JOURNAL", str(DEFAULT_PROMOTION_JOURNAL_PATH)),
         owner_review_csrf_secret=os.environ.get(DEFAULT_OWNER_REVIEW_CSRF_SECRET_ENV),
         investor_id=os.environ.get("DIVIDEND_INVESTOR_ID", "default-investor"),
