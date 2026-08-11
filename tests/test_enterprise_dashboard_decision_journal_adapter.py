@@ -76,6 +76,76 @@ def test_missing_journal_preserves_kpi_row_with_safe_status(tmp_path: Path) -> N
     assert enriched[0]["decision_count"] == 0
 
 
+def test_safe_embedded_journal_survives_when_standalone_is_missing(
+    tmp_path: Path,
+) -> None:
+    embedded = _journal(
+        "DIVIDEND-001",
+        [{"strategy_id": "DIVIDEND-001", "decision_id": "D-EMBEDDED"}],
+    )
+    rows = [{
+        "strategy_id": "DIVIDEND-001",
+        "decision_journal": embedded,
+        "decision_journal_status": "AVAILABLE",
+        "decision_count": 1,
+    }]
+
+    enriched, warnings = attach_strategy_decision_journals(
+        rows, results_dir=tmp_path / "results"
+    )
+
+    assert warnings == []
+    assert enriched[0]["decision_journal"] == embedded
+    assert enriched[0]["decision_journal_status"] == "AVAILABLE"
+    assert enriched[0]["decision_count"] == 1
+    assert enriched[0]["decision_journal_path"] == "EMBEDDED_HOST_EVIDENCE"
+
+
+def test_unsafe_embedded_journal_is_rejected(tmp_path: Path) -> None:
+    embedded = _journal("DIVIDEND-001")
+    embedded["live_trading_enabled"] = True
+    rows = [{
+        "strategy_id": "DIVIDEND-001",
+        "decision_journal": embedded,
+        "decision_journal_status": "AVAILABLE",
+    }]
+
+    enriched, warnings = attach_strategy_decision_journals(
+        rows, results_dir=tmp_path / "results"
+    )
+
+    assert enriched[0]["decision_journal"] is None
+    assert enriched[0]["decision_journal_status"] == "NOT_REPORTED"
+    assert enriched[0]["decision_count"] == 0
+    assert any("Unsafe strategy Decision Journal rejected" in item for item in warnings)
+
+
+def test_standalone_journal_overrides_embedded_host_evidence(
+    tmp_path: Path,
+) -> None:
+    results = tmp_path / "results"
+    standalone = _journal(
+        "DIVIDEND-001",
+        [{"strategy_id": "DIVIDEND-001", "decision_id": "D-STANDALONE"}],
+    )
+    _write(results / "dividend_strategy_decision_journal.json", standalone)
+    embedded = _journal(
+        "DIVIDEND-001",
+        [{"strategy_id": "DIVIDEND-001", "decision_id": "D-EMBEDDED"}],
+    )
+
+    enriched, warnings = attach_strategy_decision_journals(
+        [{"strategy_id": "DIVIDEND-001", "decision_journal": embedded}],
+        results_dir=results,
+    )
+
+    assert warnings == []
+    assert enriched[0]["decision_journal"] == standalone
+    assert enriched[0]["decision_journal_path"].endswith(
+        "dividend_strategy_decision_journal.json"
+    )
+
+
 def test_cross_strategy_entry_is_rejected(tmp_path: Path) -> None:
     results = tmp_path / "results"
     _write(
