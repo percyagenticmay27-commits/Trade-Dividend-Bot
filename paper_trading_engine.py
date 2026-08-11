@@ -43,11 +43,13 @@ from src.dividend_bot.dividend_enterprise_capital_contract import (
     read_enterprise_dividend_allocation,
     scale_paper_state_to_allocation,
 )
-from src.dividend_bot.dividend_strategy_ownership import owned_exit_signal
+from src.dividend_bot.dividend_strategy_ownership import STRATEGY_A, owned_exit_signal
+from src.dividend_bot.dividend_strategy_promotion_engine import load_assignments
 
 WATCHLIST_PATH = Path("watchlist_report.json")
 ENTRY_SCORE_PATH = Path("entry_score_report.json")
 ENTERPRISE_CASH_STATE_PATH = Path("state/paper_cash_account.json")
+PAIR_STRATEGY_ASSIGNMENTS_PATH = Path("state/dividend_pair_strategy_assignments.json")
 
 
 def _read_json(path: Path) -> Mapping[str, Any]:
@@ -58,6 +60,16 @@ def _read_json(path: Path) -> Mapping[str, Any]:
     except (OSError, UnicodeError, json.JSONDecodeError):
         return {}
     return value if isinstance(value, Mapping) else {}
+
+
+
+def _primary_strategy_for_pair(
+    pair: str,
+    path: Path = PAIR_STRATEGY_ASSIGNMENTS_PATH,
+) -> str:
+    assignment = load_assignments(path).get(pair, {})
+    value = str(assignment.get("primary_strategy") or STRATEGY_A).upper()
+    return value if value in {"STRATEGY_A", "STRATEGY_B"} else STRATEGY_A
 
 
 def _read_log_rows(path: Path) -> list[dict[str, str]]:
@@ -222,18 +234,21 @@ class PaperTradingEngine(CorePaperTradingEngine):
         entry[f"{key}_strategy_ownership_source"] = "CLOSED_TO_SGOV"
 
     def _owned_sleeve_exit_decision(
-        self, *, entry: Mapping[str, Any], config: Mapping[str, Any], side: str
+        self, *, pair: str, entry: Mapping[str, Any], config: Mapping[str, Any], side: str
     ) -> dict[str, Any]:
         key = side.lower()
-        owner = entry.get(f"{key}_strategy_owner")
+        entry_owner = entry.get(f"{key}_strategy_owner")
+        management_strategy = _primary_strategy_for_pair(pair)
         symbol = str(config.get(key) or "")
         signal_symbol = str(config.get(f"{key}_signal") or symbol)
         decision = owned_exit_signal(
             self._strategy_signals_for_symbol(signal_symbol),
-            owner,
+            management_strategy,
         )
         return {
             **decision,
+            "entry_strategy_owner": entry_owner,
+            "management_strategy": management_strategy,
             "symbol": symbol,
             "signal_symbol": signal_symbol,
             "sleeve": side,
@@ -241,9 +256,10 @@ class PaperTradingEngine(CorePaperTradingEngine):
         }
 
     def _owned_pair_exit_decision(
-        self, *, entry: Mapping[str, Any], config: Mapping[str, Any]
+        self, *, pair: str, entry: Mapping[str, Any], config: Mapping[str, Any]
     ) -> dict[str, Any]:
-        owner = entry.get("strategy_owner")
+        entry_owner = entry.get("strategy_owner")
+        management_strategy = _primary_strategy_for_pair(pair)
         decisions = []
         for side in ("A", "B"):
             key = side.lower()
@@ -251,10 +267,12 @@ class PaperTradingEngine(CorePaperTradingEngine):
             signal_symbol = str(config.get(f"{key}_signal") or symbol)
             detail = owned_exit_signal(
                 self._strategy_signals_for_symbol(signal_symbol),
-                owner,
+                management_strategy,
             )
             decisions.append({
                 **detail,
+                "entry_strategy_owner": entry_owner,
+                "management_strategy": management_strategy,
                 "symbol": symbol,
                 "signal_symbol": signal_symbol,
                 "sleeve": side,
@@ -262,7 +280,9 @@ class PaperTradingEngine(CorePaperTradingEngine):
         triggered = [item for item in decisions if item.get("sell_trigger")]
         reasons = sorted({reason for item in triggered for reason in item.get("sell_reasons", [])})
         return {
-            "strategy_owner": owner,
+            "strategy_owner": management_strategy,
+            "entry_strategy_owner": entry_owner,
+            "management_strategy": management_strategy,
             "sell_trigger": bool(triggered),
             "sell_reasons": reasons,
             "reason": "PAIR_OWNER_EXIT_TRIGGERED" if triggered else "PAIR_OWNER_EXIT_NOT_TRIGGERED",
@@ -290,6 +310,7 @@ class PaperTradingEngine(CorePaperTradingEngine):
             watchlist_report=watchlist,
             entry_score_report=entry_score,
             currently_held=False,
+            pair_primary_strategy=_primary_strategy_for_pair(pair),
         )
 
     def _gate_pair(
@@ -309,6 +330,7 @@ class PaperTradingEngine(CorePaperTradingEngine):
             technical_snapshot=technical,
             watchlist_report=watchlist,
             entry_score_report=entry_score,
+            pair_primary_strategy=_primary_strategy_for_pair(pair),
         )
 
     def initial_state(self, frames, as_of):
@@ -548,7 +570,7 @@ class PaperTradingEngine(CorePaperTradingEngine):
                     "Strategy-owned qualified entry", logs,
                 )
             else:
-                exit_decision = self._owned_pair_exit_decision(entry=entry, config=config)
+                exit_decision = self._owned_pair_exit_decision(pair=pair, entry=entry, config=config)
                 entry["exit_gate"] = exit_decision
                 if exit_decision["sell_trigger"]:
                     reason = "Strategy-owner exit: " + ", ".join(exit_decision["sell_reasons"])
@@ -590,7 +612,7 @@ class PaperTradingEngine(CorePaperTradingEngine):
                     )
                 else:
                     exit_decision = self._owned_sleeve_exit_decision(
-                        entry=entry, config=config, side=side
+                        pair=pair, entry=entry, config=config, side=side
                     )
                     gates = entry.get("exit_gate")
                     if not isinstance(gates, dict) or "sell_trigger" in gates:
