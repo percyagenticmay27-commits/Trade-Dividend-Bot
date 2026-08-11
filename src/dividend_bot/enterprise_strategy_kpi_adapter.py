@@ -433,6 +433,24 @@ def build_strategy_kpis(
         income_events = _detail_list(dashboard_evidence, "income_events")
         alerts = _detail_list(dashboard_evidence, "alerts")
         risk_flags = _detail_list(dashboard_evidence, "risk_flags")
+        decision_journal_source = (
+            dashboard_evidence.get("decision_journal")
+            if isinstance(dashboard_evidence, Mapping)
+            else None
+        )
+        if not isinstance(decision_journal_source, Mapping) and isinstance(host_dividend_evidence, Mapping):
+            decision_journal_source = host_dividend_evidence.get("decision_journal")
+        decision_journal = (
+            dict(decision_journal_source)
+            if isinstance(decision_journal_source, Mapping)
+            else None
+        )
+        decision_journal_status = "AVAILABLE" if decision_journal is not None else "NOT_REPORTED"
+        decision_count = (
+            int(_number(decision_journal.get("decision_count")) or 0)
+            if decision_journal is not None
+            else 0
+        )
         performance_detail = (
             dict(dashboard_evidence.get("performance_detail"))
             if dashboard_sources_available
@@ -480,6 +498,9 @@ def build_strategy_kpis(
             "positions": holdings,
             "watchlist": watchlist_detail,
             "income_events": income_events,
+            "decision_journal_status": decision_journal_status,
+            "decision_count": decision_count,
+            "decision_journal": decision_journal,
             "performance_detail": performance_detail,
             "alerts": alerts,
             "risk_flags": risk_flags,
