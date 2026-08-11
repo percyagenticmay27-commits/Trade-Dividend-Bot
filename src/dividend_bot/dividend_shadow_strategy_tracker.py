@@ -179,7 +179,7 @@ def update_shadow_strategy_performance(
                 {
                     "pair": pair,
                     "strategy_id": strategy_id,
-                    "role": "PRIMARY" if strategy_id == "STRATEGY_A" else "SHADOW_TEST",
+                    "role": "STRATEGY_A_BASELINE" if strategy_id == "STRATEGY_A" else "TEST_CANDIDATE",
                     "evaluation_start": row["evaluation_start"],
                     "evaluation_end": as_of,
                     "total_return_percent": round((current / STARTING_VALUE - 1.0) * 100.0, 8),
