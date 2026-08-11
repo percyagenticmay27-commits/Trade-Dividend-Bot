@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import re
 from pathlib import Path
 
 from src.dividend_bot.paper_capital_allocation_server import create_wsgi_app, render_allocation_page
@@ -80,6 +81,19 @@ def test_executive_json_fallback_uses_authoritative_formatter(tmp_path: Path) ->
     assert status == "200 OK"
     assert "AI CIO Executive Dashboard" in page
     assert "Portfolio Value" in page
+
+
+def test_executive_fallback_has_no_visible_stylesheet_before_portal_frame(tmp_path: Path) -> None:
+    app, _, paths = _app(tmp_path)
+    Path(paths["executive_dashboard_json"]).write_text(
+        json.dumps({"portfolio_summary": {}, "ai_cio_verdict": {}, "capital_allocation_rankings": []}),
+        encoding="utf-8",
+    )
+    status, page = _call(app, "GET", "/executive-dashboard")
+    assert status == "200 OK"
+    prefix = page[:page.index("<div class='portal-frame'>")]
+    visible_prefix = re.sub(r"<style\\b[^>]*>.*?</style>", "", prefix, flags=re.DOTALL | re.IGNORECASE)
+    assert not visible_prefix.strip()
 
 
 def test_missing_executive_data_returns_styled_200(tmp_path: Path) -> None:
