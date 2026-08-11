@@ -63,6 +63,23 @@ def _income_position_count(row: Mapping[str, Any]) -> int:
     return sum(1 for item in _holdings(row) if (_number(item.get("annual_income")) or 0.0) > 0)
 
 
+def _next_ex_date(row: Mapping[str, Any]) -> str:
+    dates = sorted(
+        str(item.get("next_ex_dividend_date"))
+        for item in _holdings(row)
+        if item.get("next_ex_dividend_date") not in (None, "", "Not reported")
+    )
+    return dates[0] if dates else "Not reported"
+
+
+def _destination(event: Mapping[str, Any], prefix: str) -> str:
+    symbol = event.get(f"{prefix}_destination_symbol")
+    amount = _number(event.get(f"{prefix}_destination_amount"))
+    if symbol in (None, "") or amount is None:
+        return "Not recorded"
+    return f"{html.escape(str(symbol))} +${amount:,.2f}"
+
+
 def _income_holding_rows(row: Mapping[str, Any]) -> str:
     rendered: list[str] = []
     for item in _holdings(row):
@@ -104,11 +121,13 @@ def _event_rows(row: Mapping[str, Any]) -> str:
             f"<td><strong>{_text(event.get('symbol'))}</strong></td>"
             f"<td>{_text(event.get('event_type'))}</td>"
             f"<td><strong class='{_money_class(amount)}'>{_signed_money(amount)}</strong></td>"
+            f"<td>{_destination(event, 'income')}</td>"
+            f"<td>{_destination(event, 'growth')}</td>"
             f"<td>{_text(event.get('source'))}</td>"
             "</tr>"
         )
     if not rendered:
-        return "<tr><td colspan='5' class='income-empty-cell'>No realized strategy-owned income events have been recorded yet.</td></tr>"
+        return "<tr><td colspan='7' class='income-empty-cell'>No realized distribution receipt or 50/50 reinvestment has been recorded yet. Projected income does not prove that cash was received.</td></tr>"
     return "".join(rendered)
 
 
@@ -133,6 +152,9 @@ def render_income_panel(row: Mapping[str, Any]) -> str:
     monthly = _projected_monthly_income(row)
     event_count = len(_events(row))
     income_positions = _income_position_count(row)
+    next_ex_date = _next_ex_date(row)
+    income_reinvestment = row.get("income_sleeve_reinvestment")
+    growth_reinvestment = row.get("growth_sleeve_reinvestment")
 
     return (
         "<section class='income-pro' aria-label='Strategy income'>"
@@ -146,10 +168,17 @@ def render_income_panel(row: Mapping[str, Any]) -> str:
         + _summary_card("Income Adjustments", adjustments, "Reversals and income corrections", signed=True)
         + _summary_card("Projected Annual Income", annual, "Current holdings projection")
         + _summary_card("Projected Monthly Income", monthly, "Annual projection ÷ 12")
+        + _summary_card("Reinvested to Income Sleeve", income_reinvestment, "Recorded 50% paper distribution destination")
+        + _summary_card("Reinvested to Growth Sleeve", growth_reinvestment, "Recorded 50% paper distribution destination")
         + (
             "<article><span>Income-Producing Positions</span>"
             f"<strong>{income_positions}</strong>"
             "<small>Holdings with published income evidence</small></article>"
+        )
+        + (
+            "<article><span>Next Reported Ex-Date</span>"
+            f"<strong>{html.escape(next_ex_date)}</strong>"
+            "<small>Earliest authoritative date across current holdings</small></article>"
         )
         + "</div>"
         "<div class='income-accounting-note'><strong>Income Accounting</strong> Price gains/losses are excluded. Only strategy-owned distribution receipts, reversals, and income adjustments affect Net Income Received.</div>"
@@ -159,9 +188,9 @@ def render_income_panel(row: Mapping[str, Any]) -> str:
         f"<tbody>{_income_holding_rows(row)}</tbody></table></div>"
         "<div class='income-section-heading'><h4>Distribution History</h4><span>Realized paper income ledger</span></div>"
         "<div class='income-table-wrap'><table class='income-table income-history-table'>"
-        "<thead><tr><th>Date</th><th>Symbol</th><th>Event</th><th>Amount</th><th>Evidence</th></tr></thead>"
+        "<thead><tr><th>Date</th><th>Distribution Source</th><th>Event</th><th>Gross Amount</th><th>Income Sleeve 50%</th><th>Growth Sleeve 50%</th><th>Evidence</th></tr></thead>"
         f"<tbody>{_event_rows(row)}</tbody></table></div>"
-        "<p class='income-footnote'>Purchase Date is the first buy in the currently open position and resets after a full exit and later re-entry. Projected income is not treated as realized income. Negative income amounts represent explicit reversals or corrections, not market-price losses. Missing payment dates or analytics remain Not reported until authoritative strategy evidence is published.</p>"
+        "<p class='income-footnote'>Purchase Date is the first buy in the currently open position and resets after a full exit and later re-entry. Projected income is not treated as realized income. Reinvestment totals appear only when the paper transaction ledger records a distribution and its 50/50 destination split. Negative income amounts represent explicit reversals or corrections, not market-price losses. Missing payment dates or analytics remain Not reported until authoritative strategy evidence is published.</p>"
         "</section>"
     )
 
