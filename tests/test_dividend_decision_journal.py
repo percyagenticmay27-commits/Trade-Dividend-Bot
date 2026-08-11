@@ -80,6 +80,7 @@ def test_journal_is_read_only_and_paper_only() -> None:
         holdings=[], watchlist=[], historical_positions=[]
     )
     assert report["paper_trade_mode"] is True
+    assert report["read_only"] is True
     assert report["reporting_only"] is True
     assert report["live_trading_enabled"] is False
     assert report["broker_execution_enabled"] is False
