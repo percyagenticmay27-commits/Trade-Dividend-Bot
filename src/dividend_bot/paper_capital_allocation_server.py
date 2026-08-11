@@ -34,10 +34,13 @@ from .strategy_promotion_governance import (
     DEFAULT_PROMOTION_JOURNAL_PATH,
     DEFAULT_PROMOTION_REQUESTS_PATH,
     load_promotion_requests,
+    load_promotion_journal,
     render_strategy_review_page,
     verify_veto_token,
     veto_promotion_request,
 )
+
+from .dividend_strategy_history_alerts import build_strategy_history_alerts
 
 from .portal_dashboard_routes import (
     load_executive_dashboard_body,
@@ -59,6 +62,7 @@ DEFAULT_EXECUTIVE_DASHBOARD_JSON = Path("results/ai_cio_executive_dashboard.json
 DEFAULT_INVESTOR_DASHBOARD_JSON = Path("results/enterprise_investor_dashboard.json")
 DEFAULT_OWNER_REVIEW_CSRF_SECRET_ENV = "DIVIDEND_OWNER_REVIEW_CSRF_SECRET"
 DEFAULT_STRATEGY_PERFORMANCE_PATH = Path("results/dividend_strategy_shadow_performance.json")
+DEFAULT_PAPER_STATE_PATH = Path("paper_state.json")
 
 
 def _load_mapping(path: Path) -> dict[str, Any]:
@@ -223,6 +227,7 @@ def create_wsgi_app(
     promotion_requests_path: str | Path = DEFAULT_PROMOTION_REQUESTS_PATH,
     strategy_assignments_path: str | Path = DEFAULT_ASSIGNMENTS_PATH,
     strategy_performance_path: str | Path = DEFAULT_STRATEGY_PERFORMANCE_PATH,
+    paper_state_path: str | Path = DEFAULT_PAPER_STATE_PATH,
     promotion_journal_path: str | Path = DEFAULT_PROMOTION_JOURNAL_PATH,
     owner_review_csrf_secret: Optional[str] = None,
     investor_id: str = "default-investor",
@@ -240,6 +245,7 @@ def create_wsgi_app(
     promotion_requests_file = Path(promotion_requests_path)
     strategy_assignments_file = Path(strategy_assignments_path)
     strategy_performance_file = Path(strategy_performance_path)
+    paper_state_file = Path(paper_state_path)
     promotion_journal_file = Path(promotion_journal_path)
     csrf_secret = owner_review_csrf_secret or ""
     if not cash_file.is_file() and initial_paper_cash is not None:
@@ -279,13 +285,23 @@ def create_wsgi_app(
                     ).encode("utf-8")
                 status = "200 OK"
             elif method == "GET" and path == "/strategy-review":
+                review_requests = load_promotion_requests(promotion_requests_file)
+                review_assignments = load_assignments(strategy_assignments_file)
+                performance_report = _load_mapping(strategy_performance_file)
+                journal_events = load_promotion_journal(promotion_journal_file)
+                governance_model = build_strategy_history_alerts(
+                    assignments=review_assignments,
+                    performance_report=performance_report,
+                    requests=review_requests,
+                    journal_events=journal_events,
+                    paper_state=_load_mapping(paper_state_file),
+                )
                 review = render_strategy_review_page(
-                    load_promotion_requests(promotion_requests_file),
+                    review_requests,
                     csrf_secret=csrf_secret,
-                    assignments=load_assignments(strategy_assignments_file),
-                    performance_rows=(
-                        _load_mapping(strategy_performance_file).get("performance", [])
-                    ),
+                    assignments=review_assignments,
+                    performance_rows=performance_report.get("performance", []),
+                    governance_model=governance_model,
                 )
                 payload = _layout("Strategy Promotion Review", review, "Strategy Review").encode("utf-8")
                 status = "200 OK"
