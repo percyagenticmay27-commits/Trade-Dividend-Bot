@@ -56,7 +56,8 @@ def test_holdings_renderer_uses_professional_position_columns():
     assert "Avantis U.S. Large Cap Value ETF" in page
     assert "OPEN" in page
     assert "PARKED" in page
-    assert "✓ Verified" in page
+    assert "No current income projection evidence is available." in page
+    assert "Audit source" in page
 
 
 def test_holdings_renderer_uses_professional_not_reported_badges():
