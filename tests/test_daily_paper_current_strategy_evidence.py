@@ -120,6 +120,7 @@ def test_main_orders_current_evidence_before_paper_cycle_and_publication(
     assert run_daily_paper_cycle.main() == 0
     assert calls == [
         "current_evidence",
+        "strategy_promotion_governance",
         "paper_cycle",
         "shadow_strategy_evidence",
         "strategy_promotion_governance",
