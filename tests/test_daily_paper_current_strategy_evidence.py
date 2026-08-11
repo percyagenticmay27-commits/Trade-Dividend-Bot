@@ -91,6 +91,12 @@ def test_main_orders_current_evidence_before_paper_cycle_and_publication(
         },
     )
     monkeypatch.setattr(
+        run_daily_paper_cycle,
+        "refresh_strategy_promotion_governance",
+        lambda _root: calls.append("strategy_promotion_governance")
+        or {"assignments": {}, "requests": [], "activated": []},
+    )
+    monkeypatch.setattr(
         dividend_daily_evidence_refresh,
         "refresh_dividend_daily_evidence",
         lambda _root: calls.append("enterprise_publication")
@@ -109,5 +115,21 @@ def test_main_orders_current_evidence_before_paper_cycle_and_publication(
     assert calls == [
         "current_evidence",
         "paper_cycle",
+        "strategy_promotion_governance",
         "enterprise_publication",
     ]
+
+
+
+def test_strategy_promotion_governance_initializes_a_as_pair_primary(tmp_path: Path) -> None:
+    result = run_daily_paper_cycle.refresh_strategy_promotion_governance(tmp_path)
+    assert result["assignments"]
+    assert all(
+        row["primary_strategy"] == "STRATEGY_A"
+        for row in result["assignments"].values()
+    )
+    assert result["requests"] == []
+    assignment_path = tmp_path / "state/dividend_pair_strategy_assignments.json"
+    payload = json.loads(assignment_path.read_text(encoding="utf-8"))
+    assert payload["paper_trade_mode"] is True
+    assert payload["broker_execution_enabled"] is False
