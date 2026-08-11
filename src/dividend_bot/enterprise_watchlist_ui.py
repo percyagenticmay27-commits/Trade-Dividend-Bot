@@ -43,9 +43,12 @@ def _reason_list(value: Any) -> list[str]:
 
 
 def _progress(item: Mapping[str, Any]) -> tuple[str, str]:
-    status = str(item.get("entry_status") or item.get("status") or "WATCH").upper()
+    explicit_entry_status = item.get("entry_status")
+    status = str(explicit_entry_status or item.get("status") or "WATCH").upper()
     requirements = _reason_list(item.get("requirements_for_buy"))
     reasons = _reason_list(item.get("entry_reasons"))
+    if explicit_entry_status in (None, "") and item.get("entry_score") is None:
+        return "Current symbol-level entry evidence is unavailable.", "Generate a current Entry Score report before evaluating progression."
     if status in {"BUY", "READY", "PROMOTED", "APPROVED"}:
         return "Entry requirements satisfied.", "Await paper allocation/entry authorization."
     if requirements:
