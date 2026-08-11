@@ -274,3 +274,34 @@ def test_dividend_alias_uses_canonical_allocation_and_blocks_cross_strategy_kpi_
     assert row["opportunity_quality"] is None
     assert row["watchlist_count"] is None
     assert row["win_rate_percent"] is None
+
+
+def test_dividend_decision_journal_reaches_enterprise_kpi_row(tmp_path: Path) -> None:
+    (tmp_path / "paper_state.json").write_text(json.dumps({
+        "pairs": {
+            "AMDW / AMDL": {
+                "a_shares": 2.0,
+                "b_shares": 1.0,
+                "last_prices": {"A": 20.0, "B": 30.0},
+                "strategy_owner": "STRATEGY_A",
+                "a_strategy_owner": "STRATEGY_A",
+            }
+        }
+    }), encoding="utf-8")
+    registry = {
+        "strategy_plugins": [
+            _plugin("DIVIDEND-001", "Dividend Income Strategy")
+        ]
+    }
+
+    rows, warnings = build_strategy_kpis(registry=registry, root_dir=tmp_path)
+
+    assert warnings == []
+    row = rows[0]
+    assert row["decision_journal_status"] == "AVAILABLE"
+    assert row["decision_count"] == 2
+    assert row["decision_journal"]["strategy_id"] == "DIVIDEND-001"
+    assert all(
+        item["decision_type"] == "HOLD"
+        for item in row["decision_journal"]["decisions"]
+    )
