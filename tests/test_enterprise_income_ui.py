@@ -10,6 +10,8 @@ def _row() -> dict:
         "gross_distribution_income": 12.50,
         "income_adjustments": -1.25,
         "projected_annual_income": 120.0,
+        "income_sleeve_reinvestment": 6.25,
+        "growth_sleeve_reinvestment": 6.25,
         "holdings": [
             {
                 "symbol": "AAA",
@@ -36,6 +38,10 @@ def _row() -> dict:
                 "symbol": "AAA",
                 "event_type": "DIVIDEND_RECEIVED",
                 "amount": 12.50,
+                "income_destination_symbol": "AAA",
+                "income_destination_amount": 6.25,
+                "growth_destination_symbol": "BBB",
+                "growth_destination_amount": 6.25,
                 "source": "paper_trade_log.csv",
             },
             {
@@ -63,6 +69,10 @@ def test_income_renderer_uses_professional_summary_cards() -> None:
     assert "$10.00" in output
     assert "Income-Producing Positions" in output
     assert ">2<" in output
+    assert "Reinvested to Income Sleeve" in output
+    assert "Reinvested to Growth Sleeve" in output
+    assert "Next Reported Ex-Date" in output
+    assert "2026-08-15" in output
 
 
 def test_income_renderer_uses_strategy_owned_holding_projection_table() -> None:
@@ -83,6 +93,8 @@ def test_income_renderer_keeps_realized_and_projected_income_separate() -> None:
     assert "DIVIDEND_RECEIVED" in output
     assert "DIVIDEND_REVERSAL" in output
     assert "paper_trade_log.csv" in output
+    assert "AAA +$6.25" in output
+    assert "BBB +$6.25" in output
 
 
 def test_income_renderer_preserves_positive_and_negative_realized_events() -> None:
@@ -99,7 +111,7 @@ def test_income_renderer_does_not_fabricate_missing_values() -> None:
     assert "Projected Annual Income" in output
     assert "Not reported" in output
     assert "No strategy-owned income projection evidence is currently reported" in output
-    assert "No realized strategy-owned income events have been recorded yet" in output
+    assert "No realized distribution receipt or 50/50 reinvestment has been recorded yet" in output
 
 
 def test_income_renderer_escapes_strategy_owned_text() -> None:
