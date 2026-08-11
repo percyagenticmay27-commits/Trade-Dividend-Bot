@@ -11,10 +11,13 @@ def _row():
                 "name": "Alpha Income ETF",
                 "rank": 1,
                 "status": "WATCH",
-                "opportunity_quality": 82.5,
-                "conviction_score": 77,
-                "momentum_score": 71,
-                "daily_change_percent": 1.25,
+                "entry_score": 82.5,
+                "entry_status": "WAIT",
+                "entry_confidence": 77,
+                "entry_confidence_level": "HIGH",
+                "timing_context": "WAITING_FOR_ENTRY",
+                "entry_reasons": ["MOMENTUM_NOT_CONFIRMED"],
+                "requirements_for_buy": ["PRICE_ABOVE_EMA20", "STRATEGY_A_BUY"],
                 "market_data_stale": False,
                 "currently_held": False,
                 "sources": ["candidate_discovery.json"],
@@ -39,10 +42,13 @@ def test_watchlist_renderer_uses_professional_summary_and_table():
     assert "Currently Held" in page
     assert "Stale Market Data" in page
     assert "Alpha Income ETF" in page
-    assert "Opportunity" in page
-    assert "Conviction" in page
-    assert "Momentum" in page
-    assert "Daily Change" in page
+    assert "Entry Score" in page
+    assert "Confidence" in page
+    assert "Why It Has Not Progressed" in page
+    assert "What Happens Next" in page
+    assert "Evidence As-Of" in page
+    assert "Waiting for Price above ema20; Strategy a buy." in page
+    assert "Re-evaluate after the listed requirements are satisfied." in page
     assert "Market Data" in page
 
 
@@ -50,14 +56,14 @@ def test_watchlist_renderer_does_not_fabricate_missing_scores():
     page = render_watchlist_panel(_row())
     assert "watchlist-not-reported'>Not reported" in page
     assert "82.5" in page
-    assert "77.0" in page
-    assert "71.0" in page
+    assert "77.0 (High)" in page
 
 
 def test_watchlist_renderer_preserves_market_freshness_and_status():
     page = render_watchlist_panel(_row())
     assert "WATCH" in page
     assert "READY_FOR_SCORING" in page
+    assert "Current symbol-level entry evidence is unavailable." in page
     assert "FRESH" in page
     assert "STALE" in page
 
