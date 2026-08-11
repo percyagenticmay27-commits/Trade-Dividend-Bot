@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+from .dividend_dashboard_evidence import build_dividend_dashboard_evidence
+
 MODULE_NAME = "dividend_strategy_kpi_evidence"
 MODULE_VERSION = "1.0.0"
 SCHEMA_VERSION = "1.0"
@@ -183,6 +185,9 @@ def build_dividend_strategy_kpi_evidence(
     generated_at_utc: str | None = None,
 ) -> dict[str, Any]:
     root = Path(root_dir)
+    dashboard_evidence = build_dividend_dashboard_evidence(root)
+    decision_journal = dashboard_evidence.get("decision_journal")
+    decision_journal = decision_journal if isinstance(decision_journal, Mapping) else None
     watchlist_payload, watchlist_path = _load_first(root, WATCHLIST_SOURCES)
     opportunity_payload, opportunity_path = _load_first(root, OPPORTUNITY_SOURCES)
     performance_payload, performance_path = _load_first(root, PERFORMANCE_SOURCES)
@@ -220,6 +225,9 @@ def build_dividend_strategy_kpi_evidence(
         "watchlist_count": watchlist_count,
         "opportunity_quality": round(opportunity_quality, 2) if opportunity_quality is not None else None,
         "win_rate_percent": round(win_rate_percent, 2) if win_rate_percent is not None else None,
+        "decision_journal_status": "AVAILABLE" if decision_journal is not None else "NOT_REPORTED",
+        "decision_count": int(decision_journal.get("decision_count", 0)) if decision_journal is not None else 0,
+        "decision_journal": decision_journal,
         "metric_sources": sources,
         "calculation_methods": methods,
         "missing_metrics": missing,
