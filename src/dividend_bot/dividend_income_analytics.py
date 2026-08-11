@@ -202,6 +202,27 @@ def _next_ex_date(record: Mapping[str, Any]) -> str | None:
     return _first_text(quote, ("next_ex_dividend_date", "next_ex_date", "ex_dividend_date", "ex_date"))
 
 
+def _estimated_next_ex_date(record: Mapping[str, Any]) -> tuple[str | None, str | None]:
+    payments = sorted(date for date, _ in _observed_dividend_payments(record))
+    if len(payments) < 2:
+        return None, None
+    intervals = sorted(
+        (payments[index] - payments[index - 1]).days
+        for index in range(1, len(payments))
+        if (payments[index] - payments[index - 1]).days > 0
+    )
+    if not intervals:
+        return None, None
+    cadence_days = intervals[len(intervals) // 2]
+    if cadence_days < 5 or cadence_days > 100:
+        return None, None
+    anchor_date = _history_anchor(record)
+    estimated = payments[-1] + timedelta(days=cadence_days)
+    while estimated <= anchor_date:
+        estimated += timedelta(days=cadence_days)
+    return estimated.date().isoformat(), f"OBSERVED_MEDIAN_CADENCE_{cadence_days}_DAYS"
+
+
 def enrich_holdings_with_income_analytics(
     holdings: Sequence[Mapping[str, Any]],
     market_snapshot: Any = None,
@@ -261,6 +282,13 @@ def enrich_holdings_with_income_analytics(
                 next_ex_date = _next_ex_date(record)
                 if next_ex_date:
                     item["next_ex_dividend_date"] = next_ex_date
+                    item["next_ex_dividend_date_status"] = "AUTHORITATIVE_REPORTED"
+                else:
+                    estimated_ex_date, estimate_method = _estimated_next_ex_date(record)
+                    if estimated_ex_date:
+                        item["estimated_next_ex_dividend_date"] = estimated_ex_date
+                        item["next_ex_dividend_date_status"] = "ESTIMATED_FROM_OBSERVED_CADENCE"
+                        item["next_ex_dividend_date_method"] = estimate_method
 
                 payment_frequency = _first_text(record, ("payment_frequency", "dividend_frequency", "distribution_frequency"))
                 if not payment_frequency:
@@ -268,7 +296,7 @@ def enrich_holdings_with_income_analytics(
                 if payment_frequency:
                     item["payment_frequency"] = payment_frequency
 
-                if any(key in item for key in ("dividend_yield_percent", "yearly_distribution_yield_percent", "annual_income", "next_ex_dividend_date", "payment_frequency")):
+                if any(key in item for key in ("dividend_yield_percent", "yearly_distribution_yield_percent", "annual_income", "next_ex_dividend_date", "estimated_next_ex_dividend_date", "payment_frequency")):
                     item["income_analytics_source"] = source
 
                 if trailing_rate is not None:
