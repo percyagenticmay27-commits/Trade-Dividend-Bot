@@ -111,3 +111,34 @@ def test_writer_publishes_canonical_json(tmp_path: Path) -> None:
     assert target == tmp_path / "results" / "dividend_strategy_kpi_evidence.json"
     payload = json.loads(target.read_text(encoding="utf-8"))
     assert payload["strategy_id"] == "DIVIDEND-001"
+
+
+def test_writer_publishes_decision_journal_to_canonical_kpi_file(tmp_path: Path) -> None:
+    (tmp_path / "paper_state.json").write_text(json.dumps({
+        "pairs": {
+            "AMDW / AMDL": {
+                "a_shares": 2.0,
+                "b_shares": 1.0,
+                "last_prices": {"A": 20.0, "B": 30.0},
+                "strategy_owner": "STRATEGY_A",
+                "a_strategy_owner": "STRATEGY_A",
+            }
+        }
+    }), encoding="utf-8")
+    (tmp_path / "entry_score_report.json").write_text(json.dumps({
+        "generated_at_utc": "2026-08-11T16:00:00Z",
+        "entries": [],
+    }), encoding="utf-8")
+
+    target = write_dividend_strategy_kpi_evidence(tmp_path)
+    payload = json.loads(target.read_text(encoding="utf-8"))
+
+    assert payload["decision_journal_status"] == "AVAILABLE"
+    assert payload["decision_count"] == 2
+    assert payload["decision_journal"]["strategy_id"] == "DIVIDEND-001"
+    assert all(
+        decision["decision_type"] == "HOLD"
+        for decision in payload["decision_journal"]["decisions"]
+    )
+    assert payload["paper_trade_mode"] is True
+    assert payload["broker_execution_enabled"] is False
