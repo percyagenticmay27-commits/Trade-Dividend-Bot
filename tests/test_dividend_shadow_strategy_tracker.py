@@ -84,8 +84,8 @@ def test_primary_and_shadow_can_produce_different_results(tmp_path: Path) -> Non
     rows = {row["strategy_id"]: row for row in report["performance"]}
     assert rows["STRATEGY_A"]["total_return_percent"] == 10.0
     assert rows["STRATEGY_B"]["total_return_percent"] == 0.0
-    assert rows["STRATEGY_A"]["role"] == "PRIMARY"
-    assert rows["STRATEGY_B"]["role"] == "SHADOW_TEST"
+    assert rows["STRATEGY_A"]["role"] == "STRATEGY_A_BASELINE"
+    assert rows["STRATEGY_B"]["role"] == "TEST_CANDIDATE"
 
 
 def test_same_date_rerun_does_not_duplicate_observation_or_trade(tmp_path: Path) -> None:
