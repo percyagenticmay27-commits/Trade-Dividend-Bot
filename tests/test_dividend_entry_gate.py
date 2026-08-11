@@ -149,3 +149,37 @@ def test_safety_flags_are_permanently_paper_only():
     assert row["live_trading_enabled"] is False
     assert row["broker_execution_enabled"] is False
     assert row["order_placement_enabled"] is False
+
+
+def test_promoted_strategy_b_controls_new_entry_even_if_report_embeds_old_a_owner():
+    report = {
+        "symbol_specific": True,
+        "entries": [{
+            "symbol": "AAA",
+            "entry_status": "STRONG_ENTRY",
+            "entry_score": 90,
+            "strategy_entry_approved": False,
+            "strategy_ownership": {
+                "strategy_owner": "STRATEGY_A",
+                "reason": "STALE_PRE_PROMOTION_OWNER",
+            },
+            "strategy_signals": {
+                "strategy_a": {"buy_trigger": False},
+                "strategy_b": {"buy_eligible": True},
+            },
+            "reasons": ["STRATEGY_ENTRY_TRIGGER_ACTIVE"],
+        }],
+    }
+    row = evaluate_entry_gate(
+        symbol="AAA",
+        pair="AAA / BBB",
+        sleeve="A",
+        signal_symbol="BASE",
+        technical_snapshot=_tech("HOLD"),
+        watchlist_report=_watch(),
+        entry_score_report=report,
+        pair_primary_strategy="STRATEGY_B",
+    )
+    assert row["approved"] is True
+    assert row["strategy_owner"] == "STRATEGY_B"
+    assert row["technical_snapshot"]["pair_primary_strategy"] == "STRATEGY_B"
