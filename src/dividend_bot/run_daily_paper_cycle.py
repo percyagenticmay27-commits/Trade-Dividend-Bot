@@ -366,8 +366,41 @@ def run_daily_cycle(
     }
 
 
+def refresh_current_strategy_evidence(root_path: str | Path = ".") -> dict:
+    """Refresh and validate Strategy A/B evidence before lifecycle decisions.
+
+    The paper engine must never route an owner-controlled exit from a previous
+    cycle's entry_score_report.json. A failed or incomplete preflight blocks the
+    paper cycle rather than silently consuming stale technical authority.
+    """
+    from run_daily_dividend_cycle import run_daily_dividend_cycle
+
+    root = Path(root_path)
+    result = run_daily_dividend_cycle(root_path=str(root))
+    errors = list(result.get("errors", []))
+    if result.get("run_status") != "COMPLETE" or errors:
+        detail = "; ".join(str(item) for item in errors) or str(result.get("run_status"))
+        raise RuntimeError(f"current Strategy A/B evidence refresh failed: {detail}")
+
+    report = read_json(root / "entry_score_report.json")
+    if not isinstance(report, dict):
+        raise RuntimeError("current entry_score_report.json was not generated")
+    if not str(report.get("generated_at_utc") or "").strip():
+        raise RuntimeError("current entry_score_report.json has no generation timestamp")
+    if not isinstance(report.get("entries"), list):
+        raise RuntimeError("current entry_score_report.json has no symbol-specific entries")
+
+    return dict(result)
+
+
 def main() -> int:
     print(PAPER_LABEL)
+    try:
+        preflight = refresh_current_strategy_evidence(".")
+    except RuntimeError as exc:
+        print(f"Paper cycle blocked: {exc}")
+        return 1
+    print(f"Current Strategy A/B evidence: {preflight['run_status']}")
     result = run_daily_cycle()
     print(f"Daily cycle complete through: {result['state']['as_of_date']}")
     print(f"New log rows: {len(result['new_log_rows'])}")
