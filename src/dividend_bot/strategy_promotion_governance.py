@@ -152,6 +152,7 @@ def render_strategy_review_page(
     requests: Sequence[Mapping[str, Any]],
     *,
     csrf_secret: str,
+    assignments: Mapping[str, Mapping[str, Any]] | None = None,
 ) -> str:
     cards: list[str] = []
     for request in requests:
@@ -191,9 +192,33 @@ def render_strategy_review_page(
     body = "".join(cards) or (
         "<p class='empty-state'>No pair-specific strategy promotions are awaiting owner review.</p>"
     )
+    assignment_rows = []
+    for pair, assignment in sorted((assignments or {}).items()):
+        primary = str(assignment.get("primary_strategy") or "STRATEGY_A")
+        shadows = ", ".join(str(value) for value in assignment.get("shadow_strategies", [])) or "None"
+        source = str(assignment.get("assignment_source") or "DEFAULT_PRODUCTION_BASELINE")
+        effective = str(assignment.get("effective_at_utc") or "Not reported")
+        assignment_rows.append(
+            "<tr>"
+            f"<td><strong>{html.escape(str(pair))}</strong></td>"
+            f"<td>{html.escape(primary)}</td>"
+            f"<td>{html.escape(shadows)}</td>"
+            f"<td>{html.escape(source.replace('_', ' ').title())}</td>"
+            f"<td>{html.escape(effective)}</td></tr>"
+        )
+    assignments_body = (
+        "<div class='assignment-table-wrap'><table><thead><tr>"
+        "<th>Pair</th><th>Current Primary</th><th>Shadow/Test Strategies</th>"
+        "<th>Assignment Reason</th><th>Effective</th></tr></thead><tbody>"
+        + "".join(assignment_rows)
+        + "</tbody></table></div>"
+        if assignment_rows
+        else "<p class='empty-state'>Pair assignments have not been initialized by the daily promotion cycle.</p>"
+    )
     return (
         "<section class='panel strategy-review'><h2>Strategy Review</h2>"
         "<p>Review proposed pair-specific changes before a test strategy becomes primary. "
         "No response allows promotion after the seven-day review window; a veto keeps the current primary.</p>"
-        f"{body}</section>"
+        "<h3>Pending Owner Decisions</h3>"
+        f"{body}<h3>Current Pair Strategy Assignments</h3>{assignments_body}</section>"
     )
