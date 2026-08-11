@@ -3,7 +3,7 @@ from src.dividend_bot.dividend_realized_income import build_realized_income_evid
 
 def test_realized_income_separates_gross_adjustments_and_net() -> None:
     rows = [
-        {"Date": "2026-08-01", "Action": "PAPER_DIVIDEND_RECEIVED", "Ticker": "AVGW", "Paper_Value": "2.50"},
+        {"Date": "2026-08-01", "Pair": "AVGW / AVGX", "Action": "PAPER_DIVIDEND_RECEIVED", "Ticker": "AVGW", "Paper_Value": "2.50", "Reason": "Income ETF dividend split 50/50 between A and B"},
         {"Date": "2026-08-02", "Action": "PAPER_DIVIDEND_RECEIVED", "Ticker": "NVDW", "Paper_Value": "1.75"},
         {"Date": "2026-08-03", "Action": "PAPER_DIVIDEND_ADJUSTMENT", "Ticker": "AVGW", "Paper_Value": "-0.25"},
     ]
@@ -14,6 +14,13 @@ def test_realized_income_separates_gross_adjustments_and_net() -> None:
     assert report["realized_income_event_count"] == 3
     assert report["positive_income_event_count"] == 2
     assert report["negative_income_event_count"] == 1
+    assert report["income_sleeve_reinvestment"] == 1.25
+    assert report["growth_sleeve_reinvestment"] == 1.25
+    event = report["income_events"][0]
+    assert event["income_destination_symbol"] == "AVGW"
+    assert event["income_destination_amount"] == 1.25
+    assert event["growth_destination_symbol"] == "AVGX"
+    assert event["growth_destination_amount"] == 1.25
 
 
 def test_positive_reversal_amount_is_normalized_negative() -> None:
