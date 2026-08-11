@@ -146,3 +146,10 @@ def test_position_history_css_is_professional_responsive_and_scrollable() -> Non
     assert ".positive" in css
     assert ".negative" in css
     assert "@media" in css
+
+
+def test_position_history_translates_raw_evidence_filename_for_viewers() -> None:
+    output = render_position_history_panel(_row())
+    assert "Persisted strategy-owner exit record" in output
+    assert "Audit source" in output
+    assert "paper_state.json" in output
