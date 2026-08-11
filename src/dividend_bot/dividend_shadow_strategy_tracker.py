@@ -67,17 +67,18 @@ def _signals_for_pair(
     return {}
 
 
-def _new_strategy_state(as_of: str) -> dict[str, Any]:
+def _new_strategy_state(as_of: str, allocation_basis: float) -> dict[str, Any]:
     return {
         "evaluation_start": as_of,
         "evaluation_end": as_of,
-        "starting_value": STARTING_VALUE,
-        "cash": STARTING_VALUE,
+        "starting_value": allocation_basis,
+        "allocation_basis": allocation_basis,
+        "cash": allocation_basis,
         "a_shares": 0.0,
         "b_shares": 0.0,
         "in_market": False,
-        "current_value": STARTING_VALUE,
-        "peak_value": STARTING_VALUE,
+        "current_value": allocation_basis,
+        "peak_value": allocation_basis,
         "max_drawdown_percent": 0.0,
         "observation_count": 0,
         "completed_trade_count": 0,
@@ -128,7 +129,7 @@ def _strategy_signal(signals: Mapping[str, Any], strategy_id: str) -> tuple[bool
 def _value(row: Mapping[str, Any], a_price: float, b_price: float) -> float:
     if bool(row.get("in_market")):
         return float(row.get("a_shares", 0)) * a_price + float(row.get("b_shares", 0)) * b_price
-    return float(row.get("cash", STARTING_VALUE))
+    return float(row.get("cash", row.get("starting_value", LEGACY_STARTING_VALUE)))
 
 
 def update_shadow_strategy_performance(
@@ -196,7 +197,7 @@ def update_shadow_strategy_performance(
                 action = str(row.get("last_action") or "SHADOW_HOLD")
 
             current = _value(row, a_price, b_price)
-            peak = max(float(row.get("peak_value", STARTING_VALUE)), current)
+            peak = max(float(row.get("peak_value", allocation_basis)), current)
             drawdown = ((peak - current) / peak * 100.0) if peak > 0 else 0.0
             row.update(
                 {
@@ -221,7 +222,8 @@ def update_shadow_strategy_performance(
                     "role": "STRATEGY_A_BASELINE" if strategy_id == "STRATEGY_A" else "TEST_CANDIDATE",
                     "evaluation_start": row["evaluation_start"],
                     "evaluation_end": as_of,
-                    "total_return_percent": round((current / STARTING_VALUE - 1.0) * 100.0, 8),
+                    "virtual_capital_basis": round(allocation_basis, 8),
+                    "total_return_percent": round((current / allocation_basis - 1.0) * 100.0, 8),
                     "max_drawdown_percent": round(float(row["max_drawdown_percent"]), 8),
                     "observation_count": int(row["observation_count"]),
                     "completed_trade_count": int(row["completed_trade_count"]),
@@ -237,9 +239,9 @@ def update_shadow_strategy_performance(
             )
 
     state_payload = {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "as_of_date": as_of,
-        "starting_value_per_strategy_pair": STARTING_VALUE,
+        "capital_basis_policy": "MATCH_AUTHORITATIVE_PAIR_CAPITAL_BUCKET",
         "paper_trade_mode": True,
         "shadow_only": True,
         "live_trading_enabled": False,
