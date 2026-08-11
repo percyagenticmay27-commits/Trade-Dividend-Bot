@@ -11,6 +11,8 @@ def _report():
                 "strategy_id": "DIVIDEND-001",
                 "display_name": "Dividend Income Strategy",
                 "allocated_capital": 5000.0,
+                "realized_gain": 12.5,
+                "unrealized_gain": -203.06,
                 "health_status": "HEALTHY",
                 "evidence_status": "AVAILABLE",
                 "runtime_status": "READY",
@@ -54,3 +56,9 @@ def test_strategy_css_includes_position_history_styles() -> None:
     css = strategy_ui_css()
     assert ".position-history-pro" in css
     assert ".position-history-table" in css
+
+
+def test_performance_gain_and_loss_metrics_are_semantically_colored() -> None:
+    output = render_strategy_workspace(_report(), audience="executive")
+    assert "metric-positive'>+$12.50" in output
+    assert "metric-negative'>-$203.06" in output
