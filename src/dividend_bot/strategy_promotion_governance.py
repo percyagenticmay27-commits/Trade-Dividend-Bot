@@ -148,11 +148,165 @@ def veto_promotion_request(
     return event
 
 
+
+def _metric(row: Mapping[str, Any], key: str, default: float = 0.0) -> float:
+    try:
+        return float(row.get(key, default))
+    except (TypeError, ValueError):
+        return default
+
+
+def _evaluation_days(primary: Mapping[str, Any], candidate: Mapping[str, Any]) -> int:
+    try:
+        start = max(
+            datetime.fromisoformat(str(primary.get("evaluation_start"))[:10]),
+            datetime.fromisoformat(str(candidate.get("evaluation_start"))[:10]),
+        )
+        end = min(
+            datetime.fromisoformat(str(primary.get("evaluation_end"))[:10]),
+            datetime.fromisoformat(str(candidate.get("evaluation_end"))[:10]),
+        )
+    except (TypeError, ValueError):
+        return 0
+    return max((end - start).days + 1, 0)
+
+
+def _comparison_state(
+    primary: Mapping[str, Any],
+    candidate: Mapping[str, Any],
+    request: Mapping[str, Any] | None,
+) -> tuple[str, str]:
+    if request:
+        status = str(request.get("status") or "").upper()
+        if status == PENDING:
+            deadline = str(request.get("veto_deadline") or "not reported")
+            return "PENDING REVIEW", f"Qualified; owner may veto through {deadline}."
+        if status == VETOED:
+            return "OWNER VETOED", "The owner rejected this pair-specific promotion."
+        if status == PROMOTED:
+            return "PROMOTED", "Promotion completed and the pair assignment was updated."
+
+    days = _evaluation_days(primary, candidate)
+    observations = min(
+        int(_metric(primary, "observation_count")),
+        int(_metric(candidate, "observation_count")),
+    )
+    trades = min(
+        int(_metric(primary, "completed_trade_count")),
+        int(_metric(candidate, "completed_trade_count")),
+    )
+    missing = []
+    if days < 90:
+        missing.append(f"{days}/90 evaluation days")
+    if observations < 60:
+        missing.append(f"{observations}/60 observations")
+    if trades < 1:
+        missing.append(f"{trades}/1 completed trades")
+    if missing:
+        return "COLLECTING EVIDENCE", "Still required: " + ", ".join(missing) + "."
+
+    primary_return = _metric(primary, "total_return_percent")
+    candidate_return = _metric(candidate, "total_return_percent")
+    if candidate_return <= primary_return:
+        return (
+            "NOT QUALIFIED",
+            f"Candidate return {candidate_return:.2f}% is not higher than primary {primary_return:.2f}%.",
+        )
+    primary_drawdown = abs(_metric(primary, "max_drawdown_percent"))
+    candidate_drawdown = abs(_metric(candidate, "max_drawdown_percent"))
+    if candidate_drawdown > primary_drawdown:
+        return (
+            "NOT QUALIFIED",
+            f"Candidate drawdown {candidate_drawdown:.2f}% is worse than primary {primary_drawdown:.2f}%.",
+        )
+    return "QUALIFIED", "All evidence rules passed; awaiting the promotion request cycle."
+
+
+def _render_strategy_comparison(
+    assignments: Mapping[str, Mapping[str, Any]],
+    performance_rows: Sequence[Mapping[str, Any]],
+    requests: Sequence[Mapping[str, Any]],
+) -> str:
+    by_pair: dict[str, list[Mapping[str, Any]]] = {}
+    for row in performance_rows:
+        if isinstance(row, Mapping):
+            by_pair.setdefault(str(row.get("pair") or ""), []).append(row)
+    latest_request = {
+        str(row.get("pair") or ""): row
+        for row in requests
+        if isinstance(row, Mapping)
+    }
+    rows: list[str] = []
+    for pair, assignment in sorted(assignments.items()):
+        evidence = by_pair.get(pair, [])
+        primary_id = str(assignment.get("primary_strategy") or "STRATEGY_A")
+        primary = next(
+            (row for row in evidence if str(row.get("strategy_id")) == primary_id),
+            None,
+        )
+        candidates = [
+            row for row in evidence if str(row.get("strategy_id") or "") != primary_id
+        ]
+        if primary is None or not candidates:
+            rows.append(
+                "<tr>"
+                f"<td><strong>{html.escape(pair)}</strong></td>"
+                f"<td>{html.escape(primary_id)}</td>"
+                "<td colspan='9'><span class='status collecting'>Evidence unavailable</span> "
+                "The daily shadow comparison has not published both strategies.</td></tr>"
+            )
+            continue
+        for candidate in candidates:
+            candidate_id = str(candidate.get("strategy_id") or "Not reported")
+            request = latest_request.get(pair)
+            label, explanation = _comparison_state(primary, candidate, request)
+            css = (
+                "pending" if label == "PENDING REVIEW"
+                else "qualified" if label in {"QUALIFIED", "PROMOTED"}
+                else "vetoed" if label == "OWNER VETOED"
+                else "collecting"
+            )
+            days = _evaluation_days(primary, candidate)
+            observations = min(
+                int(_metric(primary, "observation_count")),
+                int(_metric(candidate, "observation_count")),
+            )
+            trades = min(
+                int(_metric(primary, "completed_trade_count")),
+                int(_metric(candidate, "completed_trade_count")),
+            )
+            rows.append(
+                "<tr>"
+                f"<td><strong>{html.escape(pair)}</strong></td>"
+                f"<td>{html.escape(primary_id)}</td>"
+                f"<td>{html.escape(candidate_id)}</td>"
+                f"<td>${_metric(candidate, 'virtual_capital_basis'):,.2f}</td>"
+                f"<td>{_metric(primary, 'total_return_percent'):.2f}%</td>"
+                f"<td>{_metric(candidate, 'total_return_percent'):.2f}%</td>"
+                f"<td>{_metric(primary, 'max_drawdown_percent'):.2f}% / "
+                f"{_metric(candidate, 'max_drawdown_percent'):.2f}%</td>"
+                f"<td>{days}/90</td><td>{observations}/60</td><td>{trades}/1</td>"
+                f"<td><span class='status {css}'>{html.escape(label)}</span>"
+                f"<small>{html.escape(explanation)}</small></td></tr>"
+            )
+    if not rows:
+        return "<p class='empty-state'>No pair strategy comparison evidence is available yet.</p>"
+    return (
+        "<div class='comparison-table-wrap'><table class='comparison-table'>"
+        "<thead><tr><th>Pair</th><th>Current Primary</th><th>Test Candidate</th>"
+        "<th>Virtual Basis</th><th>Primary Return</th><th>Candidate Return</th>"
+        "<th>Drawdown P / C</th><th>Days</th><th>Observations</th>"
+        "<th>Closed Trades</th><th>Qualification / Next Step</th></tr></thead><tbody>"
+        + "".join(rows)
+        + "</tbody></table></div>"
+    )
+
 def render_strategy_review_page(
     requests: Sequence[Mapping[str, Any]],
     *,
     csrf_secret: str,
     assignments: Mapping[str, Mapping[str, Any]] | None = None,
+    performance_rows: Sequence[Mapping[str, Any]] = (),
 ) -> str:
     cards: list[str] = []
     for request in requests:
@@ -215,10 +369,18 @@ def render_strategy_review_page(
         if assignment_rows
         else "<p class='empty-state'>Pair assignments have not been initialized by the daily promotion cycle.</p>"
     )
+    comparison = _render_strategy_comparison(
+        assignments or {},
+        performance_rows,
+        requests,
+    )
     return (
         "<section class='panel strategy-review'><h2>Strategy Review</h2>"
         "<p>Review proposed pair-specific changes before a test strategy becomes primary. "
         "No response allows promotion after the seven-day review window; a veto keeps the current primary.</p>"
-        "<h3>Pending Owner Decisions</h3>"
+        "<h3>Strategy Performance and Qualification</h3>"
+        "<p>Each candidate uses isolated virtual capital equal to the pair's assigned paper-capital bucket. "
+        "Virtual values never enter portfolio totals or the paper ledger.</p>"
+        f"{comparison}<h3>Pending Owner Decisions</h3>"
         f"{body}<h3>Current Pair Strategy Assignments</h3>{assignments_body}</section>"
     )
