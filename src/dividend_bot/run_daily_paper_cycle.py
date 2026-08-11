@@ -7,6 +7,7 @@ import json
 from datetime import date
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any, Mapping
 
 import pandas as pd
 
