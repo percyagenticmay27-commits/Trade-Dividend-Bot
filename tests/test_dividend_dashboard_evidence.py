@@ -67,6 +67,10 @@ def test_builds_strategy_scoped_holdings_income_watchlist_and_performance(tmp_pa
     assert report["watchlist_count"] == 1
     assert report["watchlist"][0]["symbol"] == "AVGW"
     assert report["income"] == 4.0
+    assert report["state_reported_income"] == 4.0
+    assert report["ledger_net_income_received"] == 2.5
+    assert report["income_reconciliation_status"] == "MISMATCH"
+    assert report["income_reconciliation_difference"] == 1.5
     assert report["income_events"][0]["amount"] == 2.5
     assert report["realized_gain"] == 5.5
     assert report["performance_detail"]["win_rate_percent"] == 100.0
