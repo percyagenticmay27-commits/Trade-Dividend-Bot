@@ -1,26 +1,16 @@
-"""Strategy ownership routing for Dividend paper positions.
+"""Pair-specific strategy authority routing for Dividend paper positions.
 
-This module does not place or simulate orders. It decides which Dividend timing
-strategy owns a prospective or existing paper position so lifecycle exits cannot
-silently switch methodologies.
+Strategy A is the production baseline for every pair. Strategy B and future
+strategies remain test candidates unless evidence-backed governance promotes one
+for a specific pair. The current pair assignment controls new entries and future
+exit decisions. A position's original entry strategy is retained separately as
+historical evidence and is never rewritten by a later promotion.
 
-Rules
------
-* Existing valid Strategy A/B ownership is sticky for the life of the open position.
-* A new position may be owned by Strategy A when only Strategy A is BUY-active.
-* A new position may be owned by Strategy B when only Strategy B is BUY-active.
-* If neither strategy is BUY-active, ownership is unresolved and entry must wait.
-* If both strategies are BUY-active, ownership is intentionally unresolved until
-  an explicit precedence/selection policy exists. The router fails closed rather
-  than arbitrarily choosing a strategy.
-* Strategy A's fast Stoch RSI bearish cross is warning evidence only. It is
-  preserved through owner routing while the slower Stochastic Oscillator decides
-  whether the warning becomes an executable exit.
-* Legacy paper positions that predate ownership may be explicitly tagged
-  LEGACY_UNASSIGNED. They are never retroactively assigned Strategy A or B.
-  Their ordinary technical exit requires independent SELL confirmation from both
-  Strategy A and Strategy B. One-strategy-only deterioration is buffered as a
-  warning, not executed as a sale.
+Legacy-unassigned consensus helpers remain available only for compatibility and
+audit reconstruction. The active paper lifecycle routes through the current
+pair-specific primary assignment.
+
+This module is PAPER ONLY and never places or simulates brokerage orders.
 """
 from __future__ import annotations
 
