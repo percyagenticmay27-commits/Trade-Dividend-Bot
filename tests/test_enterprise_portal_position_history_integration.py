@@ -56,6 +56,8 @@ def test_strategy_css_includes_position_history_styles() -> None:
     css = strategy_ui_css()
     assert ".position-history-pro" in css
     assert ".position-history-table" in css
+    assert ".metric-table td .metric-positive" in css
+    assert ".metric-table td .metric-negative" in css
 
 
 def test_performance_gain_and_loss_metrics_are_semantically_colored() -> None:
