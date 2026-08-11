@@ -18,12 +18,13 @@ CONFIG = {
 }
 
 
-def _state(as_of: str, a_price: float, b_price: float) -> dict:
+def _state(as_of: str, a_price: float, b_price: float, capital_bucket: float = 600.0) -> dict:
     return {
         "as_of_date": as_of,
         "pairs": {
             "AMDW / AMDL": {
                 "last_prices": {"A": a_price, "B": b_price},
+                "capital_bucket": capital_bucket,
                 "a_shares": 999,
                 "b_shares": 999,
                 "sgov_balance": 0,
@@ -59,7 +60,9 @@ def test_shadow_strategies_use_isolated_virtual_capital_only(tmp_path: Path) -> 
     assert json.dumps(paper, sort_keys=True) == original
     assert len(report["performance"]) == 2
     assert {row["last_action"] for row in report["performance"]} == {"SHADOW_BUY"}
-    assert all(row["current_shadow_value"] == 100.0 for row in report["performance"])
+    assert all(row["virtual_capital_basis"] == 600.0 for row in report["performance"])
+    assert all(row["current_shadow_value"] == 600.0 for row in report["performance"])
+    assert all(row["virtual_gain_loss"] == 0.0 for row in report["performance"])
     assert all(row["shadow_only"] is True for row in report["performance"])
     assert all(row["broker_execution_enabled"] is False for row in report["performance"])
 
@@ -124,7 +127,8 @@ def test_shadow_sell_closes_virtual_trade_without_touching_paper_ledger(tmp_path
     row = next(item for item in report["performance"] if item["strategy_id"] == "STRATEGY_A")
     assert row["last_action"] == "SHADOW_SELL"
     assert row["completed_trade_count"] == 1
-    assert row["current_shadow_value"] == 90.0
+    assert row["current_shadow_value"] == 540.0
+    assert row["virtual_gain_loss"] == -60.0
     assert row["max_drawdown_percent"] == 10.0
     assert not (tmp_path / "paper_trade_log.csv").exists()
 
@@ -140,3 +144,55 @@ def test_missing_signal_evidence_holds_and_does_not_fabricate_trade(tmp_path: Pa
     assert all(row["last_action"] == "SHADOW_HOLD" for row in report["performance"])
     assert all(row["completed_trade_count"] == 0 for row in report["performance"])
     assert all(row["total_return_percent"] == 0.0 for row in report["performance"])
+
+
+def test_legacy_100_dollar_state_is_rebased_without_changing_return_history(
+    tmp_path: Path,
+) -> None:
+    state_path = tmp_path / "shadow.json"
+    report_path = tmp_path / "report.json"
+    state_path.write_text(
+        json.dumps({
+            "schema_version": "1.0",
+            "as_of_date": "2026-08-10",
+            "starting_value_per_strategy_pair": 100.0,
+            "pairs": {
+                "AMDW / AMDL": {
+                    "STRATEGY_A": {
+                        "evaluation_start": "2026-08-10",
+                        "evaluation_end": "2026-08-10",
+                        "starting_value": 100.0,
+                        "cash": 0.0,
+                        "a_shares": 3.5,
+                        "b_shares": 3.0,
+                        "in_market": True,
+                        "current_value": 100.0,
+                        "peak_value": 100.0,
+                        "max_drawdown_percent": 0.0,
+                        "observation_count": 1,
+                        "completed_trade_count": 0,
+                        "last_observation_date": "2026-08-10",
+                        "last_action": "SHADOW_BUY",
+                    }
+                }
+            },
+        }),
+        encoding="utf-8",
+    )
+    report = update_shadow_strategy_performance(
+        paper_state=_state("2026-08-11", 22.0, 11.0),
+        entry_score_report=_evidence(),
+        pair_config=CONFIG,
+        state_path=state_path,
+        report_path=report_path,
+    )
+    row = next(
+        item
+        for item in report["performance"]
+        if item["strategy_id"] == "STRATEGY_A"
+    )
+    assert row["virtual_capital_basis"] == 600.0
+    assert row["current_shadow_value"] == 660.0
+    assert row["virtual_gain_loss"] == 60.0
+    assert row["total_return_percent"] == 10.0
+    assert row["observation_count"] == 2
