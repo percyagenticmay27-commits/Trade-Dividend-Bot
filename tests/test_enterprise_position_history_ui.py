@@ -91,9 +91,9 @@ def test_position_history_renderer_shows_strategy_entry_exit_methods_and_reason(
     output = render_position_history_panel(_row())
     assert "Entry Method" in output
     assert "Exit Method" in output
-    assert "Exit Reason" in output
+    assert "Why Sold" in output
     assert output.count("STRATEGY_A") >= 2
-    assert "STOCH_RSI_D_CROSSED_ABOVE_K" in output
+    assert "Stochastic RSI turned bearish." in output
     assert "paper_state.json" in output
 
 
