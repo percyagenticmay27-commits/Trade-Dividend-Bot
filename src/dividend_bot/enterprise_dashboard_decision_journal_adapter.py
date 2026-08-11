@@ -114,6 +114,21 @@ def attach_strategy_decision_journals(
         row = dict(source_row)
         strategy_id = str(row.get("strategy_id") or "").strip()
         journal = journals.get(strategy_id)
+        journal_path = paths.get(strategy_id)
+        if journal is None:
+            embedded = row.get("decision_journal")
+            if isinstance(embedded, Mapping):
+                safety_error = _journal_safety_error(
+                    embedded, Path(f"embedded:{strategy_id}")
+                )
+                strategy_error = _cross_strategy_error(
+                    embedded, Path(f"embedded:{strategy_id}")
+                )
+                if safety_error or strategy_error:
+                    warnings.append(str(safety_error or strategy_error))
+                else:
+                    journal = dict(embedded)
+                    journal_path = "EMBEDDED_HOST_EVIDENCE"
         if journal is None:
             row["decision_journal"] = None
             row["decision_journal_status"] = "NOT_REPORTED"
@@ -126,7 +141,7 @@ def attach_strategy_decision_journals(
                 "AVAILABLE" if decision_count else "EMPTY"
             )
             row["decision_count"] = decision_count
-            row["decision_journal_path"] = paths[strategy_id]
+            row["decision_journal_path"] = journal_path
         enriched.append(row)
 
     return enriched, warnings
