@@ -61,7 +61,7 @@ def test_watchlist_renderer_does_not_fabricate_missing_scores():
 
 def test_watchlist_renderer_preserves_market_freshness_and_status():
     page = render_watchlist_panel(_row())
-    assert "WATCH" in page
+    assert ">WAIT<" in page
     assert "READY_FOR_SCORING" in page
     assert "Current symbol-level entry evidence is unavailable." in page
     assert "FRESH" in page
