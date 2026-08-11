@@ -194,7 +194,7 @@ def render_income_panel(row: Mapping[str, Any]) -> str:
         + "</div>"
         "<div class='income-accounting-note'><strong>Income Accounting</strong> Price gains/losses are excluded. Only strategy-owned distribution receipts, reversals, and income adjustments affect Net Income Received.</div>"
         + reconciliation
-        "<div class='income-section-heading'><h4>Income by Holding</h4><span>Observed distribution evidence and current projections</span></div>"
+        + "<div class='income-section-heading'><h4>Income by Holding</h4><span>Observed distribution evidence and current projections</span></div>"
         "<div class='income-table-wrap'><table class='income-table'>"
         "<thead><tr><th>Symbol</th><th>Name</th><th>Purchase Date</th><th>Yearly Distribution Yield</th><th>Annual Income</th><th>Frequency</th><th>Next Ex-Date</th><th>Evidence</th></tr></thead>"
         f"<tbody>{_income_holding_rows(row)}</tbody></table></div>"
