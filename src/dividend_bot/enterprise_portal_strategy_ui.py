@@ -149,6 +149,60 @@ def _list_rows(value: Any, *, empty: str) -> str:
     return "<ul>" + "".join(items) + "</ul>"
 
 
+_REASON_EXPLANATIONS = {
+    "PRICE_BELOW_EMA20": (
+        "Price is below the 20-day EMA. This is Strategy B's sell condition; "
+        "it is not, by itself, authorization to exit a legacy-unassigned position."
+    ),
+    "PRICE_ABOVE_EMA20": (
+        "Price is above the 20-day EMA, so Strategy B's sell condition is not active."
+    ),
+    "LEGACY_CONSENSUS_PENDING": (
+        "This legacy-unassigned position remains held until both Strategy A and "
+        "Strategy B independently confirm a sell."
+    ),
+}
+
+
+def _alert_rows(value: Any, *, empty: str) -> str:
+    if not isinstance(value, list) or not value:
+        return f"<p class='empty-state'>{html.escape(empty)}</p>"
+    cards: list[str] = []
+    for item in value:
+        if not isinstance(item, Mapping):
+            cards.append(
+                "<article class='strategy-alert-card'>"
+                f"<p>{html.escape(str(item))}</p></article>"
+            )
+            continue
+        symbol = html.escape(str(item.get("symbol") or item.get("pair") or "Strategy alert"))
+        severity = html.escape(str(item.get("severity") or "MONITOR").replace("_", " ").title())
+        message = html.escape(str(item.get("message") or "No plain-language explanation was reported."))
+        reasons = item.get("reasons")
+        if not isinstance(reasons, list):
+            reasons = []
+        explanations = [
+            _REASON_EXPLANATIONS.get(
+                str(reason),
+                str(reason).replace("_", " ").capitalize(),
+            )
+            for reason in reasons
+        ]
+        evidence = (
+            "<ul class='strategy-alert-evidence'>"
+            + "".join(f"<li>{html.escape(explanation)}</li>" for explanation in explanations)
+            + "</ul>"
+            if explanations
+            else ""
+        )
+        cards.append(
+            "<article class='strategy-alert-card'>"
+            f"<header><strong>{symbol}</strong><span>{severity}</span></header>"
+            f"<p>{message}</p>{evidence}</article>"
+        )
+    return "<div class='strategy-alert-list'>" + "".join(cards) + "</div>"
+
+
 def _metric_table(items: tuple[tuple[str, str], ...]) -> str:
     rows = "".join(
         f"<tr><th>{html.escape(label)}</th><td>{value}</td></tr>"
@@ -259,15 +313,15 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
         performance_body = (
             "<h3>Performance</h3>"
             + _metric_table((
-                ("Realized Gain", _money(row.get("realized_gain"))),
-                ("Unrealized Gain", _money(row.get("unrealized_gain"))),
+                ("Realized Gain", _gain_loss_money(row.get("realized_gain"))),
+                ("Unrealized Gain", _gain_loss_money(row.get("unrealized_gain"))),
                 ("Win Rate", _value(row.get("win_rate_percent"), "%")),
                 ("Opportunity Quality", _value(row.get("opportunity_quality"), " / 100")),
             ))
         )
         alerts_body = (
             "<h3>Alerts</h3>"
-            + _list_rows(
+            + _alert_rows(
                 row.get("alerts") or row.get("risk_flags"),
                 empty="No strategy-owned alerts are currently reported.",
             )
@@ -420,7 +474,7 @@ def strategy_ui_css() -> str:
 .workspace-tab[data-workspace-tab-target='executive-summary'].active{background:var(--cio-purple)}.workspace-tab[data-workspace-tab-target='portfolio'].active{background:var(--cio-blue)}.workspace-tab[data-workspace-tab-target='watchlist'].active{background:var(--cio-cyan)}.workspace-tab[data-workspace-tab-target='holdings'].active{background:#4f46e5}.workspace-tab[data-workspace-tab-target='income'].active{background:var(--cio-green)}.workspace-tab[data-workspace-tab-target='performance'].active{background:#7c3aed}.workspace-tab[data-workspace-tab-target='alerts'].active{background:var(--cio-amber)}.workspace-tab[data-workspace-tab-target='decisions'].active{background:#be185d}
 .workspace-tab-panel{background:#fff;border:1px solid var(--cio-border);border-radius:14px;padding:18px}.workspace-tab-panel h3{margin-top:0;color:var(--cio-navy)}
 .metric-table{overflow:hidden;border:1px solid var(--cio-border);border-radius:10px}.metric-table th,.metric-table td{padding:11px 12px;border-bottom:1px solid #e7edf6}.metric-table tr:last-child th,.metric-table tr:last-child td{border-bottom:0}.metric-table tr:nth-child(even){background:#f8faff}.metric-table td{font-weight:800;color:#27364f}.metric-table td .metric-positive{color:#087443!important}.metric-table td .metric-negative{color:#b42318!important}.metric-table td .metric-neutral{color:#475569!important}
-.empty-state{padding:18px;border:1px dashed #b8c5d9;border-radius:10px;background:#f8fafc;color:#64748b;text-align:center}
+.strategy-alert-list{display:grid;gap:12px}.strategy-alert-card{border:1px solid #f2c46d;border-left:5px solid var(--cio-amber);border-radius:12px;background:#fffaf0;padding:14px 16px}.strategy-alert-card header{display:flex;justify-content:space-between;gap:12px;align-items:center}.strategy-alert-card header span{padding:4px 8px;border-radius:999px;background:#ffedd5;color:#9a3412;font-size:12px;font-weight:800}.strategy-alert-card p{margin:10px 0;color:#344054}.strategy-alert-evidence{margin:8px 0 0;padding-left:20px;color:#475467}.strategy-alert-evidence li{margin:5px 0}\n.empty-state{padding:18px;border:1px dashed #b8c5d9;border-radius:10px;background:#f8fafc;color:#64748b;text-align:center}
 @media(max-width:700px){.data-availability{display:block}.data-availability strong{margin-bottom:6px}.portal-frame{padding:10px}}
 </style>"""
     return base_css + holdings_ui_css() + watchlist_ui_css()
