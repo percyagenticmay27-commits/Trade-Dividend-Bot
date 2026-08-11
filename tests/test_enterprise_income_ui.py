@@ -130,3 +130,13 @@ def test_income_css_is_responsive_and_self_contained() -> None:
     assert ".income-negative" in css
     assert "overflow-x:auto" in css
     assert "@media(max-width:520px)" in css
+
+
+def test_income_renderer_explains_state_to_ledger_mismatch() -> None:
+    row = _row()
+    row["income_reconciliation_status"] = "MISMATCH"
+    row["income_reconciliation_difference"] = 7.50
+    output = render_income_panel(row)
+    assert "Income ledger needs review" in output
+    assert "differ by +$7.50" in output
+    assert "does not invent a missing receipt" in output
