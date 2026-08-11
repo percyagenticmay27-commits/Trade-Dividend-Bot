@@ -73,17 +73,37 @@ def build_realized_income_evidence(rows: Iterable[Mapping[str, Any]]) -> dict[st
         else:
             income_adjustments += amount
 
+        pair = row.get("Pair") or row.get("pair")
+        reason = str(row.get("Reason") or row.get("reason") or "")
+        pair_symbols = [part.strip().upper() for part in str(pair or "").split("/") if part.strip()]
+        split_reinvestment = (
+            is_receipt
+            and len(pair_symbols) >= 2
+            and "50/50" in reason
+        )
         events.append({
             "date": row.get("Date") or row.get("date"),
-            "symbol": row.get("Ticker") or row.get("ticker") or row.get("Pair") or "DIVIDEND",
-            "pair": row.get("Pair") or row.get("pair"),
+            "symbol": row.get("Ticker") or row.get("ticker") or pair or "DIVIDEND",
+            "pair": pair,
             "action": action,
             "event_type": event_type,
             "amount": amount,
+            "reason": reason or None,
+            "reinvestment_method": "50_50_INCOME_AND_GROWTH_SLEEVES" if split_reinvestment else None,
+            "income_destination_symbol": pair_symbols[0] if split_reinvestment else None,
+            "income_destination_amount": round(amount / 2.0, 2) if split_reinvestment else None,
+            "growth_destination_symbol": pair_symbols[1] if split_reinvestment else None,
+            "growth_destination_amount": round(amount / 2.0, 2) if split_reinvestment else None,
             "source": "paper_trade_log.csv",
         })
 
     net_income = round(gross_distributions + income_adjustments, 2)
+    income_reinvestment = round(sum(
+        float(item.get("income_destination_amount") or 0.0) for item in events
+    ), 2)
+    growth_reinvestment = round(sum(
+        float(item.get("growth_destination_amount") or 0.0) for item in events
+    ), 2)
     return {
         "gross_distribution_income": round(gross_distributions, 2),
         "income_adjustments": round(income_adjustments, 2),
@@ -92,6 +112,9 @@ def build_realized_income_evidence(rows: Iterable[Mapping[str, Any]]) -> dict[st
         "positive_income_event_count": sum(1 for item in events if (item.get("amount") or 0) > 0),
         "negative_income_event_count": sum(1 for item in events if (item.get("amount") or 0) < 0),
         "income_events": events[-100:],
+        "income_sleeve_reinvestment": income_reinvestment,
+        "growth_sleeve_reinvestment": growth_reinvestment,
+        "reinvestment_accounting_method": "RECORDED_50_50_PAPER_DISTRIBUTION_SPLIT",
         "income_accounting_method": "PAPER_TRANSACTION_LEDGER_NET_OF_ADJUSTMENTS",
         "income_evidence_source": "paper_trade_log.csv",
         "paper_trade_mode": True,
