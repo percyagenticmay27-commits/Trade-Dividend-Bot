@@ -150,6 +150,7 @@ def test_shadow_evidence_is_written_before_promotion_evaluation(tmp_path: Path) 
         "pairs": {
             "AMDW / AMDL": {
                 "last_prices": {"A": 20.0, "B": 10.0},
+                "capital_bucket": 600.0,
             }
         },
     }
