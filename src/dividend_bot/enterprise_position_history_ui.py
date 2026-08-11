@@ -41,6 +41,22 @@ def _exit_reason(value: Any) -> str:
     return html.escape(raw.replace("_", " ").strip().capitalize())
 
 
+def _evidence_explanation(value: Any) -> str:
+    source = str(value or "").strip()
+    labels = {
+        "paper_state.json": "Persisted strategy-owner exit record",
+        "paper_trade_log.csv": "Paper transaction ledger",
+        "entry_score_report.json": "Current technical strategy evidence",
+    }
+    explanation = labels.get(source, "Strategy-owned lifecycle evidence" if source else "Not reported")
+    if not source:
+        return explanation
+    return (
+        f"{html.escape(explanation)}"
+        f"<details class='position-history-evidence'><summary>Audit source</summary>{html.escape(source)}</details>"
+    )
+
+
 def _gain_loss(value: Any) -> tuple[str, str]:
     try:
         number = float(value)
@@ -122,7 +138,7 @@ def render_position_history_panel(row: Mapping[str, Any]) -> str:
                 f"<td class='position-history-reason'>{_exit_reason(item.get('last_exit_reason'))}</td>"
                 f"<td>{_text(item.get('last_exit_action'))}</td>"
                 f"<td>{_text(item.get('reentry_count'))}</td>"
-                f"<td>{_text(item.get('strategy_exit_evidence_source') or item.get('evidence_source'))}</td>"
+                f"<td class='position-history-evidence-cell'>{_evidence_explanation(item.get('strategy_exit_evidence_source') or item.get('evidence_source'))}</td>"
                 "</tr>"
             )
         body = (
@@ -143,5 +159,5 @@ def render_position_history_panel(row: Mapping[str, Any]) -> str:
 
 def position_history_ui_css() -> str:
     return """<style>
-.position-history-pro{margin-top:24px}.position-history-heading h3{margin:0 0 4px;font-size:18px}.position-history-heading p{margin:0 0 14px;color:#667085}.position-history-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}.position-history-summary>div{border:1px solid #e4e7ec;border-radius:10px;padding:12px;background:#fff}.position-history-summary span{display:block;color:#667085;font-size:12px}.position-history-summary strong{display:block;margin-top:4px;font-size:18px}.position-history-scroll{overflow-x:auto;border:1px solid #e4e7ec;border-radius:12px;background:#fff}.position-history-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1580px}.position-history-table th{position:sticky;top:0;background:#f8fafc;color:#475467;text-align:left;padding:11px 12px;font-size:12px;border-bottom:1px solid #e4e7ec;white-space:nowrap}.position-history-table td{padding:11px 12px;border-bottom:1px solid #f0f2f5;vertical-align:top}.position-history-table tbody tr:nth-child(even){background:#fcfcfd}.position-history-table tbody tr:hover{background:#f8fafc}.position-history-table .money{text-align:right;white-space:nowrap}.position-history-reason{min-width:260px;max-width:420px;white-space:normal!important;line-height:1.35}.position-history-pair{font-size:12px;color:#667085;margin-top:3px}.position-history-status{display:inline-block;border-radius:999px;padding:3px 8px;background:#eef2f6;font-size:11px;font-weight:700}.positive{color:#027a48}.negative{color:#b42318}.neutral{color:#475467}.position-history-empty{padding:20px;border:1px dashed #d0d5dd;border-radius:10px;color:#667085}@media(max-width:900px){.position-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.position-history-summary{grid-template-columns:1fr}}
+.position-history-pro{margin-top:24px}.position-history-heading h3{margin:0 0 4px;font-size:18px}.position-history-heading p{margin:0 0 14px;color:#667085}.position-history-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0}.position-history-summary>div{border:1px solid #e4e7ec;border-radius:10px;padding:12px;background:#fff}.position-history-summary span{display:block;color:#667085;font-size:12px}.position-history-summary strong{display:block;margin-top:4px;font-size:18px}.position-history-scroll{overflow-x:auto;border:1px solid #e4e7ec;border-radius:12px;background:#fff}.position-history-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1580px}.position-history-table th{position:sticky;top:0;background:#f8fafc;color:#475467;text-align:left;padding:11px 12px;font-size:12px;border-bottom:1px solid #e4e7ec;white-space:nowrap}.position-history-table td{padding:11px 12px;border-bottom:1px solid #f0f2f5;vertical-align:top}.position-history-table tbody tr:nth-child(even){background:#fcfcfd}.position-history-table tbody tr:hover{background:#f8fafc}.position-history-table .money{text-align:right;white-space:nowrap}.position-history-reason{min-width:260px;max-width:420px;white-space:normal!important;line-height:1.35}.position-history-evidence-cell{min-width:230px;white-space:normal!important;line-height:1.35}.position-history-evidence{margin-top:5px;color:#64748b}.position-history-evidence summary{cursor:pointer;color:#5b21b6;font-weight:700}.position-history-pair{font-size:12px;color:#667085;margin-top:3px}.position-history-status{display:inline-block;border-radius:999px;padding:3px 8px;background:#eef2f6;font-size:11px;font-weight:700}.positive{color:#027a48}.negative{color:#b42318}.neutral{color:#475467}.position-history-empty{padding:20px;border:1px dashed #d0d5dd;border-radius:10px;color:#667085}@media(max-width:900px){.position-history-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:560px){.position-history-summary{grid-template-columns:1fr}}
 </style>"""
