@@ -168,3 +168,65 @@ def test_dashboard_reads_do_not_modify_cash_or_logs(tmp_path: Path) -> None:
     assert not Path(paths["request_log"]).exists()
     assert not Path(paths["approval_log"]).exists()
     assert not Path(paths["allocation_transaction_log"]).exists()
+
+
+def test_strategy_review_route_loads_owner_alerts_and_pair_history(tmp_path: Path) -> None:
+    assignments = tmp_path / "assignments.json"
+    performance = tmp_path / "performance.json"
+    requests = tmp_path / "promotion_requests.json"
+    journal = tmp_path / "promotion_journal.jsonl"
+    paper_state = tmp_path / "paper_state.json"
+    assignments.write_text(json.dumps({
+        "assignments": {
+            "AMDW / AMDL": {
+                "primary_strategy": "STRATEGY_B",
+                "previous_primary_strategy": "STRATEGY_A",
+                "assignment_source": "PROMOTED_AFTER_OWNER_REVIEW",
+                "effective_at_utc": "2026-08-11T18:08:00Z",
+                "promotion_request_id": "PROMOTE-AMDW-001",
+            }
+        }
+    }), encoding="utf-8")
+    performance.write_text(json.dumps({
+        "as_of_date": "2026-08-11",
+        "performance": [],
+    }), encoding="utf-8")
+    requests.write_text(json.dumps({"requests": []}), encoding="utf-8")
+    journal.write_text(json.dumps({
+        "event_type": "STRATEGY_PROMOTION_ACTIVATED",
+        "pair": "AMDW / AMDL",
+        "previous_primary_strategy": "STRATEGY_A",
+        "new_primary_strategy": "STRATEGY_B",
+        "recorded_at_utc": "2026-08-11T18:08:00Z",
+    }) + "\\n", encoding="utf-8")
+    paper_state.write_text(json.dumps({
+        "pairs": {
+            "AMDW / AMDL": {
+                "strategy_owner": "STRATEGY_A",
+                "a_in_sgov": False,
+                "b_in_sgov": False,
+            }
+        }
+    }), encoding="utf-8")
+    app, cash, paths = _app(
+        tmp_path,
+        strategy_assignments_path=assignments,
+        strategy_performance_path=performance,
+        promotion_requests_path=requests,
+        promotion_journal_path=journal,
+        paper_state_path=paper_state,
+    )
+    before = cash.read_text(encoding="utf-8")
+
+    status, page = _call(app, "GET", "/strategy-review")
+
+    assert status == "200 OK"
+    assert "Owner Alerts and Next Steps" in page
+    assert "Pair Strategy History" in page
+    assert "Original Entry Strategy" in page
+    assert "Current Management Strategy" in page
+    assert "STRATEGY_A" in page
+    assert "STRATEGY_B" in page
+    assert "Promotion Activated" in page
+    assert cash.read_text(encoding="utf-8") == before
+    assert not Path(paths["request_log"]).exists()
