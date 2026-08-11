@@ -393,6 +393,31 @@ def refresh_current_strategy_evidence(root_path: str | Path = ".") -> dict:
     return dict(result)
 
 
+
+def refresh_strategy_promotion_governance(root_path: str | Path = ".") -> dict:
+    """Initialize pair assignments and process evidence-backed promotions.
+
+    Performance evidence is optional while the shadow tracker accumulates its
+    approved 90-day window. Missing evidence creates no promotion request.
+    """
+    from src.dividend_bot.dividend_strategy_promotion_engine import (
+        run_strategy_promotion_cycle,
+    )
+
+    root = Path(root_path)
+    performance_path = root / "results/dividend_strategy_shadow_performance.json"
+    performance = read_json(performance_path) or {}
+    rows = performance.get("performance") or performance.get("rows") or []
+    if not isinstance(rows, list):
+        raise ValueError("shadow strategy performance evidence must contain a list")
+    return run_strategy_promotion_cycle(
+        rows,
+        pairs=list(PAPER_PAIRS),
+        assignments_path=root / "state/dividend_pair_strategy_assignments.json",
+        requests_path=root / "state/dividend_strategy_promotion_requests.json",
+        journal_path=root / "state/dividend_strategy_promotion_journal.jsonl",
+    )
+
 def main() -> int:
     print(PAPER_LABEL)
     try:
@@ -409,6 +434,18 @@ def main() -> int:
     print(f"Change summary: {CHANGE_SUMMARY_PATH}")
     print("Strategy health dashboard refreshed")
     print("Live readiness tracker refreshed")
+
+    try:
+        promotion = refresh_strategy_promotion_governance(".")
+        pending = sum(
+            1 for row in promotion["requests"]
+            if str(row.get("status") or "").upper() == "PENDING_OWNER_REVIEW"
+        )
+        print(f"Pair strategy assignments: {len(promotion['assignments'])}")
+        print(f"Pending strategy promotion reviews: {pending}")
+        print(f"Strategy promotions activated: {len(promotion['activated'])}")
+    except (OSError, RuntimeError, TypeError, ValueError) as exc:
+        print(f"Strategy promotion governance: PARTIAL ({exc})")
 
     try:
         from src.dividend_bot.dividend_daily_evidence_refresh import (
