@@ -95,3 +95,33 @@ def test_dashboard_evidence_preserves_governance_and_execution_locks(tmp_path: P
     assert report["capital_movement_enabled"] is False
     assert report["automatic_activation_allowed"] is False
     assert report["investor_governance_required"] is True
+
+
+def test_watchlist_receives_current_entry_progress_and_requirements(tmp_path: Path) -> None:
+    _write_json(tmp_path / "paper_state.json", {"pairs": {}})
+    _write_json(tmp_path / "watchlist_report.json", {
+        "watchlist": [{"symbol": "AAA", "status": "WATCH", "currently_held": False}]
+    })
+    _write_json(tmp_path / "entry_score_report.json", {
+        "generated_at_utc": "2026-08-11T12:00:00Z",
+        "entries": [{
+            "symbol": "AAA",
+            "entry_score": 68.5,
+            "entry_status": "WAIT",
+            "confidence": 72.0,
+            "confidence_level": "HIGH",
+            "timing_context": "WAITING_FOR_ENTRY",
+            "reasons": ["MOMENTUM_NOT_CONFIRMED"],
+            "requirements_for_buy": ["PRICE_ABOVE_EMA20"],
+        }],
+    })
+
+    report = build_dividend_dashboard_evidence(tmp_path)
+    candidate = report["watchlist"][0]
+    assert candidate["entry_score"] == 68.5
+    assert candidate["entry_status"] == "WAIT"
+    assert candidate["entry_confidence"] == 72.0
+    assert candidate["entry_reasons"] == ["MOMENTUM_NOT_CONFIRMED"]
+    assert candidate["requirements_for_buy"] == ["PRICE_ABOVE_EMA20"]
+    assert candidate["entry_evidence_source"] == "entry_score_report.json"
+    assert candidate["entry_evidence_generated_at_utc"] == "2026-08-11T12:00:00Z"
