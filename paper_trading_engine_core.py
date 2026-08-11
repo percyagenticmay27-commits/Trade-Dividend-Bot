@@ -504,6 +504,16 @@ class PaperTradingEngine:
         self.comparison_path.parent.mkdir(parents=True, exist_ok=True)
         self.comparison_path.write_text("\n".join(lines), encoding="utf-8")
 
+    def process_pending_dividends_only(
+        self,
+        state: dict,
+        frames: dict[str, pd.DataFrame],
+        as_of: pd.Timestamp,
+    ) -> list[dict]:
+        """Extension hook for idempotent paper-income recovery."""
+        return []
+
+
     def run(self, reinitialize_signal_aware: bool = False) -> dict:
         frames = self.provider.fetch(self.required_symbols())
         as_of = self.common_as_of(frames)
@@ -531,6 +541,10 @@ class PaperTradingEngine:
 
         state = json.loads(self.state_path.read_text(encoding="utf-8"))
         if pd.Timestamp(state["last_processed_date"]) >= as_of:
+            recovered_logs = self.process_pending_dividends_only(state, frames, as_of)
+            if recovered_logs:
+                self.write_state(state)
+                self.append_log(recovered_logs)
             rows = []
             for pair, entry in state["pairs"].items():
                 config = PAPER_PAIRS[pair]
