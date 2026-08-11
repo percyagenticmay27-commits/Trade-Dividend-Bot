@@ -11,6 +11,7 @@ from src.dividend_bot.paper_capital_allocation_server import create_wsgi_app
 from src.dividend_bot.strategy_promotion_governance import (
     issue_veto_token,
     load_promotion_requests,
+    load_promotion_journal,
     verify_veto_token,
     veto_promotion_request,
     render_strategy_review_page,
@@ -309,3 +310,61 @@ def test_pair_card_groups_and_ranks_multiple_test_strategies() -> None:
     assert "STRATEGY_C" in page
     assert "Leading by return" in page
     assert page.index("STRATEGY_C") < page.index("STRATEGY_B")
+
+
+def test_strategy_review_renders_owner_alerts_and_pair_history(tmp_path: Path) -> None:
+    journal = tmp_path / "journal.jsonl"
+    journal.write_text(
+        json.dumps({
+            "event_type": "STRATEGY_PROMOTION_ACTIVATED",
+            "pair": "AMDW / AMDL",
+            "previous_primary_strategy": "STRATEGY_A",
+            "new_primary_strategy": "STRATEGY_B",
+            "recorded_at_utc": "2026-08-11T18:08:00Z",
+            "reason": "NO_OWNER_VETO_DURING_SEVEN_DAY_REVIEW",
+        }) + "\n",
+        encoding="utf-8",
+    )
+    events = load_promotion_journal(journal)
+    assert events[0]["event_type"] == "STRATEGY_PROMOTION_ACTIVATED"
+
+    page = render_strategy_review_page(
+        [],
+        csrf_secret="secret",
+        assignments=_assignments if False else {
+            "AMDW / AMDL": {
+                "primary_strategy": "STRATEGY_B",
+                "previous_primary_strategy": "STRATEGY_A",
+                "assignment_source": "PROMOTED_AFTER_OWNER_REVIEW",
+                "effective_at_utc": "2026-08-11T18:08:00Z",
+            }
+        },
+        performance_rows=[],
+        governance_model={
+            "alerts": [{
+                "severity": "ACTION",
+                "alert_type": "OWNER_REVIEW_REQUIRED",
+                "pair": "AMDW / AMDL",
+                "message": "Strategy B promotion requires review.",
+                "owner_action": "Review and veto if necessary.",
+            }],
+            "histories": [{
+                "pair": "AMDW / AMDL",
+                "original_entry_strategy": "STRATEGY_A",
+                "current_management_strategy": "STRATEGY_B",
+                "previous_primary_strategy": "STRATEGY_A",
+                "position_status": "OPEN_ETF_POSITION",
+                "assignment_source": "PROMOTED_AFTER_OWNER_REVIEW",
+                "assigned_since": "2026-08-11T18:08:00Z",
+                "promotion_request_id": "PROMOTE-AMDW-001",
+                "events": events,
+            }],
+        },
+    )
+    assert "Owner Alerts and Next Steps" in page
+    assert "Owner Review Required" in page
+    assert "Owner next step: Review and veto if necessary." in page
+    assert "Pair Strategy History" in page
+    assert "Original Entry Strategy" in page
+    assert "Current Management Strategy" in page
+    assert "STRATEGY_PROMOTION_ACTIVATED".replace("_", " ").title() in page
