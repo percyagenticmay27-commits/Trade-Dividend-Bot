@@ -261,3 +261,50 @@ def test_legacy_unassigned_holding_uses_current_underlying_consensus_without_clo
     assert all(row["exit_evidence_source"] == "entry_score_report.json" for row in holdings)
     assert all(row["exit_evidence_generated_at_utc"] == "2026-08-10T21:00:00Z" for row in holdings)
 
+
+
+def test_legacy_warning_explains_missing_consensus_once_per_pair(tmp_path: Path) -> None:
+    _write_json(tmp_path / "paper_state.json", {
+        "pairs": {
+            "AMDW / AMDL": {
+                "a_shares": 4.0,
+                "b_shares": 3.0,
+                "last_prices": {"A": 10.0, "B": 20.0},
+                "sgov_balance": 0.0,
+                "total_dividends_received": 0.0,
+                "strategy_owner": "LEGACY_UNASSIGNED",
+                "strategy_ownership_source": "LEGACY_PRE_OWNERSHIP_POSITION",
+            }
+        }
+    })
+    _write_json(tmp_path / "entry_score_report.json", {
+        "entries": [{
+            "symbol": "AMD",
+            "strategy_signals": {
+                "strategy_a": {
+                    "sell_trigger": False,
+                    "sell_reasons": [],
+                    "exit_warning_active": False,
+                    "exit_buffered": False,
+                    "exit_warning_reasons": [],
+                },
+                "strategy_b": {
+                    "sell_trigger": True,
+                    "sell_reason": "PRICE_BELOW_EMA20",
+                },
+            },
+        }],
+    })
+
+    payload = build_dividend_dashboard_evidence(tmp_path)
+    alerts = [
+        item for item in payload["alerts"]
+        if item.get("alert_type") == "EXIT_WARNING_BUFFERED"
+    ]
+
+    assert len(alerts) == 1
+    assert alerts[0]["pair"] == "AMDW / AMDL"
+    assert "Strategy B currently has a sell condition" in alerts[0]["message"]
+    assert "Strategy A has not confirmed a sale" in alerts[0]["message"]
+    assert "requires both Strategy A and Strategy B to confirm SELL" in alerts[0]["message"]
+    assert alerts[0]["reasons"] == ["PRICE_BELOW_EMA20"]
