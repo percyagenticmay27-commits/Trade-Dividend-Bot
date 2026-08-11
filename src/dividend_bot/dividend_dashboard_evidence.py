@@ -131,6 +131,55 @@ def _watchlist_from_report(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, Mapping)]
 
 
+def _entry_decision_index(payload: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
+    rows = payload.get("entries")
+    if not isinstance(rows, list):
+        return {}
+    return {
+        str(row.get("symbol") or "").strip().upper(): row
+        for row in rows
+        if isinstance(row, Mapping) and str(row.get("symbol") or "").strip()
+    }
+
+
+def _enrich_watchlist_with_entry_progress(
+    watchlist: list[dict[str, Any]],
+    entry_score_payload: Mapping[str, Any],
+) -> list[dict[str, Any]]:
+    decisions = _entry_decision_index(entry_score_payload)
+    enriched: list[dict[str, Any]] = []
+    for raw in watchlist:
+        row = dict(raw)
+        symbol = str(row.get("symbol") or row.get("candidate_id") or "").strip().upper()
+        decision = decisions.get(symbol)
+        if isinstance(decision, Mapping):
+            row.update({
+                "entry_score": decision.get("entry_score"),
+                "entry_status": decision.get("entry_status"),
+                "timing_context": decision.get("timing_context"),
+                "entry_confidence": decision.get("confidence"),
+                "entry_confidence_level": decision.get("confidence_level"),
+                "entry_reasons": list(decision.get("reasons") or []),
+                "requirements_for_buy": list(decision.get("requirements_for_buy") or []),
+                "entry_evidence_generated_at_utc": entry_score_payload.get("generated_at_utc"),
+                "entry_evidence_source": "entry_score_report.json",
+            })
+        else:
+            row.update({
+                "entry_score": None,
+                "entry_status": "EVIDENCE_UNAVAILABLE",
+                "timing_context": None,
+                "entry_confidence": None,
+                "entry_confidence_level": None,
+                "entry_reasons": [],
+                "requirements_for_buy": [],
+                "entry_evidence_generated_at_utc": None,
+                "entry_evidence_source": None,
+            })
+        enriched.append(row)
+    return enriched
+
+
 def _strategy_signal_index(payload: Mapping[str, Any]) -> dict[str, Mapping[str, Any]]:
     rows = payload.get("entries")
     if not isinstance(rows, list):
@@ -199,7 +248,7 @@ def _enrich_holdings_with_owner_exit_state(
     return enriched
 
 
-def _alerts(*, state: Mapping[str, Any], candidate_payload: Mapping[str, Any], performance: Mapping[str, Any]) -> list[dict[str, Any]]:
+def _alerts(*, state: Mapping[str, Any], candidate_payload: Mapping[str, Any], performance: Mapping[str, Any], holdings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     alerts: list[dict[str, Any]] = []
     pairs = state.get("pairs")
     if isinstance(pairs, Mapping):
@@ -209,6 +258,25 @@ def _alerts(*, state: Mapping[str, Any], candidate_payload: Mapping[str, Any], p
             for sleeve in ("a", "b"):
                 if entry.get(f"{sleeve}_earnings_lock") is True:
                     alerts.append({"alert_type": "EARNINGS_LOCK", "pair": str(pair_name), "sleeve": sleeve.upper(), "severity": "WARNING", "status": "ACTIVE"})
+    for holding in holdings:
+        if holding.get("sell_trigger") is True:
+            alerts.append({
+                "alert_type": "SELL_CONFIRMED",
+                "symbol": holding.get("symbol"),
+                "severity": "CRITICAL",
+                "status": "ACTION_REQUIRED",
+                "message": "The owning strategy has confirmed its paper exit conditions.",
+                "reasons": list(holding.get("sell_reasons") or []),
+            })
+        elif holding.get("exit_warning_active") is True or holding.get("exit_buffered") is True:
+            alerts.append({
+                "alert_type": "EXIT_WARNING_BUFFERED",
+                "symbol": holding.get("symbol"),
+                "severity": "WARNING",
+                "status": "MONITOR",
+                "message": "A sell warning exists, but the owning strategy has not authorized a paper exit.",
+                "reasons": list(holding.get("exit_warning_reasons") or []),
+            })
     for warning in candidate_payload.get("warnings", []) if isinstance(candidate_payload.get("warnings"), list) else []:
         alerts.append({"alert_type": "DISCOVERY_WARNING", "severity": "WARNING", "message": str(warning), "status": "ACTIVE"})
     for warning in performance.get("warnings", []) if isinstance(performance.get("warnings"), list) else []:
@@ -258,6 +326,7 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         and str(item.get("lifecycle_status") or "").upper() != "NEVER_ENTERED"
     ]
     watchlist = _watchlist_from_report(watchlist_payload) or _watchlist_from_candidates(candidate_payload)
+    watchlist = _enrich_watchlist_with_entry_progress(watchlist, entry_score_payload)
     realized_income = build_realized_income_evidence(log_rows)
     income_events = realized_income["income_events"]
     projected_annual_income = total_projected_annual_income(holdings)
@@ -275,7 +344,7 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "results/dividend_paper_trade_performance.json" if (root / "results" / "dividend_paper_trade_performance.json").is_file() else None,
     ) if path is not None]
 
-    alerts = _alerts(state=state, candidate_payload=candidate_payload, performance=performance)
+    alerts = _alerts(state=state, candidate_payload=candidate_payload, performance=performance, holdings=holdings)
     return {
         "strategy_id": STRATEGY_ID,
         "portfolio_value": portfolio_value if holdings else None,
