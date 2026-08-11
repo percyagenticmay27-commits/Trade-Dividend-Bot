@@ -64,12 +64,19 @@ def _income_position_count(row: Mapping[str, Any]) -> int:
 
 
 def _next_ex_date(row: Mapping[str, Any]) -> str:
-    dates = sorted(
+    reported = sorted(
         str(item.get("next_ex_dividend_date"))
         for item in _holdings(row)
         if item.get("next_ex_dividend_date") not in (None, "", "Not reported")
     )
-    return dates[0] if dates else "Not reported"
+    if reported:
+        return reported[0] + " (Reported)"
+    estimated = sorted(
+        str(item.get("estimated_next_ex_dividend_date"))
+        for item in _holdings(row)
+        if item.get("estimated_next_ex_dividend_date") not in (None, "", "Not reported")
+    )
+    return estimated[0] + " (Estimated from observed cadence)" if estimated else "Not reported"
 
 
 def _destination(event: Mapping[str, Any], prefix: str) -> str:
@@ -93,7 +100,20 @@ def _income_holding_rows(row: Mapping[str, Any]) -> str:
             continue
         symbol = _text(item.get("symbol"))
         name = _text(item.get("name"))
-        source = _text(item.get("income_analytics_source") or item.get("source"))
+        source_name = _text(item.get("income_analytics_source") or item.get("source"))
+        reported_ex_date = item.get("next_ex_dividend_date")
+        estimated_ex_date = item.get("estimated_next_ex_dividend_date")
+        if reported_ex_date not in (None, ""):
+            next_ex_date = _text(reported_ex_date) + " <span class='income-date-status'>Reported</span>"
+        elif estimated_ex_date not in (None, ""):
+            next_ex_date = _text(estimated_ex_date) + " <span class='income-date-status income-date-estimated'>Estimated</span>"
+        else:
+            next_ex_date = "Not reported"
+        evidence_explanation = (
+            "Projection uses observed distribution history and the current holding price."
+            if annual_income is not None or yearly_yield is not None
+            else "Income evidence is not currently available."
+        )
         rendered.append(
             "<tr>"
             f"<td><strong>{symbol}</strong></td>"
@@ -102,8 +122,8 @@ def _income_holding_rows(row: Mapping[str, Any]) -> str:
             f"<td>{_percent(yearly_yield)}</td>"
             f"<td><strong>{_money(annual_income)}</strong></td>"
             f"<td>{_text(item.get('payment_frequency'))}</td>"
-            f"<td>{_text(item.get('next_ex_dividend_date'))}</td>"
-            f"<td>{source}</td>"
+            f"<td>{next_ex_date}</td>"
+            f"<td class='income-evidence'>{html.escape(evidence_explanation)}<details><summary>Audit source</summary>{source_name}</details></td>"
             "</tr>"
         )
     if not rendered:
@@ -187,9 +207,9 @@ def render_income_panel(row: Mapping[str, Any]) -> str:
             "<small>Holdings with published income evidence</small></article>"
         )
         + (
-            "<article><span>Next Reported Ex-Date</span>"
+            "<article><span>Next Ex-Date</span>"
             f"<strong>{html.escape(next_ex_date)}</strong>"
-            "<small>Earliest authoritative date across current holdings</small></article>"
+            "<small>Reported date preferred; otherwise clearly labeled cadence estimate</small></article>"
         )
         + "</div>"
         "<div class='income-accounting-note'><strong>Income Accounting</strong> Price gains/losses are excluded. Only strategy-owned distribution receipts, reversals, and income adjustments affect Net Income Received.</div>"
@@ -210,5 +230,5 @@ def render_income_panel(row: Mapping[str, Any]) -> str:
 def income_ui_css() -> str:
     return """
 <style>
-.income-pro{min-width:0}.income-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.income-heading h3{margin:0}.income-heading p{margin:5px 0 0;color:#64748b}.income-event-badge{white-space:nowrap;background:#ecfdf3;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}.income-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0 18px}.income-summary-grid-six{grid-template-columns:repeat(3,minmax(0,1fr))}.income-summary-grid article{border:1px solid #dbe4ef;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:12px;padding:12px}.income-summary-grid span,.income-summary-grid small{display:block;color:#64748b}.income-summary-grid strong{display:block;margin:5px 0;font-size:18px;color:#0f5132}.income-summary-grid strong.income-positive{color:#047857}.income-summary-grid strong.income-negative{color:#b42318}.income-summary-grid strong.income-neutral{color:#475569}.income-summary-grid small{font-size:10px}.income-accounting-note{margin:-4px 0 18px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;color:#475569;font-size:11px}.income-accounting-note strong{color:#0f172a;margin-right:5px}.income-reconciliation{display:flex;gap:10px;margin:0 0 18px;padding:10px 12px;border:1px solid;border-radius:10px;font-size:11px}.income-reconciliation strong{white-space:nowrap}.income-reconciliation-warning{background:#fff7df;border-color:#efc66b;color:#8a4b08}.income-reconciliation-ok{background:#ecfdf3;border-color:#86d9ad;color:#065f46}.income-reconciliation-pending{background:#f8fafc;border-color:#cbd5e1;color:#475569}.income-section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:18px 0 8px}.income-section-heading h4{margin:0;color:#0b1d3a}.income-section-heading span{font-size:11px;color:#64748b}.income-table-wrap{overflow-x:auto;border:1px solid #dbe4ef;border-radius:11px}.income-table{width:100%;border-collapse:collapse;min-width:960px}.income-history-table{min-width:620px}.income-table th{padding:9px 10px;background:#f4f7fb;color:#475569;text-align:left;text-transform:uppercase;font-size:10px;letter-spacing:.03em}.income-table td{padding:10px;border-top:1px solid #e5eaf1;font-size:12px}.income-table tbody tr:hover{background:#fbfdff}.income-positive{color:#047857!important}.income-negative{color:#b42318!important}.income-neutral{color:#475569!important}.income-empty-cell{text-align:center!important;color:#64748b;padding:22px!important}.income-footnote{margin:12px 0 0;color:#64748b;font-size:11px}.income-footnote strong{color:#334155}@media(max-width:900px){.income-summary-grid,.income-summary-grid-six{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.income-summary-grid,.income-summary-grid-six{grid-template-columns:1fr}.income-heading,.income-section-heading{display:block}.income-event-badge{display:inline-block;margin-top:8px}}
+.income-pro{min-width:0}.income-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}.income-heading h3{margin:0}.income-heading p{margin:5px 0 0;color:#64748b}.income-event-badge{white-space:nowrap;background:#ecfdf3;color:#047857;border:1px solid #a7f3d0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800}.income-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin:12px 0 18px}.income-summary-grid-six{grid-template-columns:repeat(3,minmax(0,1fr))}.income-summary-grid article{border:1px solid #dbe4ef;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:12px;padding:12px}.income-summary-grid span,.income-summary-grid small{display:block;color:#64748b}.income-summary-grid strong{display:block;margin:5px 0;font-size:18px;color:#0f5132}.income-summary-grid strong.income-positive{color:#047857}.income-summary-grid strong.income-negative{color:#b42318}.income-summary-grid strong.income-neutral{color:#475569}.income-summary-grid small{font-size:10px}.income-accounting-note{margin:-4px 0 18px;padding:10px 12px;border:1px solid #cbd5e1;border-radius:10px;background:#f8fafc;color:#475569;font-size:11px}.income-accounting-note strong{color:#0f172a;margin-right:5px}.income-reconciliation{display:flex;gap:10px;margin:0 0 18px;padding:10px 12px;border:1px solid;border-radius:10px;font-size:11px}.income-reconciliation strong{white-space:nowrap}.income-reconciliation-warning{background:#fff7df;border-color:#efc66b;color:#8a4b08}.income-reconciliation-ok{background:#ecfdf3;border-color:#86d9ad;color:#065f46}.income-reconciliation-pending{background:#f8fafc;border-color:#cbd5e1;color:#475569}.income-section-heading{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin:18px 0 8px}.income-section-heading h4{margin:0;color:#0b1d3a}.income-section-heading span{font-size:11px;color:#64748b}.income-table-wrap{overflow-x:auto;border:1px solid #dbe4ef;border-radius:11px}.income-table{width:100%;border-collapse:collapse;min-width:960px}.income-history-table{min-width:620px}.income-table th{padding:9px 10px;background:#f4f7fb;color:#475569;text-align:left;text-transform:uppercase;font-size:10px;letter-spacing:.03em}.income-table td{padding:10px;border-top:1px solid #e5eaf1;font-size:12px}.income-table tbody tr:hover{background:#fbfdff}.income-date-status{display:inline-block;margin-left:4px;padding:3px 6px;border-radius:999px;background:#ecfdf3;color:#047857;font-size:9px;font-weight:800}.income-date-estimated{background:#fff7df;color:#8a4b08}.income-evidence{min-width:260px;white-space:normal;line-height:1.35}.income-evidence details{margin-top:5px;color:#64748b}.income-evidence summary{cursor:pointer;color:#5b21b6;font-weight:700}.income-positive{color:#047857!important}.income-negative{color:#b42318!important}.income-neutral{color:#475569!important}.income-empty-cell{text-align:center!important;color:#64748b;padding:22px!important}.income-footnote{margin:12px 0 0;color:#64748b;font-size:11px}.income-footnote strong{color:#334155}@media(max-width:900px){.income-summary-grid,.income-summary-grid-six{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.income-summary-grid,.income-summary-grid-six{grid-template-columns:1fr}.income-heading,.income-section-heading{display:block}.income-event-badge{display:inline-block;margin-top:8px}}
 </style>"""
