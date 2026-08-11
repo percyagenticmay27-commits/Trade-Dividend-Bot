@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+
+import run_daily_dividend_cycle
+import run_daily_paper_cycle
+from src.dividend_bot import dividend_daily_evidence_refresh
+
+
+def test_current_strategy_evidence_preflight_writes_valid_current_report(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    def fake_cycle(*, root_path: str):
+        root = Path(root_path)
+        (root / "entry_score_report.json").write_text(
+            json.dumps({
+                "generated_at_utc": "2026-08-10T21:00:00Z",
+                "entries": [{
+                    "symbol": "AMD",
+                    "strategy_signals": {
+                        "strategy_a": {"sell_trigger": False},
+                        "strategy_b": {"sell_trigger": False},
+                    },
+                }],
+            }),
+            encoding="utf-8",
+        )
+        return {"run_status": "COMPLETE", "errors": []}
+
+    monkeypatch.setattr(
+        run_daily_dividend_cycle,
+        "run_daily_dividend_cycle",
+        fake_cycle,
+    )
+
+    result = run_daily_paper_cycle.refresh_current_strategy_evidence(tmp_path)
+
+    assert result["run_status"] == "COMPLETE"
+    payload = json.loads((tmp_path / "entry_score_report.json").read_text())
+    assert payload["generated_at_utc"] == "2026-08-10T21:00:00Z"
+    assert payload["entries"][0]["symbol"] == "AMD"
+
+
+def test_current_strategy_evidence_failure_blocks_stale_paper_authority(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "entry_score_report.json").write_text(
+        json.dumps({
+            "generated_at_utc": "2026-08-09T21:00:00Z",
+            "entries": [{"symbol": "AMD"}],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        run_daily_dividend_cycle,
+        "run_daily_dividend_cycle",
+        lambda **_: {
+            "run_status": "ERROR",
+            "errors": ["entry_score stage failed"],
+        },
+    )
+
+    with pytest.raises(RuntimeError, match="entry_score stage failed"):
+        run_daily_paper_cycle.refresh_current_strategy_evidence(tmp_path)
+
+
+def test_main_orders_current_evidence_before_paper_cycle_and_publication(
+    monkeypatch,
+) -> None:
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        run_daily_paper_cycle,
+        "refresh_current_strategy_evidence",
+        lambda _root: calls.append("current_evidence")
+        or {"run_status": "COMPLETE"},
+    )
+    monkeypatch.setattr(
+        run_daily_paper_cycle,
+        "run_daily_cycle",
+        lambda: calls.append("paper_cycle")
+        or {
+            "state": {"as_of_date": "2026-08-10"},
+            "new_log_rows": [],
+            "duplicate_date": False,
+        },
+    )
+    monkeypatch.setattr(
+        dividend_daily_evidence_refresh,
+        "refresh_dividend_daily_evidence",
+        lambda _root: calls.append("enterprise_publication")
+        or {
+            "status": "COMPLETE",
+            "daily_dividend_cycle_status": "COMPLETE",
+            "candidate_count": 1,
+            "watchlist_count": 1,
+            "kpi_evidence_path": "results/dividend_strategy_kpi_evidence.json",
+            "warnings": [],
+            "errors": [],
+        },
+    )
+
+    assert run_daily_paper_cycle.main() == 0
+    assert calls == [
+        "current_evidence",
+        "paper_cycle",
+        "enterprise_publication",
+    ]
