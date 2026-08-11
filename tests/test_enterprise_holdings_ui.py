@@ -183,3 +183,19 @@ def test_holdings_renderer_marks_confirmed_owner_exit_as_actionable() -> None:
     assert "SELL CONFIRMED" in page
     assert "The owning strategy confirmed its exit conditions" in page
     assert "management-sell" in page
+
+
+def test_holdings_income_explains_estimated_ex_date_and_evidence_source() -> None:
+    row = _row()
+    row["holdings"][0].update({
+        "yearly_distribution_yield_percent": 55.81,
+        "annual_income": 217.62,
+        "estimated_next_ex_dividend_date": "2026-08-17",
+        "income_analytics_source": "market_data_snapshot.json",
+    })
+    page = render_holdings_panel(row)
+    assert "2026-08-17" in page
+    assert "Estimated" in page
+    assert "Observed distribution history and current holding price support this projection." in page
+    assert "Audit source" in page
+    assert "market_data_snapshot.json" in page
