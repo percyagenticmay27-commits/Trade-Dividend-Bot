@@ -198,7 +198,7 @@ def test_strategy_review_route_loads_owner_alerts_and_pair_history(tmp_path: Pat
         "previous_primary_strategy": "STRATEGY_A",
         "new_primary_strategy": "STRATEGY_B",
         "recorded_at_utc": "2026-08-11T18:08:00Z",
-    }) + "\\n", encoding="utf-8")
+    }) + "\n", encoding="utf-8")
     paper_state.write_text(json.dumps({
         "pairs": {
             "AMDW / AMDL": {
