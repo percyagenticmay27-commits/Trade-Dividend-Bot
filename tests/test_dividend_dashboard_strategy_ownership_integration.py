@@ -80,6 +80,10 @@ def test_strategy_a_buffered_warning_reaches_dashboard_without_becoming_sell(tmp
     assert holding["exit_authority_reason"] == "STRATEGY_A_EXIT_AUTHORITY"
     assert holding["exit_evidence_source"] == "entry_score_report.json"
     assert "entry_score_report.json" in payload["evidence_sources"]
+    alert = next(item for item in payload["alerts"] if item["symbol"] == "AAA")
+    assert alert["alert_type"] == "EXIT_WARNING_BUFFERED"
+    assert alert["status"] == "MONITOR"
+    assert alert["reasons"] == ["STOCH_RSI_D_CROSSED_ABOVE_K"]
 
 
 def test_strategy_a_confirmed_sell_reaches_dashboard_as_confirmed_not_closed(tmp_path: Path) -> None:
@@ -119,6 +123,9 @@ def test_strategy_a_confirmed_sell_reaches_dashboard_as_confirmed_not_closed(tmp
     assert holding["exit_state"] == "SELL_CONFIRMED"
     assert holding["sell_trigger"] is True
     assert holding["sell_reasons"] == ["STOCH_OSC_D_CROSSED_ABOVE_K_BELOW_80"]
+    alert = next(item for item in payload["alerts"] if item["symbol"] == "AAA")
+    assert alert["alert_type"] == "SELL_CONFIRMED"
+    assert alert["status"] == "ACTION_REQUIRED"
 
 
 def test_strategy_b_does_not_inherit_strategy_a_buffer_warning(tmp_path: Path) -> None:
