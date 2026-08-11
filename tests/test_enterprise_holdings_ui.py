@@ -147,3 +147,39 @@ def test_holdings_css_is_self_contained_and_responsive():
     assert ".metric-negative" in css
     assert ".capital-reconciliation" in css
     assert "@media(max-width:520px)" in css
+
+
+def test_holdings_renderer_explains_legacy_hold_and_exit_consensus() -> None:
+    row = _row()
+    row["holdings"][0].update({
+        "strategy_owner": "LEGACY_UNASSIGNED",
+        "entry_method": "LEGACY_UNASSIGNED",
+        "exit_state": "WARNING_BUFFERED",
+        "exit_warning_active": True,
+        "exit_buffered": True,
+        "exit_warning_reasons": ["PRICE_BELOW_EMA20"],
+        "sell_trigger": False,
+        "sell_reasons": [],
+        "exit_evidence_source": "entry_score_report.json",
+        "exit_evidence_generated_at_utc": "2026-08-11T12:00:00Z",
+    })
+    page = render_holdings_panel(row)
+    assert "Position Management" in page
+    assert "HOLD — CONSENSUS PENDING" in page
+    assert "requires both Strategy A and Strategy B to confirm an exit" in page
+    assert "Price below ema20" in page
+    assert "2026-08-11T12:00:00Z" in page
+
+
+def test_holdings_renderer_marks_confirmed_owner_exit_as_actionable() -> None:
+    row = _row()
+    row["holdings"][0].update({
+        "strategy_owner": "STRATEGY_B",
+        "exit_state": "SELL_CONFIRMED",
+        "sell_trigger": True,
+        "sell_reasons": ["PRICE_BELOW_EMA20"],
+    })
+    page = render_holdings_panel(row)
+    assert "SELL CONFIRMED" in page
+    assert "The owning strategy confirmed its exit conditions" in page
+    assert "management-sell" in page
