@@ -291,6 +291,7 @@ def build_position_lifecycle(
             "current_open_date": current_open_date,
             "last_exit_date": None if never_entered else (latest_exit.get("date") if latest_exit else None),
             "last_exit_action": None if never_entered else (latest_exit.get("action") if latest_exit else None),
+            "last_exit_reason": None if never_entered else (latest_exit.get("reason") if latest_exit else None),
             "entry_value": entry_value,
             "last_exit_value": exit_value,
             "realized_gain_loss": realized_gain_loss,
@@ -310,7 +311,7 @@ def build_position_lifecycle(
         records.append({
             "symbol": "SGOV", "lifecycle_status": "RESERVE", "is_current_holding": True,
             "first_purchase_date": None, "current_open_date": None, "last_exit_date": None,
-            "last_exit_action": None, "entry_value": None, "last_exit_value": None,
+            "last_exit_action": None, "last_exit_reason": None, "entry_value": None, "last_exit_value": None,
             "realized_gain_loss": None, "pair": "CASH RESERVE", "sleeve": "RESERVE",
             "reentry_count": 0, "event_count": 0, "raw_event_count": 0,
             "reserve_value": round(reserve_value, 2), "never_entered_reason": None,
