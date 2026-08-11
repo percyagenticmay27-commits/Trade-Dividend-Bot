@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 
+import paper_trading_engine as paper_engine_module
 from paper_trading_engine import PaperTradingEngine
 
 
@@ -206,9 +207,10 @@ def test_legacy_pair_exit_uses_configured_current_signal_symbol_not_persisted_la
         "architecture": "pair_managed",
     }
 
-    result = engine._owned_pair_exit_decision(entry=entry, config=config)
+    result = engine._owned_pair_exit_decision(pair="AMDW / AMDL", entry=entry, config=config)
 
-    assert result["strategy_owner"] == "LEGACY_UNASSIGNED"
+    assert result["strategy_owner"] == "STRATEGY_A"
+    assert result["entry_strategy_owner"] == "LEGACY_UNASSIGNED"
     assert result["sell_trigger"] is True
     assert result["reason"] == "PAIR_OWNER_EXIT_TRIGGERED"
     assert result["ownership_source"] == "LEGACY_PRE_OWNERSHIP_POSITION"
@@ -217,7 +219,7 @@ def test_legacy_pair_exit_uses_configured_current_signal_symbol_not_persisted_la
     assert all(row["exit_state"] == "SELL_CONFIRMED" for row in result["sleeves"])
 
 
-def test_legacy_pair_single_current_strategy_sell_is_buffered(tmp_path) -> None:
+def test_default_strategy_a_controls_legacy_pair_without_b_consensus(tmp_path) -> None:
     engine = _engine(tmp_path)
     engine.entry_score_path.write_text(
         json.dumps({
@@ -254,10 +256,66 @@ def test_legacy_pair_single_current_strategy_sell_is_buffered(tmp_path) -> None:
         "architecture": "pair_managed",
     }
 
-    result = engine._owned_pair_exit_decision(entry=entry, config=config)
+    result = engine._owned_pair_exit_decision(pair="AMDW / AMDL", entry=entry, config=config)
 
-    assert result["sell_trigger"] is False
-    assert all(row["exit_state"] == "WARNING_BUFFERED" for row in result["sleeves"])
-    assert all(row["strategy_a_sell_trigger"] is True for row in result["sleeves"])
-    assert all(row["strategy_b_sell_trigger"] is False for row in result["sleeves"])
+    assert result["sell_trigger"] is True
+    assert result["management_strategy"] == "STRATEGY_A"
+    assert result["entry_strategy_owner"] == "LEGACY_UNASSIGNED"
+    assert all(row["exit_state"] == "SELL_CONFIRMED" for row in result["sleeves"])
 
+
+
+def test_promoted_strategy_b_controls_open_pair_exit_without_rewriting_entry_owner(
+    tmp_path, monkeypatch
+) -> None:
+    engine = _engine(tmp_path)
+    engine.entry_score_path.write_text(
+        json.dumps({
+            "symbol_specific": True,
+            "entries": [{
+                "symbol": "AMD",
+                "strategy_signals": {
+                    "strategy_a": {
+                        "sell_trigger": False,
+                        "sell_reasons": [],
+                        "exit_warning_active": False,
+                        "exit_buffered": False,
+                        "exit_warning_reasons": [],
+                    },
+                    "strategy_b": {
+                        "sell_trigger": True,
+                        "sell_reason": "PRICE_BELOW_EMA20",
+                    },
+                },
+            }],
+        }),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        paper_engine_module,
+        "_primary_strategy_for_pair",
+        lambda pair: "STRATEGY_B",
+    )
+    entry = {
+        "strategy_owner": "STRATEGY_A",
+        "strategy_ownership_source": "QUALIFIED_ENTRY_GATE",
+        "last_signal": {"A": "HOLD", "B": "HOLD"},
+    }
+    config = {
+        "a": "AMDW",
+        "b": "AMDL",
+        "a_signal": "AMD",
+        "b_signal": "AMD",
+        "architecture": "pair_managed",
+    }
+
+    result = engine._owned_pair_exit_decision(
+        pair="AMDW / AMDL", entry=entry, config=config
+    )
+
+    assert result["sell_trigger"] is True
+    assert result["management_strategy"] == "STRATEGY_B"
+    assert result["entry_strategy_owner"] == "STRATEGY_A"
+    assert result["strategy_owner"] == "STRATEGY_B"
+    assert all(row["entry_strategy_owner"] == "STRATEGY_A" for row in result["sleeves"])
+    assert all(row["management_strategy"] == "STRATEGY_B" for row in result["sleeves"])
