@@ -331,7 +331,7 @@ def test_strategy_review_renders_owner_alerts_and_pair_history(tmp_path: Path) -
     page = render_strategy_review_page(
         [],
         csrf_secret="secret",
-        assignments=_assignments if False else {
+        assignments={
             "AMDW / AMDL": {
                 "primary_strategy": "STRATEGY_B",
                 "previous_primary_strategy": "STRATEGY_A",
