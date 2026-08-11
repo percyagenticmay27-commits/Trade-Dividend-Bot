@@ -52,6 +52,20 @@ def load_promotion_requests(path: str | Path) -> list[dict[str, Any]]:
     return [dict(row) for row in rows if isinstance(row, Mapping)]
 
 
+
+def load_promotion_journal(path: str | Path) -> list[dict[str, Any]]:
+    file = Path(path)
+    if not file.is_file():
+        return []
+    events: list[dict[str, Any]] = []
+    for line in file.read_text(encoding="utf-8").splitlines():
+        if not line.strip():
+            continue
+        value = json.loads(line)
+        if isinstance(value, Mapping):
+            events.append(dict(value))
+    return events
+
 def _write_requests(path: Path, requests: Sequence[Mapping[str, Any]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -345,12 +359,88 @@ def _render_strategy_comparison(
     return "<div class='pair-strategy-list'>" + "".join(cards) + "</div>"
 
 
+
+def _render_owner_alerts(model: Mapping[str, Any]) -> str:
+    alerts = model.get("alerts")
+    alerts = alerts if isinstance(alerts, list) else []
+    if not alerts:
+        return (
+            "<p class='alert-empty'>No strategy governance alerts require owner attention. "
+            "Evidence monitoring continues automatically.</p>"
+        )
+    cards = []
+    for alert in alerts:
+        if not isinstance(alert, Mapping):
+            continue
+        severity = str(alert.get("severity") or "INFO").upper()
+        css = severity.lower()
+        cards.append(
+            f"<article class='governance-alert {html.escape(css)}'>"
+            f"<span class='alert-severity'>{html.escape(severity)}</span>"
+            f"<div><strong>{html.escape(str(alert.get('pair') or 'ALL'))}: "
+            f"{html.escape(str(alert.get('alert_type') or 'STRATEGY_ALERT').replace('_', ' ').title())}</strong>"
+            f"<p>{html.escape(str(alert.get('message') or 'No message reported.'))}</p>"
+            f"<small>Owner next step: {html.escape(str(alert.get('owner_action') or 'Continue monitoring.'))}</small>"
+            "</div></article>"
+        )
+    return "<div class='governance-alert-list'>" + "".join(cards) + "</div>"
+
+
+def _render_strategy_history(model: Mapping[str, Any]) -> str:
+    histories = model.get("histories")
+    histories = histories if isinstance(histories, list) else []
+    cards = []
+    for history in histories:
+        if not isinstance(history, Mapping):
+            continue
+        pair = str(history.get("pair") or "Unknown pair")
+        events = history.get("events")
+        events = events if isinstance(events, list) else []
+        event_rows = []
+        for event in reversed(events):
+            if not isinstance(event, Mapping):
+                continue
+            event_rows.append(
+                "<tr>"
+                f"<td>{html.escape(str(event.get('recorded_at_utc') or event.get('requested_at_utc') or 'Not reported'))}</td>"
+                f"<td>{html.escape(str(event.get('event_type') or 'Not reported').replace('_', ' ').title())}</td>"
+                f"<td>{html.escape(str(event.get('previous_primary_strategy') or event.get('current_primary_strategy') or 'Not reported'))}</td>"
+                f"<td>{html.escape(str(event.get('new_primary_strategy') or event.get('proposed_primary_strategy') or 'Not reported'))}</td>"
+                f"<td>{html.escape(str(event.get('reason') or event.get('evidence_summary') or 'Not reported'))}</td></tr>"
+            )
+        events_html = (
+            "<div class='history-table-wrap'><table class='history-table'><thead><tr>"
+            "<th>Date</th><th>Event</th><th>From</th><th>To</th><th>Reason / Evidence</th>"
+            "</tr></thead><tbody>" + "".join(event_rows) + "</tbody></table></div>"
+            if event_rows
+            else "<p class='empty-state'>No promotion or veto events have been recorded for this pair.</p>"
+        )
+        cards.append(
+            "<details class='strategy-history-card'>"
+            f"<summary><strong>{html.escape(pair)}</strong>"
+            f"<span>Entry: {html.escape(str(history.get('original_entry_strategy') or 'Not reported'))}</span>"
+            f"<span>Managed by: {html.escape(str(history.get('current_management_strategy') or 'Not reported'))}</span>"
+            f"<span>{html.escape(str(history.get('position_status') or 'Not reported').replace('_', ' ').title())}</span></summary>"
+            "<div class='history-summary-grid'>"
+            f"<div><small>Original Entry Strategy</small><strong>{html.escape(str(history.get('original_entry_strategy') or 'Not reported'))}</strong></div>"
+            f"<div><small>Current Management Strategy</small><strong>{html.escape(str(history.get('current_management_strategy') or 'Not reported'))}</strong></div>"
+            f"<div><small>Previous Primary</small><strong>{html.escape(str(history.get('previous_primary_strategy') or 'NONE'))}</strong></div>"
+            f"<div><small>Assigned Since</small><strong>{html.escape(str(history.get('assigned_since') or 'Not reported'))}</strong></div>"
+            f"<div><small>Assignment Reason</small><strong>{html.escape(str(history.get('assignment_source') or 'Not reported').replace('_', ' ').title())}</strong></div>"
+            f"<div><small>Promotion Request</small><strong>{html.escape(str(history.get('promotion_request_id') or 'NONE'))}</strong></div>"
+            "</div>" + events_html + "</details>"
+        )
+    if not cards:
+        return "<p class='empty-state'>No pair strategy history is available.</p>"
+    return "<div class='strategy-history-list'>" + "".join(cards) + "</div>"
+
 def render_strategy_review_page(
     requests: Sequence[Mapping[str, Any]],
     *,
     csrf_secret: str,
     assignments: Mapping[str, Mapping[str, Any]] | None = None,
     performance_rows: Sequence[Mapping[str, Any]] = (),
+    governance_model: Mapping[str, Any] | None = None,
 ) -> str:
     cards: list[str] = []
     for request in requests:
@@ -422,9 +512,13 @@ def render_strategy_review_page(
         "<section class='panel strategy-review'><h2>Strategy Review</h2>"
         "<p>Review proposed pair-specific changes before a test strategy becomes primary. "
         "No response allows promotion after the seven-day review window; a veto keeps the current primary.</p>"
+        "<h3>Owner Alerts and Next Steps</h3>"
+        f"{_render_owner_alerts(governance_model or {})}"
         "<h3>Strategy Performance and Qualification</h3>"
         "<p>Each candidate uses isolated virtual capital equal to the pair's assigned paper-capital bucket. "
         "Virtual values never enter portfolio totals or the paper ledger.</p>"
         f"{comparison}<h3>Pending Owner Decisions</h3>"
-        f"{body}<h3>Current Pair Strategy Assignments</h3>{assignments_body}</section>"
+        f"{body}<h3>Pair Strategy History</h3>"
+        f"{_render_strategy_history(governance_model or {})}"
+        f"<h3>Current Pair Strategy Assignments</h3>{assignments_body}</section>"
     )
