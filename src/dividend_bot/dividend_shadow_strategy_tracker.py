@@ -7,6 +7,8 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Mapping
 
+from .dividend_strategy_registry import active_strategies_for_pair
+
 PAPER_TRADE_MODE = True
 SHADOW_ONLY = True
 LIVE_TRADING_ENABLED = False
@@ -16,7 +18,6 @@ CAPITAL_MOVEMENT_ENABLED = False
 LEGACY_STARTING_VALUE = 100.0
 A_WEIGHT = 0.70
 B_WEIGHT = 0.30
-STRATEGIES = ("STRATEGY_A", "STRATEGY_B")
 DEFAULT_STATE_PATH = Path("state/dividend_strategy_shadow_state.json")
 DEFAULT_REPORT_PATH = Path("results/dividend_strategy_shadow_performance.json")
 
@@ -118,12 +119,16 @@ def _rebase_strategy_state(row: dict[str, Any], allocation_basis: float) -> dict
     return row
 
 
-def _strategy_signal(signals: Mapping[str, Any], strategy_id: str) -> tuple[bool, bool]:
-    if strategy_id == "STRATEGY_A":
-        row = signals.get("strategy_a") if isinstance(signals.get("strategy_a"), Mapping) else {}
-        return bool(row.get("buy_trigger")), bool(row.get("sell_trigger"))
-    row = signals.get("strategy_b") if isinstance(signals.get("strategy_b"), Mapping) else {}
-    return bool(row.get("buy_eligible")), bool(row.get("sell_trigger"))
+def _strategy_signal(
+    signals: Mapping[str, Any],
+    definition: Mapping[str, Any],
+) -> tuple[bool, bool]:
+    signal_key = str(definition.get("signal_key") or "")
+    row = signals.get(signal_key) if isinstance(signals.get(signal_key), Mapping) else {}
+    return (
+        bool(row.get(str(definition.get("buy_signal_field") or ""))),
+        bool(row.get(str(definition.get("sell_signal_field") or ""))),
+    )
 
 
 def _value(row: Mapping[str, Any], a_price: float, b_price: float) -> float:
@@ -139,6 +144,7 @@ def update_shadow_strategy_performance(
     pair_config: Mapping[str, Mapping[str, Any]],
     state_path: str | Path = DEFAULT_STATE_PATH,
     report_path: str | Path = DEFAULT_REPORT_PATH,
+    registry_path: str | Path | None = None,
 ) -> dict[str, Any]:
     as_of = str(paper_state.get("as_of_date") or paper_state.get("last_processed_date") or "")
     if not as_of:
@@ -171,7 +177,14 @@ def update_shadow_strategy_performance(
             continue
         signals = _signals_for_pair(pair, config, entries)
         pair_shadow = pairs_state.setdefault(pair, {})
-        for strategy_id in STRATEGIES:
+        registry_file = (
+            Path(registry_path)
+            if registry_path is not None
+            else shadow_file.with_name("dividend_strategy_registry.json")
+        )
+        definitions = active_strategies_for_pair(pair, path=registry_file)
+        for definition in definitions:
+            strategy_id = str(definition["strategy_id"])
             row = pair_shadow.get(strategy_id)
             row = (
                 _rebase_strategy_state(dict(row), allocation_basis)
@@ -179,7 +192,7 @@ def update_shadow_strategy_performance(
                 else _new_strategy_state(as_of, allocation_basis)
             )
             duplicate_date = row.get("last_observation_date") == as_of
-            buy, sell = _strategy_signal(signals, strategy_id)
+            buy, sell = _strategy_signal(signals, definition)
             current_before = _value(row, a_price, b_price)
             action = "SHADOW_HOLD"
             if not duplicate_date and not row.get("in_market") and buy:
@@ -221,7 +234,10 @@ def update_shadow_strategy_performance(
                 {
                     "pair": pair,
                     "strategy_id": strategy_id,
-                    "role": "STRATEGY_A_BASELINE" if strategy_id == "STRATEGY_A" else "TEST_CANDIDATE",
+                    "display_name": str(definition.get("display_name") or strategy_id),
+                    "role": str(definition.get("strategy_role") or "TEST_CANDIDATE"),
+                    "strategy_version": str(definition.get("version") or "Not reported"),
+                    "promotion_eligible": bool(definition.get("promotion_eligible")),
                     "evaluation_start": row["evaluation_start"],
                     "evaluation_end": as_of,
                     "virtual_capital_basis": round(allocation_basis, 8),
@@ -256,6 +272,7 @@ def update_shadow_strategy_performance(
         "as_of_date": as_of,
         "methodology": "ISOLATED_PAIR_ALLOCATION_EQUIVALENT_BENCHMARK_70_30_SLEEVES",
         "capital_basis_policy": "MATCH_AUTHORITATIVE_PAIR_CAPITAL_BUCKET",
+        "strategy_registry_path": str(registry_path or shadow_file.with_name("dividend_strategy_registry.json")),
         "performance": performance,
         "warnings": warnings,
         "paper_trade_mode": True,
