@@ -69,6 +69,7 @@ def ensure_pair_assignments(
     *,
     path: str | Path = DEFAULT_ASSIGNMENTS_PATH,
     now: datetime | None = None,
+    strategy_ids: Sequence[str] = ("STRATEGY_A", "STRATEGY_B"),
 ) -> dict[str, dict[str, Any]]:
     file = Path(path)
     assignments = load_assignments(file)
@@ -82,9 +83,22 @@ def ensure_pair_assignments(
                 "assignment_status": "ACTIVE",
                 "assignment_source": "DEFAULT_PRODUCTION_BASELINE",
                 "effective_at_utc": timestamp,
-                "shadow_strategies": ["STRATEGY_B"],
+                "shadow_strategies": [
+                    strategy_id
+                    for strategy_id in strategy_ids
+                    if strategy_id != STRATEGY_A
+                ],
                 "paper_trade_mode": True,
             }
+            changed = True
+        primary = str(assignments[pair].get("primary_strategy") or STRATEGY_A)
+        desired_shadows = [
+            strategy_id
+            for strategy_id in strategy_ids
+            if strategy_id and strategy_id != primary
+        ]
+        if assignments[pair].get("shadow_strategies") != desired_shadows:
+            assignments[pair]["shadow_strategies"] = desired_shadows
             changed = True
     if changed or not file.is_file():
         _write_json(
@@ -338,7 +352,17 @@ def run_strategy_promotion_cycle(
     journal_path: str | Path = DEFAULT_JOURNAL_PATH,
     now: datetime | None = None,
 ) -> dict[str, Any]:
-    assignments = ensure_pair_assignments(pairs, path=assignments_path, now=now)
+    strategy_ids = sorted({
+        str(row.get("strategy_id") or "")
+        for row in performance_rows
+        if isinstance(row, Mapping) and str(row.get("strategy_id") or "")
+    }) or [STRATEGY_A, "STRATEGY_B"]
+    assignments = ensure_pair_assignments(
+        pairs,
+        path=assignments_path,
+        now=now,
+        strategy_ids=strategy_ids,
+    )
     requests = create_promotion_requests(
         performance_rows,
         assignments_path=assignments_path,
