@@ -104,7 +104,7 @@ def _dividend_window_starts(
             and str(row.get("Ticker") or row.get("ticker") or "").upper() == income_symbol
             and str(row.get("Action") or row.get("action") or "").upper()
             in {"PAPER_BUY_OPEN", "PAPER_BUY", "PAPER_BUY_FROM_SGOV"}
-            and row.get("Date") or row.get("date")
+            and (row.get("Date") or row.get("date"))
         ]
         if buys:
             starts[pair_name] = max(buys)
@@ -453,6 +453,49 @@ class PaperTradingEngine(CorePaperTradingEngine):
         )
         if not self.sleeve_in_sgov(entry, side):
             self._persist_sleeve_strategy_owner(entry, side, decision)
+
+    def process_pending_dividends_only(
+        self,
+        state: dict[str, Any],
+        frames: Mapping[str, pd.DataFrame],
+        as_of: pd.Timestamp,
+    ) -> list[dict[str, Any]]:
+        logs: list[dict[str, Any]] = []
+        for pair, config in PAPER_PAIRS.items():
+            entry = state["pairs"][pair]
+            window_start = getattr(self, "_dividend_window_starts", {}).get(pair, as_of)
+            for payment_date, dividend in _unprocessed_dividend_payments(
+                frames[config["a"]],
+                after=window_start,
+                through=as_of,
+            ):
+                payment_prices = {
+                    "A": self.price(frames[config["a"]], payment_date),
+                    "B": self.price(frames[config["b"]], payment_date),
+                }
+                payment_shares = entry["a_shares"]
+                payment_cash = self.apply_dividend(
+                    entry,
+                    dividend,
+                    payment_prices,
+                    eligible_a_shares=payment_shares,
+                )
+                if payment_cash > 0:
+                    signals = entry.get("last_signal") or {"A": "HOLD", "B": "HOLD"}
+                    logs.append(self.log_row(
+                        payment_date,
+                        pair,
+                        "A",
+                        signals.get("A", "HOLD"),
+                        "PAPER_DIVIDEND_RECEIVED",
+                        config["a"],
+                        payment_shares,
+                        dividend,
+                        payment_cash,
+                        "Recovered missed income ETF dividend; split 50/50 between A and B",
+                    ))
+        return logs
+
 
     def process_pair(self, pair, entry, config, frames, as_of, logs, report_rows):
         """Route ordinary paper exits through the persisted strategy owner.
