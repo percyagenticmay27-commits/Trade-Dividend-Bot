@@ -75,6 +75,10 @@ def test_builds_strategy_scoped_holdings_income_watchlist_and_performance(tmp_pa
     assert report["realized_gain"] == 5.5
     assert report["performance_detail"]["win_rate_percent"] == 100.0
     assert any(item["alert_type"] == "EARNINGS_LOCK" for item in report["alerts"])
+    assert report["decision_journal_status"] == "AVAILABLE"
+    assert report["decision_count"] >= 2
+    assert report["decision_journal"]["strategy_id"] == "DIVIDEND-001"
+    assert {item["decision_type"] for item in report["decision_journal"]["decisions"]} >= {"HOLD", "SELL"}
 
 
 def test_missing_optional_sources_do_not_fabricate_detail(tmp_path: Path) -> None:
@@ -86,6 +90,8 @@ def test_missing_optional_sources_do_not_fabricate_detail(tmp_path: Path) -> Non
     assert report["income_events"] == []
     assert report["unrealized_gain"] is None
     assert report["evidence_sources"] == []
+    assert report["decision_journal_status"] == "AVAILABLE"
+    assert report["decision_journal"]["decisions"] == []
 
 
 def test_dashboard_evidence_preserves_governance_and_execution_locks(tmp_path: Path) -> None:
