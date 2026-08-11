@@ -46,3 +46,51 @@ Once a legacy position is actually closed to SGOV, the old lifecycle is complete
 If Swing has open paper positions that predate a future method-ownership architecture, Swing should not silently assign those positions to a current method. Swing may use its own explicit legacy-management status and conservative exit policy, but it must document the policy, preserve provenance, keep risk overrides separate, and require all later re-entries to receive a real current method owner.
 
 Swing does not need to copy Dividend's A+B consensus formula unless that is appropriate for Swing's own methods. The interoperability requirement is semantic: legacy status must remain distinct from a genuine strategy/method owner, and Enterprise AI CIO should display the supplied status rather than invent ownership.
+
+## Current-Evidence Authority and Signal-Symbol Contract
+
+### DIVIDEND-SIDE IMPLEMENTED
+
+The Dividend daily paper cycle now refreshes and validates the current
+`entry_score_report.json` before evaluating strategy-owner-controlled exits.
+A failed or incomplete current-evidence refresh blocks the paper cycle instead
+of silently using a previous cycle's Strategy A/B evidence.
+
+Dividend position symbols resolve exit evidence through their configured signal
+symbols. For example, AMDW/AMDL resolves current Strategy A/B evidence through
+AMD while preserving AMDW and AMDL as the actual paper holdings.
+
+Dividend Enterprise holding evidence now publishes:
+
+- `exit_signal_symbol`
+- `exit_evidence_source`
+- `exit_evidence_generated_at_utc`
+- `exit_state`
+- `exit_warning_active`
+- `exit_buffered`
+- `exit_warning_reasons`
+- `sell_trigger`
+- `sell_reasons`
+- `exit_authority_reason`
+
+`SELL_CONFIRMED` remains a signal/authority state and does not represent a
+completed paper sale unless the paper lifecycle records the exit.
+
+### ENTERPRISE AI CIO CONTRACT
+
+The Enterprise AI CIO consumes strategy-supplied current exit evidence. It must
+preserve the strategy's actual holding symbol separately from the signal symbol,
+surface evidence freshness, and distinguish `WARNING_BUFFERED`,
+`SELL_CONFIRMED`, and a completed paper exit. It must not recompute the
+strategy's technical formulas.
+
+### SWING-SIDE REQUIRED
+
+SWING-001 must publish the equivalent semantic fields when its holding symbol
+differs from the symbol used to calculate its strategy signal. Swing chooses its
+own formulas and ownership rules; it must not copy Dividend Strategy A/B
+calculations merely to satisfy this contract.
+
+SWING-001 should fail closed when current exit evidence is missing or stale and
+must identify both the evidence source and its generation timestamp.
+
