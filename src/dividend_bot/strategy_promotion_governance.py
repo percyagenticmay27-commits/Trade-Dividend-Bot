@@ -237,7 +237,7 @@ def _render_strategy_comparison(
         if isinstance(row, Mapping)
     }
     cards: list[str] = []
-    for pair, assignment in sorted(assignments.items()):
+    for card_index, (pair, assignment) in enumerate(sorted(assignments.items())):
         evidence = by_pair.get(pair, [])
         primary_id = str(assignment.get("primary_strategy") or "STRATEGY_A")
         primary = next(
@@ -264,6 +264,10 @@ def _render_strategy_comparison(
             continue
 
         basis = _metric(primary, "virtual_capital_basis")
+        assigned_since = str(assignment.get("effective_at_utc") or "Not reported")
+        assignment_reason = str(
+            assignment.get("assignment_source") or "DEFAULT_PRODUCTION_BASELINE"
+        ).replace("_", " ").title()
         candidate_rows: list[str] = []
         for index, candidate in enumerate(candidates):
             candidate_id = str(candidate.get("strategy_id") or "Not reported")
@@ -293,34 +297,43 @@ def _render_strategy_comparison(
             )
             candidate_rows.append(
                 "<tr>"
+                f"<td><strong>{html.escape(pair)}</strong></td>"
+                f"<td>{html.escape(primary_id)}</td>"
                 f"<td><strong>{html.escape(candidate_id)}</strong>{leader}</td>"
                 f"<td>${_metric(candidate, 'virtual_capital_basis'):,.2f}</td>"
+                f"<td>{_metric(primary, 'total_return_percent'):.2f}%</td>"
                 f"<td>{_metric(candidate, 'total_return_percent'):.2f}%</td>"
-                f"<td>{_metric(candidate, 'max_drawdown_percent'):.2f}%</td>"
-                f"<td>{days}/90</td><td>{observations}/60</td><td>{trades}/1</td>"
                 f"<td><span class='status {css}'>{html.escape(label)}</span>"
-                f"<small>{html.escape(explanation)}</small></td></tr>"
+                f"<small>{html.escape(explanation)}</small></td>"
+                f"<td>{_metric(primary, 'max_drawdown_percent'):.2f}% / "
+                f"{_metric(candidate, 'max_drawdown_percent'):.2f}%</td>"
+                f"<td>{days}/90</td><td>{observations}/60</td><td>{trades}/1</td></tr>"
             )
         candidates_body = (
             "<div class='candidate-table-wrap'><table class='candidate-table'>"
-            "<thead><tr><th>Test Candidate</th><th>Virtual Basis</th><th>Return</th>"
-            "<th>Max Drawdown</th><th>Days</th><th>Observations</th>"
-            "<th>Closed Trades</th><th>Qualification / Why</th></tr></thead><tbody>"
+            "<thead><tr><th>Pair</th><th>Primary</th><th>Test Candidate</th>"
+            "<th>Basis</th><th>Primary Return</th><th>Candidate Return</th>"
+            "<th>Status / Why</th><th>Drawdown P / C</th><th>Days</th>"
+            "<th>Observations</th><th>Closed Trades</th></tr></thead><tbody>"
             + "".join(candidate_rows)
             + "</tbody></table></div>"
             if candidate_rows
             else "<p class='empty-state'>No registered test candidate has published evidence for this pair.</p>"
         )
+        open_attribute = " open" if card_index == 0 else ""
         cards.append(
-            "<details class='pair-strategy-card'>"
+            f"<details class='pair-strategy-card'{open_attribute}>"
             "<summary>"
             f"<strong>{html.escape(pair)}</strong>"
             f"<span>Primary: {html.escape(primary_id)}</span>"
-            f"<span>Assigned basis: ${basis:,.2f}</span>"
-            f"<span>{len(candidates)} test candidate{'s' if len(candidates) != 1 else ''}</span>"
+            f"<span>Assigned since: {html.escape(assigned_since)}</span>"
+            f"<span class='view-details'>View {len(candidates)} candidate"
+            f"{'s' if len(candidates) != 1 else ''} and evidence</span>"
             "</summary>"
             "<div class='primary-strategy-summary'>"
             f"<div><small>Current Primary</small><strong>{html.escape(primary_id)}</strong></div>"
+            f"<div><small>Assigned Since</small><strong>{html.escape(assigned_since)}</strong></div>"
+            f"<div><small>Assignment Reason</small><strong>{html.escape(assignment_reason)}</strong></div>"
             f"<div><small>Primary Return</small><strong>{_metric(primary, 'total_return_percent'):.2f}%</strong></div>"
             f"<div><small>Primary Drawdown</small><strong>{_metric(primary, 'max_drawdown_percent'):.2f}%</strong></div>"
             f"<div><small>Virtual Basis</small><strong>${basis:,.2f}</strong></div>"
