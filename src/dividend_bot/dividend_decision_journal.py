@@ -135,8 +135,16 @@ def _watchlist_decision(row: Mapping[str, Any], index: int) -> dict[str, Any]:
 
 
 def _historical_decision(row: Mapping[str, Any], index: int) -> dict[str, Any]:
-    reasons = _text_list(row.get("exit_reasons") or row.get("sell_reasons"))
-    raw_reason = row.get("exit_reason") or row.get("reason")
+    reasons = _text_list(
+        row.get("last_exit_strategy_reasons")
+        or row.get("exit_reasons")
+        or row.get("sell_reasons")
+    )
+    raw_reason = (
+        row.get("last_exit_reason")
+        or row.get("exit_reason")
+        or row.get("reason")
+    )
     if raw_reason not in (None, ""):
         reasons.append(str(raw_reason))
     rationale = _rationale(
@@ -154,7 +162,15 @@ def _historical_decision(row: Mapping[str, Any], index: int) -> dict[str, Any]:
         "final_rationale": rationale,
         "alternatives": ["Continue holding"],
         "committee_evidence": [{
-            "engine": str(row.get("exit_strategy") or row.get("strategy_owner") or "HISTORICAL_LEDGER"),
+            "engine": str(
+                row.get("last_exit_strategy_owner")
+                or row.get("exit_strategy")
+                or row.get("exit_method")
+                or row.get("strategy_owner")
+                or "HISTORICAL_LEDGER"
+            ),
+            "score": row.get("exit_score") or row.get("score"),
+            "confidence": row.get("exit_confidence") or row.get("confidence"),
             "vote": "SELL",
             "evidence_status": "AVAILABLE" if reasons else "PARTIAL",
             "evidence_summary": rationale,
