@@ -126,6 +126,11 @@ def load_external_strategy_plugins(
                 raise ValueError("registration must be a JSON object")
             plugin = normalize_external_strategy_registration(payload, expected_strategy_id=strategy_id)
             plugin["source_registration"] = str(path)
+            repository_root = str(entry.get("repository_root") or "").strip()
+            if repository_root:
+                plugin["repository_root"] = str(Path(repository_root).resolve(strict=False))
+            else:
+                plugin["repository_root"] = str(path.parent.parent.resolve(strict=False))
             sid = plugin["strategy_id"]
             if sid in seen:
                 raise ValueError(f"duplicate strategy_id: {sid}")
