@@ -122,6 +122,9 @@ def test_dividend_decision_journal_reaches_decisions_tab() -> None:
     assert "Search stock, pair, reason, or decision" in output
     assert "applyJournalFilters" in output
     assert "Pair Lifecycle Overview" in output
+    assert "<h3>AMDW / AMDL</h3>" in output
+    assert "More evidence" in output
+    assert "Open full history" in output
     assert "data-lifecycle-search" in output
     assert "data-lifecycle-filter" in output
     assert "data-lifecycle-prev" in output
@@ -143,6 +146,9 @@ def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
     assert ".strategy-decision-panel .lifecycle-summary-list{" in css
     assert ".strategy-decision-panel [data-lifecycle-search]{" in css
     assert ".strategy-decision-panel .lifecycle-stage-badge{" in css
+    assert "white-space:normal" in css
+    assert "overflow-wrap:anywhere" in css
+    assert ".strategy-decision-panel .lifecycle-more{" in css
     assert "width:auto" in css
     assert "height:auto" in css
     assert ".strategy-decision-panel .lifecycle-pagination{" in css
