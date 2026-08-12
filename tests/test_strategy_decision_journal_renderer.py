@@ -156,7 +156,7 @@ def test_renders_stock_pair_search_and_working_filter_controls():
     assert 'data-decision-type="REVIEW_PAIR"' in html
     assert 'data-journal-search-text=' in html
     assert "<script>" not in html
-    assert "decision shown" in html
+    assert ">2 decisions shown</strong>" in html
 
 
 def test_search_index_contains_pair_symbols_and_rationale():
