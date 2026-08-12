@@ -162,7 +162,7 @@ def test_search_index_contains_pair_symbols_and_rationale():
     html = render_strategy_decision_journal(_dividend_journal())
 
     marker = 'data-journal-search-text="'
-    start = html.index(marker, html.index("NVIDIA Income Ecosystem")) + len(marker)
+    start = html.index(marker) + len(marker)
     search_text = html[start:html.index('"', start)]
     assert "nvidia income ecosystem" in search_text
     assert "nvdy" in search_text
