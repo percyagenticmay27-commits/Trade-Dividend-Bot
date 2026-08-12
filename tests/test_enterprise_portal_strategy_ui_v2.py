@@ -132,7 +132,8 @@ def test_dividend_decision_journal_reaches_decisions_tab() -> None:
 def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
     css = strategy_ui_css()
 
-    assert "color:#344054!important" in css
-    assert ".journal-filters button:hover" in css
-    assert "color:#5d18d6!important" in css
-    assert ".journal-filters button:focus-visible" in css
+    assert ".strategy-decision-panel .journal-filters button{" in css
+    assert "font-weight:700" in css
+    assert "opacity:1" in css
+    assert ".strategy-decision-panel .journal-filters button:hover{" in css
+    assert ".strategy-decision-panel .journal-filters button:focus-visible{" in css
