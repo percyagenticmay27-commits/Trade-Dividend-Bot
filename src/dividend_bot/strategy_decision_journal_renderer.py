@@ -189,6 +189,33 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
         committee_evidence = entry.get("committee_evidence") or []
         committee_rows = _render_committee_rows(committee_evidence)
         decision_id = _text(entry.get("decision_id"), f"decision-{index}")
+        nested_identity = entry.get("ecosystem")
+        identity_data = nested_identity if isinstance(nested_identity, Mapping) else {}
+        search_values = [
+            decision_id,
+            timestamp,
+            decision_type,
+            status,
+            rationale,
+            entry.get("symbol"),
+            entry.get("ecosystem_name"),
+            entry.get("income_leg"),
+            entry.get("leverage_leg"),
+            identity_data.get("ecosystem_name"),
+            identity_data.get("income_leg"),
+            identity_data.get("leverage_leg"),
+        ]
+        for evidence in committee_evidence:
+            if isinstance(evidence, Mapping):
+                search_values.extend([
+                    evidence.get("committee") or evidence.get("engine"),
+                    evidence.get("evidence_summary") or evidence.get("reason"),
+                    evidence.get("vote") or evidence.get("decision"),
+                ])
+        search_text = escape(
+            " ".join(_text(value, "") for value in search_values).lower(),
+            quote=True,
+        )
         committee_timeline = _render_committee_timeline(
             committee_evidence,
             decision_id=decision_id,
@@ -199,7 +226,8 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
         )
 
         cards.append(
-            f'<article class="decision-card" data-order="{index}" data-timestamp="{timestamp}">'
+            f'<article class="decision-card" data-order="{index}" data-timestamp="{timestamp}" '
+            f'data-decision-type="{decision_type}" data-journal-search-text="{search_text}">'
             f'<header><div><span class="decision-type">{decision_type}</span>'
             f'<span class="status">{status}</span></div><time>{timestamp}</time></header>'
             f'{identity}<p class="rationale"><b>Final rationale:</b> {rationale}</p>'
@@ -235,10 +263,59 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
 <a href="/executive-dashboard?strategy={encoded_strategy_id}#strategy-{strategy_anchor}">Strategy Workspace</a>
 <a href="/executive-dashboard?strategy={encoded_strategy_id}&amp;tab=decisions#strategy-{strategy_anchor}" aria-current="page">Decision Journal</a>
 </nav>
-<div class="journal-filters"><button data-filter="ALL">All</button><button data-filter="BUY">Buy</button>
-<button data-filter="SELL">Sell</button><button data-filter="REPLACE">Replace</button>
-<button data-filter="WATCHLIST">Watchlist</button></div>
-<div class="decision-timeline">{''.join(cards)}{empty}</div></section>'''
+<div class="journal-search" role="search" aria-label="Search decision lifecycle">
+<label><span>Search stock, pair, reason, or decision</span>
+<input type="search" data-journal-search placeholder="Example: NVDW, AMDW / AMDL, price below EMA20"></label>
+<label><span>Decision type</span><select data-journal-type>
+<option value="ALL">All decisions</option><option value="BUY">Buy</option>
+<option value="SELL">Sell</option><option value="HOLD">Hold</option>
+<option value="WATCHLIST">Watchlist</option><option value="REPLACE">Replace</option>
+</select></label><button type="button" data-journal-clear>Clear</button>
+<strong data-journal-count>{len(cards)} decisions shown</strong></div>
+<div class="journal-filters" aria-label="Quick decision filters"><button type="button" data-filter="ALL">All</button><button type="button" data-filter="BUY">Buy</button>
+<button type="button" data-filter="SELL">Sell</button><button type="button" data-filter="HOLD">Hold</button>
+<button type="button" data-filter="REPLACE">Replace</button><button type="button" data-filter="WATCHLIST">Watchlist</button></div>
+<div class="decision-timeline">{''.join(cards)}{empty}</div>
+<script>
+(function() {{
+  document.querySelectorAll('.strategy-decision-journal').forEach(function(root) {{
+    if (root.dataset.filtersReady === 'true') return;
+    root.dataset.filtersReady = 'true';
+    var search = root.querySelector('[data-journal-search]');
+    var type = root.querySelector('[data-journal-type]');
+    var clear = root.querySelector('[data-journal-clear]');
+    var count = root.querySelector('[data-journal-count]');
+    var cards = Array.prototype.slice.call(root.querySelectorAll('.decision-card'));
+    function applyFilters() {{
+      var query = search ? search.value.trim().toLowerCase() : '';
+      var selected = type ? type.value : 'ALL';
+      var visible = 0;
+      cards.forEach(function(card) {{
+        var matchesQuery = !query || (card.dataset.journalSearchText || '').indexOf(query) !== -1;
+        var matchesType = selected === 'ALL' || card.dataset.decisionType === selected;
+        card.hidden = !(matchesQuery && matchesType);
+        if (!card.hidden) visible += 1;
+      }});
+      if (count) count.textContent = visible + (visible === 1 ? ' decision shown' : ' decisions shown');
+    }}
+    if (search) search.addEventListener('input', applyFilters);
+    if (type) type.addEventListener('change', applyFilters);
+    root.querySelectorAll('[data-filter]').forEach(function(button) {{
+      button.addEventListener('click', function() {{
+        if (type) type.value = button.dataset.filter || 'ALL';
+        applyFilters();
+      }});
+    }});
+    if (clear) clear.addEventListener('click', function() {{
+      if (search) search.value = '';
+      if (type) type.value = 'ALL';
+      applyFilters();
+      if (search) search.focus();
+    }});
+    applyFilters();
+  }});
+}})();
+</script></section>'''
 
 
 def render_strategy_decision_journal_document(journal: Mapping[str, Any]) -> str:
@@ -250,7 +327,7 @@ body{{font-family:Arial,sans-serif;background:#f5f7fb;color:#101828;margin:0;pad
 .journal-heading,.decision-card{{background:#fff;border:1px solid #dbe3ef;border-radius:16px;padding:20px;margin-bottom:16px}}
 .journal-heading{{display:flex;justify-content:space-between;gap:20px}}.eyebrow,.type{{color:#5b21b6;font-weight:700;font-size:12px}}
 .journal-meta span,.status,.decision-type{{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}}
-.journal-cross-links,.journal-filters{{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0}}.journal-cross-links a{{padding:9px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5b21b6;text-decoration:none;font-weight:700}}.journal-cross-links a[aria-current="page"]{{background:#5b21b6;color:#fff}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
+.journal-cross-links,.journal-filters,.journal-search{{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0;align-items:end}}.journal-search label{{display:grid;gap:5px;min-width:210px;flex:1}}.journal-search label span{{font-size:12px;font-weight:700;color:#475467}}.journal-search input,.journal-search select{{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}}.journal-search strong{{padding:10px;color:#475467}}.journal-cross-links a{{padding:9px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5b21b6;text-decoration:none;font-weight:700}}.journal-cross-links a[aria-current="page"]{{background:#5b21b6;color:#fff}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
 .decision-card header{{display:flex;justify-content:space-between}}.pair{{display:flex;align-items:center;gap:16px;margin:12px 0}}.pair span:not(.plus){{background:#f8fafc;border:1px solid #dbe3ef;padding:12px 18px;border-radius:12px}}.pair b{{display:block;font-size:11px;color:#64748b}}
 table{{width:100%;border-collapse:collapse;margin-top:12px}}th,td{{border-bottom:1px solid #e5e7eb;padding:10px;text-align:left}}details{{margin-top:14px}}summary{{font-weight:700;cursor:pointer}}.committee-evidence-timeline{{margin-top:18px}}.committee-timeline{{list-style:none;margin:12px 0 0;padding:0 0 0 18px;border-left:3px solid #c4b5fd}}.committee-step{{position:relative;display:grid;grid-template-columns:34px 1fr;gap:10px;margin:0 0 16px -36px}}.committee-sequence{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#5b21b6;color:#fff;font-weight:800}}.committee-step-content{{background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:12px}}.committee-step-content header{{display:flex;justify-content:space-between;gap:12px}}.committee-vote{{font-size:12px;font-weight:800;color:#5b21b6}}.committee-step-content dl{{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}}.committee-step-content dl div{{display:flex;gap:5px}}.committee-step-content dt{{color:#64748b}}.committee-step-content dd{{margin:0;font-weight:700}}
 .image-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}}.evidence-image{{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0;text-decoration:none}}a.evidence-image{{cursor:pointer}}.evidence-image img{{width:100%;height:160px;object-fit:cover;display:block}}.evidence-image span,.evidence-image p{{display:block;padding:10px;margin:0}}.image-unavailable{{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}}.empty,.empty-state{{color:#64748b;padding:18px}}
