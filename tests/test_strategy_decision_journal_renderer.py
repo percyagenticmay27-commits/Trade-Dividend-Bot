@@ -176,7 +176,7 @@ def test_renders_pair_lifecycle_overview_from_recorded_evidence():
     html = render_strategy_decision_journal(journal)
 
     assert "Pair Lifecycle Overview" in html
-    assert "Earliest recorded strategy" in html
+    assert "Earliest strategy" in html
     assert "Current evidence owner" in html
     assert "Latest score" in html
     assert "Latest confidence" in html
