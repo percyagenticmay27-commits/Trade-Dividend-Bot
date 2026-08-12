@@ -147,6 +147,7 @@ def _historical_decision(row: Mapping[str, Any], index: int) -> dict[str, Any]:
     )
     if raw_reason not in (None, ""):
         reasons.append(str(raw_reason))
+    reasons = list(dict.fromkeys(reason for reason in reasons if reason.strip()))
     rationale = _rationale(
         "The recorded paper position was closed or parked",
         reasons,
@@ -169,8 +170,16 @@ def _historical_decision(row: Mapping[str, Any], index: int) -> dict[str, Any]:
                 or row.get("strategy_owner")
                 or "HISTORICAL_LEDGER"
             ),
-            "score": row.get("exit_score") or row.get("score"),
-            "confidence": row.get("exit_confidence") or row.get("confidence"),
+            "score": (
+                row.get("exit_score")
+                if row.get("exit_score") not in (None, "")
+                else row.get("score")
+            ),
+            "confidence": (
+                row.get("exit_confidence")
+                if row.get("exit_confidence") not in (None, "")
+                else row.get("confidence")
+            ),
             "vote": "SELL",
             "evidence_status": "AVAILABLE" if reasons else "PARTIAL",
             "evidence_summary": rationale,
