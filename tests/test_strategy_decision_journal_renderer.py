@@ -169,3 +169,46 @@ def test_search_index_contains_pair_symbols_and_rationale():
     assert "nvdy" in search_text
     assert "nvdx" in search_text
     assert "higher income quality" in search_text
+
+
+def test_renders_pair_lifecycle_overview_from_recorded_evidence():
+    journal = _dividend_journal()
+    html = render_strategy_decision_journal(journal)
+
+    assert "Pair Lifecycle Overview" in html
+    assert "Earliest recorded strategy" in html
+    assert "Current evidence owner" in html
+    assert "Latest score" in html
+    assert "Latest confidence" in html
+    assert "Why it is at this stage" in html
+    assert 'data-lifecycle-search="NVDY / NVDX"' in html
+
+
+def test_lifecycle_overview_groups_multiple_events_for_same_pair():
+    journal = _dividend_journal()
+    journal["decisions"].append({
+        "strategy_id": "DIVIDEND-001",
+        "decision_timestamp": "2026-08-02T15:00:00Z",
+        "decision_type": "HOLD",
+        "status": "MONITOR",
+        "ecosystem_name": "NVIDIA Income Ecosystem",
+        "income_leg": "NVDY",
+        "leverage_leg": "NVDX",
+        "final_rationale": "The current exit warning remains buffered.",
+        "committee_evidence": [{
+            "engine": "STRATEGY_A",
+            "score": 74,
+            "confidence": "HIGH",
+            "evidence_status": "AVAILABLE",
+        }],
+    })
+
+    html = render_strategy_decision_journal(journal)
+
+    overview_end = html.index('<div class="journal-search"')
+    overview = html[:overview_end]
+    assert overview.count("<h3>NVDY / NVDX</h3>") == 1
+    assert "SELECT_PAIR, REVIEW_PAIR" not in overview
+    assert "REVIEW_PAIR, HOLD" in overview
+    assert "74" in overview
+    assert "HIGH" in overview
