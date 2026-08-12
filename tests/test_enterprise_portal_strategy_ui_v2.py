@@ -116,6 +116,8 @@ def test_dividend_decision_journal_reaches_decisions_tab() -> None:
     assert "Dividend Income Strategy Decision Journal" in output
     assert "AMDW / AMDL" in output
     assert "The warning is buffered" in output
+    assert "Search stock, pair, reason, or decision" in output
+    assert ".strategy-decision-panel .journal-search" in output
     dividend_start = output.index("id='strategy-DIVIDEND-001'")
     swing_start = output.index("id='strategy-SWING-001'")
     dividend_workspace = output[dividend_start:swing_start]
