@@ -141,3 +141,30 @@ def test_renderer_escapes_untrusted_text():
     html = render_strategy_decision_journal(journal)
     assert "<script>" not in html
     assert "&lt;script&gt;" in html
+
+
+def test_renders_stock_pair_search_and_working_filter_controls():
+    html = render_strategy_decision_journal(_dividend_journal())
+
+    assert 'type="search"' in html
+    assert "Search stock, pair, reason, or decision" in html
+    assert 'data-journal-type' in html
+    assert 'data-journal-clear' in html
+    assert 'data-filter="SELL"' in html
+    assert 'data-filter="HOLD"' in html
+    assert 'data-decision-type="REVIEW_PAIR"' in html
+    assert 'data-journal-search-text=' in html
+    assert "applyFilters" in html
+    assert "decision shown" in html
+
+
+def test_search_index_contains_pair_symbols_and_rationale():
+    html = render_strategy_decision_journal(_dividend_journal())
+
+    marker = 'data-journal-search-text="'
+    start = html.index(marker, html.index("NVIDIA Income Ecosystem")) + len(marker)
+    search_text = html[start:html.index('"', start)]
+    assert "nvidia income ecosystem" in search_text
+    assert "nvdy" in search_text
+    assert "nvdx" in search_text
+    assert "higher income quality" in search_text
