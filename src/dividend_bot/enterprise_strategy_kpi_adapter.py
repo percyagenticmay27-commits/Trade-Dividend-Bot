@@ -261,9 +261,15 @@ def build_strategy_kpis(
         artifact_declarations = _artifact_declarations(plugin)
         payloads: list[Any] = []
         accepted_paths: list[str] = []
+        repository_root_raw = plugin.get("repository_root")
+        evidence_root = (
+            Path(str(repository_root_raw)).resolve(strict=False)
+            if isinstance(repository_root_raw, str) and repository_root_raw.strip()
+            else root
+        )
 
         for raw_path in _declared_paths(plugin):
-            path = _safe_path(raw_path, root)
+            path = _safe_path(raw_path, evidence_root)
             if path is None:
                 warnings.append(f"{strategy_id}: unsupported evidence path {raw_path}")
                 continue
@@ -505,6 +511,8 @@ def build_strategy_kpis(
             "alerts": alerts,
             "risk_flags": risk_flags,
             "evidence_paths": sorted(set(accepted_paths)),
+            "evidence_root": str(evidence_root),
+            "external_evidence": evidence_root != root.resolve(strict=False),
             "evidence_status": "AVAILABLE" if accepted_paths else "REGISTRY_ONLY",
         })
 
