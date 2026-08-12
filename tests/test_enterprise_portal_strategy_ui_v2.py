@@ -149,6 +149,6 @@ def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
     assert "white-space:normal" in css
     assert "overflow-wrap:anywhere" in css
     assert ".strategy-decision-panel .lifecycle-more{" in css
-    assert "width:auto" in css
-    assert "height:auto" in css
+    assert "width:fit-content" in css
+    assert "max-width:100%" in css
     assert ".strategy-decision-panel .lifecycle-pagination{" in css
