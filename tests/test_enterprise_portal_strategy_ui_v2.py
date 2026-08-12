@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.dividend_bot.enterprise_portal_strategy_ui import render_strategy_workspace
+from src.dividend_bot.enterprise_portal_strategy_ui import (\n    render_strategy_workspace,\n    strategy_ui_css,\n)
 
 
 def _report() -> dict:
@@ -124,3 +124,12 @@ def test_dividend_decision_journal_reaches_decisions_tab() -> None:
     swing_start = output.index("id='strategy-SWING-001'")
     dividend_workspace = output[dividend_start:swing_start]
     assert "Decision Journal status: NOT_REPORTED" not in dividend_workspace
+
+
+def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
+    css = strategy_ui_css()
+
+    assert "color:#344054!important" in css
+    assert ".journal-filters button:hover" in css
+    assert "color:#5d18d6!important" in css
+    assert ".journal-filters button:focus-visible" in css
