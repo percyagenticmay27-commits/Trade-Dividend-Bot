@@ -213,7 +213,16 @@ def _render_lifecycle_overview(
         labels[key] = symbols
 
     cards: list[str] = []
-    for key in sorted(groups):
+    def lifecycle_priority(key: str) -> tuple[int, str]:
+        latest = max(groups[key], key=_timestamp)
+        status = _text(latest.get("status"), "RECORDED").upper()
+        decision = _text(latest.get("decision_type") or latest.get("decision")).upper()
+        active = decision in {"HOLD", "BUY", "WATCHLIST"} or status in {
+            "MONITOR", "ACTION_REQUIRED", "ENTRY_READY", "WAITING_FOR_ENTRY",
+        }
+        return (0 if active else 1, key)
+
+    for key in sorted(groups, key=lifecycle_priority):
         history = sorted(groups[key], key=_timestamp)
         earliest = history[0]
         latest = history[-1]
@@ -239,10 +248,19 @@ def _render_lifecycle_overview(
             for item in history
         ))
         search_term = escape(labels[key], quote=True)
+        lifecycle_search = escape(
+            " ".join([
+                labels[key], latest_type, latest_status, rationale,
+                _text(latest_engine, ""), _text(score, ""), _text(confidence, ""),
+            ]).lower(),
+            quote=True,
+        )
         cards.append(
-            '<article class="lifecycle-summary-card">'
+            f'<article class="lifecycle-summary-card" data-lifecycle-card '
+            f'data-lifecycle-status="{escape(latest_type, quote=True)}" '
+            f'data-lifecycle-search-text="{lifecycle_search}">'
             f'<header><div><span class="type">PAIR LIFECYCLE</span><h3>{escape(labels[key])}</h3></div>'
-            f'<span class="status">{escape(latest_type)} · {escape(latest_status)}</span></header>'
+            f'<span class="lifecycle-stage-badge">{escape(latest_type)} · {escape(latest_status)}</span></header>'
             '<dl class="lifecycle-summary-grid">'
             f'<div><dt>First recorded</dt><dd>{escape(_text(earliest.get("decision_timestamp") or earliest.get("timestamp")))}</dd></div>'
             f'<div><dt>Latest evidence</dt><dd>{escape(_text(latest.get("decision_timestamp") or latest.get("timestamp")))}</dd></div>'
@@ -262,8 +280,19 @@ def _render_lifecycle_overview(
     return (
         '<section class="lifecycle-overview" aria-label="Pair lifecycle overview">'
         '<header><h3>Pair Lifecycle Overview</h3>'
-        '<p>Earliest and current values reflect recorded evidence only; missing legacy facts are not reconstructed.</p></header>'
-        '<div class="lifecycle-summary-list">' + "".join(cards) + '</div></section>'
+        '<p>Active and actionable pairs appear first. Historical pairs remain searchable without loading one endless page.</p></header>'
+        '<div class="lifecycle-controls">'
+        '<label><span>Find pair or lifecycle</span><input type="search" data-lifecycle-filter '
+        'placeholder="Pair, symbol, stage, strategy, or reason"></label>'
+        '<label><span>Stage</span><select data-lifecycle-stage><option value="ALL">All stages</option>'
+        '<option value="HOLD">Held</option><option value="WATCHLIST">Watchlist</option>'
+        '<option value="BUY">Buy</option><option value="SELL">Sold / closed</option></select></label>'
+        '<strong data-lifecycle-count></strong></div>'
+        '<div class="lifecycle-summary-list">' + "".join(cards) + '</div>'
+        '<nav class="lifecycle-pagination" aria-label="Pair lifecycle pages">'
+        '<button type="button" data-lifecycle-prev>Previous</button>'
+        '<span data-lifecycle-page></span>'
+        '<button type="button" data-lifecycle-next>Next</button></nav></section>'
     )
 
 def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
@@ -398,7 +427,7 @@ body{{font-family:Arial,sans-serif;background:#f5f7fb;color:#101828;margin:0;pad
 .journal-heading,.decision-card,.lifecycle-summary-card{{background:#fff;border:1px solid #dbe3ef;border-radius:16px;padding:20px;margin-bottom:16px}}
 .journal-heading{{display:flex;justify-content:space-between;gap:20px}}.eyebrow,.type{{color:#5b21b6;font-weight:700;font-size:12px}}
 .journal-meta span,.status,.decision-type{{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}}
-.journal-cross-links,.journal-filters,.journal-search{{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0;align-items:end}}.journal-search label{{display:grid;gap:5px;min-width:210px;flex:1}}.journal-search label span{{font-size:12px;font-weight:700;color:#475467}}.journal-search input,.journal-search select{{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}}.journal-search strong{{padding:10px;color:#475467}}.lifecycle-overview{{margin:18px 0}}.lifecycle-overview>header p{{color:#64748b}}.lifecycle-summary-list{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}}.lifecycle-summary-card{{padding:16px;margin:0}}.lifecycle-summary-card header{{display:flex;justify-content:space-between;gap:10px}}.lifecycle-summary-card h3{{margin:4px 0}}.lifecycle-summary-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}}.lifecycle-summary-grid div{{background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;padding:8px}}.lifecycle-summary-grid dt{{font-size:11px;color:#64748b}}.lifecycle-summary-grid dd{{margin:3px 0 0;font-weight:700}}.lifecycle-summary-card button{{color:#5b21b6;font-weight:700}}.journal-cross-links a{{padding:9px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5b21b6;text-decoration:none;font-weight:700}}.journal-cross-links a[aria-current="page"]{{background:#5b21b6;color:#fff}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
+.journal-cross-links,.journal-filters,.journal-search{{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0;align-items:end}}.journal-search label{{display:grid;gap:5px;min-width:210px;flex:1}}.journal-search label span{{font-size:12px;font-weight:700;color:#475467}}.journal-search input,.journal-search select{{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}}.journal-search strong{{padding:10px;color:#475467}}.lifecycle-overview{{margin:18px 0}}.lifecycle-overview>header p{{color:#64748b}}.lifecycle-summary-list{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}}.lifecycle-summary-card{{padding:16px;margin:0}}.lifecycle-summary-card header{{display:flex;justify-content:space-between;gap:10px}}.lifecycle-summary-card h3{{margin:4px 0}}.lifecycle-summary-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}}.lifecycle-summary-grid div{{background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;padding:8px}}.lifecycle-summary-grid dt{{font-size:11px;color:#64748b}}.lifecycle-summary-grid dd{{margin:3px 0 0;font-weight:700}}.lifecycle-stage-badge{{display:inline-block;align-self:flex-start;padding:5px 9px;border-radius:999px;background:#eef2ff;color:#4338ca;font-size:12px;font-weight:800;white-space:nowrap}}.lifecycle-summary-card button{{color:#5b21b6;font-weight:700}}.lifecycle-controls{{display:flex;flex-wrap:wrap;align-items:end;gap:10px;margin:14px 0}}.lifecycle-controls label{{display:grid;gap:5px;min-width:220px;flex:1}}.lifecycle-controls input,.lifecycle-controls select{{padding:10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}}.lifecycle-pagination{{display:flex;justify-content:center;align-items:center;gap:12px;margin:14px 0}}.journal-cross-links a{{padding:9px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5b21b6;text-decoration:none;font-weight:700}}.journal-cross-links a[aria-current="page"]{{background:#5b21b6;color:#fff}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
 .decision-card header{{display:flex;justify-content:space-between}}.pair{{display:flex;align-items:center;gap:16px;margin:12px 0}}.pair span:not(.plus){{background:#f8fafc;border:1px solid #dbe3ef;padding:12px 18px;border-radius:12px}}.pair b{{display:block;font-size:11px;color:#64748b}}
 table{{width:100%;border-collapse:collapse;margin-top:12px}}th,td{{border-bottom:1px solid #e5e7eb;padding:10px;text-align:left}}details{{margin-top:14px}}summary{{font-weight:700;cursor:pointer}}.committee-evidence-timeline{{margin-top:18px}}.committee-timeline{{list-style:none;margin:12px 0 0;padding:0 0 0 18px;border-left:3px solid #c4b5fd}}.committee-step{{position:relative;display:grid;grid-template-columns:34px 1fr;gap:10px;margin:0 0 16px -36px}}.committee-sequence{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#5b21b6;color:#fff;font-weight:800}}.committee-step-content{{background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:12px}}.committee-step-content header{{display:flex;justify-content:space-between;gap:12px}}.committee-vote{{font-size:12px;font-weight:800;color:#5b21b6}}.committee-step-content dl{{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}}.committee-step-content dl div{{display:flex;gap:5px}}.committee-step-content dt{{color:#64748b}}.committee-step-content dd{{margin:0;font-weight:700}}
 .image-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}}.evidence-image{{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0;text-decoration:none}}a.evidence-image{{cursor:pointer}}.evidence-image img{{width:100%;height:160px;object-fit:cover;display:block}}.evidence-image span,.evidence-image p{{display:block;padding:10px;margin:0}}.image-unavailable{{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}}.empty,.empty-state{{color:#64748b;padding:18px}}
@@ -425,6 +454,40 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}}th,td{{border-bottom
       }});
       if (count) count.textContent = visible + (visible === 1 ? ' decision shown' : ' decisions shown');
     }}
+    var lifecycleFilter = root.querySelector('[data-lifecycle-filter]');
+    var lifecycleStage = root.querySelector('[data-lifecycle-stage]');
+    var lifecycleCards = Array.prototype.slice.call(root.querySelectorAll('[data-lifecycle-card]'));
+    var lifecyclePage = 0;
+    var lifecyclePageSize = 6;
+    function applyLifecycleFilters(resetPage) {{
+      if (resetPage) lifecyclePage = 0;
+      var query = lifecycleFilter ? lifecycleFilter.value.trim().toLowerCase() : '';
+      var stage = lifecycleStage ? lifecycleStage.value : 'ALL';
+      var matches = lifecycleCards.filter(function(card) {{
+        return (!query || (card.dataset.lifecycleSearchText || '').indexOf(query) !== -1) &&
+          (stage === 'ALL' || card.dataset.lifecycleStatus === stage);
+      }});
+      var pages = Math.max(1, Math.ceil(matches.length / lifecyclePageSize));
+      lifecyclePage = Math.min(lifecyclePage, pages - 1);
+      lifecycleCards.forEach(function(card) {{ card.hidden = true; }});
+      matches.slice(lifecyclePage * lifecyclePageSize, (lifecyclePage + 1) * lifecyclePageSize)
+        .forEach(function(card) {{ card.hidden = false; }});
+      var pageText = root.querySelector('[data-lifecycle-page]');
+      var lifecycleCount = root.querySelector('[data-lifecycle-count]');
+      var previous = root.querySelector('[data-lifecycle-prev]');
+      var next = root.querySelector('[data-lifecycle-next]');
+      if (pageText) pageText.textContent = 'Page ' + (lifecyclePage + 1) + ' of ' + pages;
+      if (lifecycleCount) lifecycleCount.textContent = matches.length + ' pairs';
+      if (previous) previous.disabled = lifecyclePage === 0;
+      if (next) next.disabled = lifecyclePage >= pages - 1;
+    }}
+    if (lifecycleFilter) lifecycleFilter.addEventListener('input', function() {{ applyLifecycleFilters(true); }});
+    if (lifecycleStage) lifecycleStage.addEventListener('change', function() {{ applyLifecycleFilters(true); }});
+    var lifecyclePrevious = root.querySelector('[data-lifecycle-prev]');
+    var lifecycleNext = root.querySelector('[data-lifecycle-next]');
+    if (lifecyclePrevious) lifecyclePrevious.addEventListener('click', function() {{ lifecyclePage -= 1; applyLifecycleFilters(false); }});
+    if (lifecycleNext) lifecycleNext.addEventListener('click', function() {{ lifecyclePage += 1; applyLifecycleFilters(false); }});
+    applyLifecycleFilters(true);
     root.querySelectorAll('[data-lifecycle-search]').forEach(function(button) {{
       button.addEventListener('click', function() {{
         if (search) search.value = button.dataset.lifecycleSearch || '';
