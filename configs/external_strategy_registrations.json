@@ -4,6 +4,7 @@
     {
       "strategy_id": "SWING-001",
       "registration_path": "/home/tradebot/Trade-Swing-Bot/main/configs/swing_strategy_service_registration.json",
+      "repository_root": "/home/tradebot/Trade-Swing-Bot/main",
       "required": false
     }
   ]
