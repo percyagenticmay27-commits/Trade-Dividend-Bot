@@ -439,6 +439,40 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
  }});
  const target=document.getElementById('registered-strategy-links');
  if(target){{cards.forEach(c=>{{const a=document.createElement('button');a.type='button';a.className='side-strategy';a.dataset.strategyTarget=c.dataset.strategyTarget;a.setAttribute('aria-controls','strategy-'+c.dataset.strategyTarget);a.setAttribute('aria-pressed',c.classList.contains('active')?'true':'false');a.textContent=c.querySelector('strong').textContent;a.onclick=()=>{{select(c.dataset.strategyTarget,true);document.querySelector('[data-strategy-panel="'+c.dataset.strategyTarget+'"]').scrollIntoView({{behavior:'smooth'}});}};target.appendChild(a);}});}}
+ document.querySelectorAll('.strategy-decision-journal').forEach(root=>{{
+   if(root.dataset.filtersReady==='true') return;
+   root.dataset.filtersReady='true';
+   const search=root.querySelector('[data-journal-search]');
+   const type=root.querySelector('[data-journal-type]');
+   const clear=root.querySelector('[data-journal-clear]');
+   const count=root.querySelector('[data-journal-count]');
+   const decisionCards=[...root.querySelectorAll('.decision-card')];
+   function applyJournalFilters(){{
+     const query=search?search.value.trim().toLowerCase():'';
+     const selected=type?type.value:'ALL';
+     let visible=0;
+     decisionCards.forEach(card=>{{
+       const matchesQuery=!query||(card.dataset.journalSearchText||'').includes(query);
+       const matchesType=selected==='ALL'||card.dataset.decisionType===selected;
+       card.hidden=!(matchesQuery&&matchesType);
+       if(!card.hidden) visible+=1;
+     }});
+     if(count) count.textContent=visible+(visible===1?' decision shown':' decisions shown');
+   }}
+   if(search) search.addEventListener('input',applyJournalFilters);
+   if(type) type.addEventListener('change',applyJournalFilters);
+   root.querySelectorAll('[data-filter]').forEach(button=>button.addEventListener('click',()=>{{
+     if(type) type.value=button.dataset.filter||'ALL';
+     applyJournalFilters();
+   }}));
+   if(clear) clear.addEventListener('click',()=>{{
+     if(search) search.value='';
+     if(type) type.value='ALL';
+     applyJournalFilters();
+     if(search) search.focus();
+   }});
+   applyJournalFilters();
+ }});
  const params=new URLSearchParams(window.location.search);
  const requestedStrategy=params.get('strategy');
  const requestedTab=params.get('tab')||'executive-summary';
