@@ -144,6 +144,9 @@ def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
     assert ".strategy-decision-panel .journal-filters button:hover{" in css
     assert ".strategy-decision-panel .journal-filters button:focus-visible{" in css
     assert ".strategy-decision-panel .lifecycle-summary-list{" in css
+    assert ".strategy-decision-panel .lifecycle-overview>header h3" in css
+    assert ".strategy-decision-panel .lifecycle-overview>header p" in css
+    assert "color:#fff!important" in css
     assert ".strategy-decision-panel [data-lifecycle-search]{" in css
     assert ".strategy-decision-panel .lifecycle-stage-badge{" in css
     assert "white-space:normal" in css
