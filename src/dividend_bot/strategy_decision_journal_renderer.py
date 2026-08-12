@@ -160,6 +160,112 @@ def _render_swing_identity(entry: Mapping[str, Any]) -> str:
     )
 
 
+
+def _decision_identity(entry: Mapping[str, Any], strategy_type: str) -> tuple[str, str]:
+    if strategy_type == "DIVIDEND":
+        nested = entry.get("ecosystem")
+        data = nested if isinstance(nested, Mapping) else {}
+        name = _text(
+            data.get("ecosystem_name") or entry.get("ecosystem_name"),
+            "Unknown dividend pair",
+        )
+        symbols = " / ".join(
+            value
+            for value in (
+                _text(data.get("income_leg") or entry.get("income_leg"), ""),
+                _text(data.get("leverage_leg") or entry.get("leverage_leg"), ""),
+            )
+            if value
+        )
+        return name, symbols or name
+    symbol = _text(entry.get("symbol") or entry.get("investment"), "Unknown opportunity")
+    return symbol, symbol
+
+
+def _first_reported_evidence(
+    entries: Sequence[Mapping[str, Any]],
+    field: str,
+) -> Any:
+    for entry in entries:
+        rows = entry.get("committee_evidence")
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            if not isinstance(row, Mapping):
+                continue
+            value = row.get(field)
+            if value not in (None, "", "Not reported"):
+                return value
+    return None
+
+
+def _render_lifecycle_overview(
+    entries: Sequence[Mapping[str, Any]],
+    *,
+    strategy_type: str,
+) -> str:
+    groups: dict[str, list[Mapping[str, Any]]] = {}
+    labels: dict[str, str] = {}
+    for entry in entries:
+        identity, symbols = _decision_identity(entry, strategy_type)
+        key = identity.strip().upper()
+        groups.setdefault(key, []).append(entry)
+        labels[key] = symbols
+
+    cards: list[str] = []
+    for key in sorted(groups):
+        history = sorted(groups[key], key=_timestamp)
+        earliest = history[0]
+        latest = history[-1]
+        latest_type = _text(latest.get("decision_type") or latest.get("decision"))
+        latest_status = _text(latest.get("status"), "RECORDED")
+        rationale = _text(latest.get("final_rationale") or latest.get("reason"))
+        evidence_rows = [
+            row
+            for row in (latest.get("committee_evidence") or [])
+            if isinstance(row, Mapping)
+        ]
+        latest_engine = _first_reported_evidence([latest], "engine")
+        if latest_engine is None:
+            latest_engine = _first_reported_evidence([latest], "committee")
+        earliest_engine = _first_reported_evidence(history, "engine")
+        if earliest_engine is None:
+            earliest_engine = _first_reported_evidence(history, "committee")
+        score = _first_reported_evidence([latest], "score")
+        confidence = _first_reported_evidence([latest], "confidence")
+        evidence_status = _first_reported_evidence([latest], "evidence_status")
+        event_types = list(dict.fromkeys(
+            _text(item.get("decision_type") or item.get("decision"))
+            for item in history
+        ))
+        search_term = escape(labels[key], quote=True)
+        cards.append(
+            '<article class="lifecycle-summary-card">'
+            f'<header><div><span class="type">PAIR LIFECYCLE</span><h3>{escape(labels[key])}</h3></div>'
+            f'<span class="status">{escape(latest_type)} · {escape(latest_status)}</span></header>'
+            '<dl class="lifecycle-summary-grid">'
+            f'<div><dt>First recorded</dt><dd>{escape(_text(earliest.get("decision_timestamp") or earliest.get("timestamp")))}</dd></div>'
+            f'<div><dt>Latest evidence</dt><dd>{escape(_text(latest.get("decision_timestamp") or latest.get("timestamp")))}</dd></div>'
+            f'<div><dt>Earliest recorded strategy</dt><dd>{escape(_text(earliest_engine))}</dd></div>'
+            f'<div><dt>Current evidence owner</dt><dd>{escape(_text(latest_engine))}</dd></div>'
+            f'<div><dt>Latest score</dt><dd>{escape(_text(score))}</dd></div>'
+            f'<div><dt>Latest confidence</dt><dd>{escape(_text(confidence))}</dd></div>'
+            f'<div><dt>Evidence status</dt><dd>{escape(_text(evidence_status))}</dd></div>'
+            f'<div><dt>Recorded events</dt><dd>{escape(", ".join(event_types))}</dd></div>'
+            '</dl>'
+            f'<p><b>Why it is at this stage:</b> {escape(rationale)}</p>'
+            f'<button type="button" data-lifecycle-search="{search_term}">Show this lifecycle</button>'
+            '</article>'
+        )
+    if not cards:
+        return '<div class="empty-state">No pair lifecycle evidence is available.</div>'
+    return (
+        '<section class="lifecycle-overview" aria-label="Pair lifecycle overview">'
+        '<header><h3>Pair Lifecycle Overview</h3>'
+        '<p>Earliest and current values reflect recorded evidence only; missing legacy facts are not reconstructed.</p></header>'
+        '<div class="lifecycle-summary-list">' + "".join(cards) + '</div></section>'
+    )
+
 def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
     """Render one strategy-owned, read-only Decision Journal HTML fragment."""
     strategy_id = _text(journal.get("strategy_id"), "UNKNOWN")
@@ -168,6 +274,10 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
     ).upper()
     entries_raw = journal.get("decisions") or journal.get("entries") or []
     entries = _sorted_entries([e for e in entries_raw if isinstance(e, Mapping)])
+    lifecycle_overview = _render_lifecycle_overview(
+        entries,
+        strategy_type=strategy_type,
+    )
 
     cards: list[str] = []
     for index, entry in enumerate(entries):
@@ -263,6 +373,7 @@ def render_strategy_decision_journal(journal: Mapping[str, Any]) -> str:
 <a href="/executive-dashboard?strategy={encoded_strategy_id}#strategy-{strategy_anchor}">Strategy Workspace</a>
 <a href="/executive-dashboard?strategy={encoded_strategy_id}&amp;tab=decisions#strategy-{strategy_anchor}" aria-current="page">Decision Journal</a>
 </nav>
+{lifecycle_overview}
 <div class="journal-search" role="search" aria-label="Search decision lifecycle">
 <label><span>Search stock, pair, reason, or decision</span>
 <input type="search" data-journal-search placeholder="Example: NVDW, AMDW / AMDL, price below EMA20"></label>
@@ -284,10 +395,10 @@ def render_strategy_decision_journal_document(journal: Mapping[str, Any]) -> str
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>Strategy Decision Journal</title>
 <style>
 body{{font-family:Arial,sans-serif;background:#f5f7fb;color:#101828;margin:0;padding:24px}}.strategy-decision-journal{{max-width:1400px;margin:auto}}
-.journal-heading,.decision-card{{background:#fff;border:1px solid #dbe3ef;border-radius:16px;padding:20px;margin-bottom:16px}}
+.journal-heading,.decision-card,.lifecycle-summary-card{{background:#fff;border:1px solid #dbe3ef;border-radius:16px;padding:20px;margin-bottom:16px}}
 .journal-heading{{display:flex;justify-content:space-between;gap:20px}}.eyebrow,.type{{color:#5b21b6;font-weight:700;font-size:12px}}
 .journal-meta span,.status,.decision-type{{display:inline-block;padding:5px 9px;border-radius:999px;background:#eef2ff;margin:3px;font-size:12px;font-weight:700}}
-.journal-cross-links,.journal-filters,.journal-search{{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0;align-items:end}}.journal-search label{{display:grid;gap:5px;min-width:210px;flex:1}}.journal-search label span{{font-size:12px;font-weight:700;color:#475467}}.journal-search input,.journal-search select{{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}}.journal-search strong{{padding:10px;color:#475467}}.journal-cross-links a{{padding:9px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5b21b6;text-decoration:none;font-weight:700}}.journal-cross-links a[aria-current="page"]{{background:#5b21b6;color:#fff}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
+.journal-cross-links,.journal-filters,.journal-search{{display:flex;flex-wrap:wrap;gap:8px;margin:16px 0;align-items:end}}.journal-search label{{display:grid;gap:5px;min-width:210px;flex:1}}.journal-search label span{{font-size:12px;font-weight:700;color:#475467}}.journal-search input,.journal-search select{{width:100%;padding:10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}}.journal-search strong{{padding:10px;color:#475467}}.lifecycle-overview{{margin:18px 0}}.lifecycle-overview>header p{{color:#64748b}}.lifecycle-summary-list{{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:12px}}.lifecycle-summary-card{{padding:16px;margin:0}}.lifecycle-summary-card header{{display:flex;justify-content:space-between;gap:10px}}.lifecycle-summary-card h3{{margin:4px 0}}.lifecycle-summary-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:12px 0}}.lifecycle-summary-grid div{{background:#f8fafc;border:1px solid #e5e7eb;border-radius:9px;padding:8px}}.lifecycle-summary-grid dt{{font-size:11px;color:#64748b}}.lifecycle-summary-grid dd{{margin:3px 0 0;font-weight:700}}.lifecycle-summary-card button{{color:#5b21b6;font-weight:700}}.journal-cross-links a{{padding:9px 12px;border:1px solid #cbd5e1;background:#fff;border-radius:9px;color:#5b21b6;text-decoration:none;font-weight:700}}.journal-cross-links a[aria-current="page"]{{background:#5b21b6;color:#fff}}button{{padding:9px 14px;border:1px solid #cbd5e1;background:#fff;border-radius:9px}}
 .decision-card header{{display:flex;justify-content:space-between}}.pair{{display:flex;align-items:center;gap:16px;margin:12px 0}}.pair span:not(.plus){{background:#f8fafc;border:1px solid #dbe3ef;padding:12px 18px;border-radius:12px}}.pair b{{display:block;font-size:11px;color:#64748b}}
 table{{width:100%;border-collapse:collapse;margin-top:12px}}th,td{{border-bottom:1px solid #e5e7eb;padding:10px;text-align:left}}details{{margin-top:14px}}summary{{font-weight:700;cursor:pointer}}.committee-evidence-timeline{{margin-top:18px}}.committee-timeline{{list-style:none;margin:12px 0 0;padding:0 0 0 18px;border-left:3px solid #c4b5fd}}.committee-step{{position:relative;display:grid;grid-template-columns:34px 1fr;gap:10px;margin:0 0 16px -36px}}.committee-sequence{{display:grid;place-items:center;width:30px;height:30px;border-radius:50%;background:#5b21b6;color:#fff;font-weight:800}}.committee-step-content{{background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;padding:12px}}.committee-step-content header{{display:flex;justify-content:space-between;gap:12px}}.committee-vote{{font-size:12px;font-weight:800;color:#5b21b6}}.committee-step-content dl{{display:flex;flex-wrap:wrap;gap:14px;margin:10px 0}}.committee-step-content dl div{{display:flex;gap:5px}}.committee-step-content dt{{color:#64748b}}.committee-step-content dd{{margin:0;font-weight:700}}
 .image-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-top:14px}}.evidence-image{{margin:0;background:#f8fafc;border:1px solid #dbe3ef;border-radius:12px;overflow:hidden;text-align:left;color:inherit;padding:0;text-decoration:none}}a.evidence-image{{cursor:pointer}}.evidence-image img{{width:100%;height:160px;object-fit:cover;display:block}}.evidence-image span,.evidence-image p{{display:block;padding:10px;margin:0}}.image-unavailable{{height:160px;display:grid;place-items:center;background:#eef2f7;color:#64748b}}.empty,.empty-state{{color:#64748b;padding:18px}}
@@ -314,6 +425,14 @@ table{{width:100%;border-collapse:collapse;margin-top:12px}}th,td{{border-bottom
       }});
       if (count) count.textContent = visible + (visible === 1 ? ' decision shown' : ' decisions shown');
     }}
+    root.querySelectorAll('[data-lifecycle-search]').forEach(function(button) {{
+      button.addEventListener('click', function() {{
+        if (search) search.value = button.dataset.lifecycleSearch || '';
+        if (type) type.value = 'ALL';
+        applyFilters();
+        if (search) search.scrollIntoView({{behavior: 'smooth', block: 'center'}});
+      }});
+    }});
     if (search) search.addEventListener('input', applyFilters);
     if (type) type.addEventListener('change', applyFilters);
     root.querySelectorAll('[data-filter]').forEach(function(button) {{
