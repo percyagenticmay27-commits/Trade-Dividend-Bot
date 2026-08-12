@@ -123,3 +123,38 @@ def test_adapter_has_no_swing_production_imports():
     source = Path("src/dividend_bot/external_strategy_registration.py").read_text(encoding="utf-8")
     assert "swing_trade_bot" not in source
     assert "Trade-Swing-Bot" not in source
+
+def test_external_registration_preserves_declared_repository_root(tmp_path: Path):
+    swing_root = tmp_path / "swing-repo"
+    registration = swing_root / "configs/swing.json"
+    registration.parent.mkdir(parents=True)
+    registration.write_text(json.dumps(valid_registration()), encoding="utf-8")
+    config = tmp_path / "external.json"
+    config.write_text(json.dumps({
+        "schema_version": "1.0",
+        "registrations": [{
+            "strategy_id": "SWING-001",
+            "registration_path": str(registration),
+            "repository_root": str(swing_root),
+            "required": False,
+        }],
+    }), encoding="utf-8")
+
+    plugins, warnings = load_external_strategy_plugins(config)
+
+    assert warnings == []
+    assert plugins[0]["repository_root"] == str(swing_root.resolve())
+
+
+def test_external_registration_infers_repository_root_from_configs_directory(tmp_path: Path):
+    swing_root = tmp_path / "swing-repo"
+    registration = swing_root / "configs/swing.json"
+    registration.parent.mkdir(parents=True)
+    registration.write_text(json.dumps(valid_registration()), encoding="utf-8")
+    config = write_config(tmp_path, registration)
+
+    plugins, warnings = load_external_strategy_plugins(config)
+
+    assert warnings == []
+    assert plugins[0]["repository_root"] == str(swing_root.resolve())
+
