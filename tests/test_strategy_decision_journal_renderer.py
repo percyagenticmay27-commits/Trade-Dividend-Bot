@@ -225,3 +225,15 @@ def test_lifecycle_overview_uses_compact_badge_search_and_pagination():
     assert 'data-lifecycle-next' in html
     assert 'data-lifecycle-page' in html
     assert "lifecyclePageSize = 6" not in html
+
+
+def test_lifecycle_cards_put_pair_in_header_and_collapse_secondary_evidence():
+    html = render_strategy_decision_journal(_dividend_journal())
+
+    assert '<header><span class="type">PAIR LIFECYCLE</span><h3>NVDY / NVDX</h3>' in html
+    assert 'class="lifecycle-stage-badge"' in html
+    assert 'class="lifecycle-more"' in html
+    assert "<summary>More evidence</summary>" in html
+    assert ">Open full history</button>" in html
+    assert "Current owner" in html
+    assert "Current stage:" in html
