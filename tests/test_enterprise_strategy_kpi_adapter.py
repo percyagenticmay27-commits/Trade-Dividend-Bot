@@ -305,3 +305,60 @@ def test_dividend_decision_journal_reaches_enterprise_kpi_row(tmp_path: Path) ->
         item["decision_type"] == "HOLD"
         for item in row["decision_journal"]["decisions"]
     )
+
+def test_external_swing_kpi_resolves_relative_to_declared_repository_root(tmp_path: Path) -> None:
+    host_root = tmp_path / "dividend-host"
+    swing_root = tmp_path / "swing-repo"
+    host_root.mkdir()
+    (swing_root / "results").mkdir(parents=True)
+    external_kpi = swing_root / "results/enterprise_strategy_kpis.json"
+    external_kpi.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "portfolio_value": 4725.0,
+        "watchlist_count": 6,
+        "opportunity_quality": 91.5,
+        "win_rate_percent": 62.0,
+    }), encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot", "results/enterprise_strategy_kpis.json")
+    plugin["repository_root"] = str(swing_root)
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=host_root,
+    )
+
+    assert warnings == []
+    row = rows[0]
+    assert row["portfolio_value"] == 4725.0
+    assert row["watchlist_count"] == 6
+    assert row["opportunity_quality"] == 91.5
+    assert row["win_rate_percent"] == 62.0
+    assert row["evidence_paths"] == [str(external_kpi.resolve())]
+    assert row["evidence_root"] == str(swing_root.resolve())
+    assert row["external_evidence"] is True
+
+
+def test_missing_external_swing_kpi_keeps_registered_fallback_visible(tmp_path: Path) -> None:
+    host_root = tmp_path / "dividend-host"
+    swing_root = tmp_path / "swing-repo"
+    host_root.mkdir()
+    swing_root.mkdir()
+    plugin = _plugin("SWING-001", "Trade Swing Bot", "results/enterprise_strategy_kpis.json")
+    plugin["repository_root"] = str(swing_root)
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=host_root,
+    )
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["strategy_id"] == "SWING-001"
+    assert row["allocated_capital"] == 4500.0
+    assert row["evidence_status"] == "REGISTRY_ONLY"
+    assert row["portfolio_value"] is None
+    assert row["evidence_paths"] == []
+    assert any(str(swing_root.resolve()) in warning for warning in warnings)
+
