@@ -152,3 +152,7 @@ def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
     assert "width:fit-content" in css
     assert "max-width:100%" in css
     assert ".strategy-decision-panel .lifecycle-pagination{" in css
+    assert ".strategy-decision-panel .decision-card header .decision-type{" in css
+    assert ".strategy-decision-panel .decision-card header .status{" in css
+    assert "color:#5b21b6!important" in css
+    assert "color:#334155!important" in css
