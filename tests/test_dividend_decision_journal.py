@@ -85,3 +85,48 @@ def test_journal_is_read_only_and_paper_only() -> None:
     assert report["live_trading_enabled"] is False
     assert report["broker_execution_enabled"] is False
     assert report["capital_movement_enabled"] is False
+
+
+def test_historical_exit_preserves_lifecycle_reason_score_and_confidence() -> None:
+    report = build_dividend_decision_journal(
+        holdings=[],
+        watchlist=[],
+        historical_positions=[{
+            "pair": "AVGW / AVGX",
+            "last_exit_date": "2026-06-28",
+            "last_exit_reason": "PRICE_BELOW_EMA20",
+            "last_exit_strategy_reasons": ["PRICE_BELOW_EMA20"],
+            "last_exit_strategy_owner": "STRATEGY_A",
+            "exit_score": 42,
+            "exit_confidence": "HIGH",
+        }],
+    )
+
+    decision = report["decisions"][0]
+    evidence = decision["committee_evidence"][0]
+    assert "price below ema20" in decision["final_rationale"]
+    assert evidence["engine"] == "STRATEGY_A"
+    assert evidence["score"] == 42
+    assert evidence["confidence"] == "HIGH"
+    assert evidence["evidence_status"] == "AVAILABLE"
+
+
+def test_legacy_historical_exit_does_not_fabricate_reason_or_score() -> None:
+    report = build_dividend_decision_journal(
+        holdings=[],
+        watchlist=[],
+        historical_positions=[{
+            "pair": "NVDW / NVDX",
+            "last_exit_date": "2026-06-28",
+            "last_exit_action": "PAPER_SELL_TO_SGOV",
+        }],
+    )
+
+    decision = report["decisions"][0]
+    evidence = decision["committee_evidence"][0]
+    assert decision["final_rationale"] == (
+        "Historical evidence records an exit, but no detailed reason was reported."
+    )
+    assert evidence["score"] is None
+    assert evidence["confidence"] is None
+    assert evidence["evidence_status"] == "PARTIAL"
