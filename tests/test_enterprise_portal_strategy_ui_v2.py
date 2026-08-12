@@ -123,6 +123,9 @@ def test_dividend_decision_journal_reaches_decisions_tab() -> None:
     assert "applyJournalFilters" in output
     assert "Pair Lifecycle Overview" in output
     assert "data-lifecycle-search" in output
+    assert "data-lifecycle-filter" in output
+    assert "data-lifecycle-prev" in output
+    assert "applyLifecycleOverview" in output
     dividend_start = output.index("id='strategy-DIVIDEND-001'")
     swing_start = output.index("id='strategy-SWING-001'")
     dividend_workspace = output[dividend_start:swing_start]
@@ -139,3 +142,7 @@ def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
     assert ".strategy-decision-panel .journal-filters button:focus-visible{" in css
     assert ".strategy-decision-panel .lifecycle-summary-list{" in css
     assert ".strategy-decision-panel [data-lifecycle-search]{" in css
+    assert ".strategy-decision-panel .lifecycle-stage-badge{" in css
+    assert "width:auto" in css
+    assert "height:auto" in css
+    assert ".strategy-decision-panel .lifecycle-pagination{" in css
