@@ -212,3 +212,16 @@ def test_lifecycle_overview_groups_multiple_events_for_same_pair():
     assert "REVIEW_PAIR, HOLD" in overview
     assert "74" in overview
     assert "HIGH" in overview
+
+
+def test_lifecycle_overview_uses_compact_badge_search_and_pagination():
+    html = render_strategy_decision_journal(_dividend_journal())
+
+    assert 'class="lifecycle-stage-badge"' in html
+    assert '<span class="status">REVIEW_PAIR' not in html
+    assert 'data-lifecycle-filter' in html
+    assert 'data-lifecycle-stage' in html
+    assert 'data-lifecycle-prev' in html
+    assert 'data-lifecycle-next' in html
+    assert 'data-lifecycle-page' in html
+    assert "lifecyclePageSize = 6" not in html
