@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from src.dividend_bot.enterprise_portal_strategy_ui import (\n    render_strategy_workspace,\n    strategy_ui_css,\n)
+from src.dividend_bot.enterprise_portal_strategy_ui import (
+    render_strategy_workspace,
+    strategy_ui_css,
+)
 
 
 def _report() -> dict:
