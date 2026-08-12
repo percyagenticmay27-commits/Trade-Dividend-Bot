@@ -241,7 +241,7 @@ def build_strategy_kpis(
     and deterministic ordering. This adapter reads declared evidence and the
     canonical host-owned Dividend normalization layers for DIVIDEND-001.
     """
-    root = Path(root_dir)
+    root = Path(root_dir).resolve(strict=False)
     allocations = dict(strategy_allocations or {})
     discovered, discovery_warnings = discover_registered_strategies(registry)
     rows: list[dict[str, Any]] = []
