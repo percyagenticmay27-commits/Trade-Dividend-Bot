@@ -177,9 +177,9 @@ def test_renders_pair_lifecycle_overview_from_recorded_evidence():
 
     assert "Pair Lifecycle Overview" in html
     assert "Earliest strategy" in html
-    assert "Current evidence owner" in html
+    assert "Current owner" in html
     assert "Latest score" in html
-    assert "Latest confidence" in html
+    assert "Confidence" in html
     assert "Why it is at this stage" in html
     assert 'data-lifecycle-search="NVDY / NVDX"' in html
 
