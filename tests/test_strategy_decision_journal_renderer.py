@@ -133,6 +133,7 @@ def test_document_is_standalone_read_only_html():
     assert "PAPER ONLY" in html
     assert "READ ONLY" in html
     assert "<style>" in html
+    assert "applyFilters" in html
 
 
 def test_renderer_escapes_untrusted_text():
@@ -154,7 +155,7 @@ def test_renders_stock_pair_search_and_working_filter_controls():
     assert 'data-filter="HOLD"' in html
     assert 'data-decision-type="REVIEW_PAIR"' in html
     assert 'data-journal-search-text=' in html
-    assert "applyFilters" in html
+    assert "<script>" not in html
     assert "decision shown" in html
 
 
