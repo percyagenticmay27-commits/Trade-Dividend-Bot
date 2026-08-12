@@ -121,6 +121,8 @@ def test_dividend_decision_journal_reaches_decisions_tab() -> None:
     assert "The warning is buffered" in output
     assert "Search stock, pair, reason, or decision" in output
     assert "applyJournalFilters" in output
+    assert "Pair Lifecycle Overview" in output
+    assert "data-lifecycle-search" in output
     dividend_start = output.index("id='strategy-DIVIDEND-001'")
     swing_start = output.index("id='strategy-SWING-001'")
     dividend_workspace = output[dividend_start:swing_start]
@@ -135,3 +137,5 @@ def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
     assert "opacity:1" in css
     assert ".strategy-decision-panel .journal-filters button:hover{" in css
     assert ".strategy-decision-panel .journal-filters button:focus-visible{" in css
+    assert ".strategy-decision-panel .lifecycle-summary-list{" in css
+    assert ".strategy-decision-panel [data-lifecycle-search]{" in css
