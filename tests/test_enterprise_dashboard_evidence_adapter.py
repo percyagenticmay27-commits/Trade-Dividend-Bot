@@ -147,3 +147,36 @@ def test_adapter_prefers_canonical_payment_json_without_legacy_missing_warnings(
     assert evidence["investor_evidence"]["upcoming_payments"] == []
     assert not any("paper_dividend_history.csv" in warning for warning in evidence["warnings"])
     assert not any("upcoming_payments.csv" in warning for warning in evidence["warnings"])
+
+
+def test_adapter_prefers_canonical_portfolio_json_without_csv_missing_warning(
+    tmp_path: Path,
+) -> None:
+    results = tmp_path / "results"
+    state = tmp_path / "state"
+    _write_json(results / "enterprise_dividend_service_registry.json", _registry())
+    _write_json(state / "paper_cash_account.json", {"available_cash": 25})
+    _write_json(
+        results / "portfolio_snapshot.json",
+        {
+            "evidence_status": "AVAILABLE",
+            "record_count": 2,
+            "portfolio_value": 125,
+            "records": [
+                {"symbol": "AMDW", "market_value": 75, "source": "paper_state.json"},
+                {"symbol": "SGOV", "market_value": 50, "source": "paper_state.json"},
+            ],
+        },
+    )
+
+    evidence = build_dashboard_evidence(
+        root_dir=tmp_path,
+        results_dir=results,
+        state_dir=state,
+    )
+
+    holdings = evidence["investor_evidence"]["holdings"]
+    assert [row["symbol"] for row in holdings] == ["AMDW", "SGOV"]
+    assert not any(
+        "portfolio_snapshot.csv" in warning for warning in evidence["warnings"]
+    )
