@@ -175,7 +175,9 @@ def _load_first_rows(paths: Sequence[Path]) -> tuple[list[dict[str, Any]], list[
         rows, warning = _rows_csv(path) if path.suffix.lower() == ".csv" else _rows_json(path)
         if warning:
             warnings.append(warning)
-        if rows:
+        if rows or (warning is None and path.is_file()):
+            # A present canonical document with zero records is authoritative
+            # empty evidence, not a reason to probe legacy fallback filenames.
             return rows, warnings
     return [], warnings
 
