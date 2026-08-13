@@ -248,3 +248,109 @@ def test_oversized_strategy_artifact_is_metadata_only(tmp_path: Path) -> None:
     assert record["payload"] is None
     assert record["payload_policy"] == "METADATA_ONLY_SIZE_LIMIT"
     assert record["size_bytes"] == MAX_INLINE_ARTIFACT_BYTES + 1
+
+
+def test_external_relative_artifact_resolves_under_registered_repository_root(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "home" / "tradebot" / "Trade-Swing-Bot" / "main"
+    artifact = swing_root / "results" / "executive_dashboard.json"
+    _write_json(artifact, {"strategy_id": "SWING-001", "status": "AVAILABLE"})
+    registry = {
+        "strategy_plugins": [
+            {
+                "strategy_id": "SWING-001",
+                "display_name": "Trade Swing Bot",
+                "repository_root": str(swing_root),
+                "dashboard_artifacts": [
+                    {
+                        "artifact_id": "executive_dashboard",
+                        "artifact_type": "STRATEGY_DASHBOARD",
+                        "path": "results/executive_dashboard.json",
+                        "format": "JSON",
+                        "scope": "STRATEGY",
+                    }
+                ],
+            }
+        ]
+    }
+
+    strategies, warnings = load_registry_declared_evidence(
+        registry,
+        root_dir=tmp_path / "Trade-Dividend-Bot",
+    )
+
+    assert warnings == []
+    swing = strategies[0]
+    assert swing["repository_root"] == str(swing_root.resolve())
+    assert swing["repository_root_source"] == "REGISTERED_STRATEGY"
+    assert swing["evidence_status"] == "AVAILABLE"
+    assert swing["artifacts"][0]["resolved_path"] == str(artifact.resolve())
+    assert swing["artifacts"][0]["payload"]["strategy_id"] == "SWING-001"
+
+
+def test_external_declared_artifact_cannot_escape_repository_root(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "Trade-Swing-Bot" / "main"
+    outside = tmp_path / "Trade-Dividend-Bot" / "results" / "secret.json"
+    _write_json(outside, {"must_not_be_read": True})
+    registry = {
+        "strategy_plugins": [
+            {
+                "strategy_id": "SWING-001",
+                "repository_root": str(swing_root),
+                "dashboard_artifacts": [
+                    {
+                        "artifact_id": "escape_attempt",
+                        "path": "../../../Trade-Dividend-Bot/results/secret.json",
+                        "format": "JSON",
+                        "required": True,
+                    }
+                ],
+            }
+        ]
+    }
+
+    strategies, warnings = load_registry_declared_evidence(
+        registry,
+        root_dir=tmp_path / "Trade-Dividend-Bot",
+    )
+
+    record = strategies[0]["artifacts"][0]
+    assert record["available"] is False
+    assert record["payload"] is None
+    assert strategies[0]["evidence_status"] == "REQUIRED_EVIDENCE_MISSING"
+    assert "escapes registered repository_root" in record["error"]
+    assert warnings == [record["error"]]
+
+
+def test_plugin_without_repository_root_preserves_host_root_fallback(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "results" / "dividend_report.json"
+    _write_json(artifact, {"strategy_id": "DIVIDEND-001"})
+    registry = {
+        "strategy_plugins": [
+            {
+                "strategy_id": "DIVIDEND-001",
+                "dashboard_artifacts": [
+                    {
+                        "artifact_id": "dividend_report",
+                        "path": "results/dividend_report.json",
+                        "format": "JSON",
+                    }
+                ],
+            }
+        ]
+    }
+
+    strategies, warnings = load_registry_declared_evidence(
+        registry,
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert strategies[0]["repository_root_source"] == "HOST_FALLBACK"
+    assert strategies[0]["artifacts"][0]["resolved_path"] == str(artifact.resolve())
+    assert strategies[0]["evidence_status"] == "AVAILABLE"
