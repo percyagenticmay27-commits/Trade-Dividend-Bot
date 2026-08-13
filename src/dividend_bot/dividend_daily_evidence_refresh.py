@@ -58,6 +58,9 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
     from src.dividend_bot.dividend_income_payment_evidence import (
         write_income_payment_evidence,
     )
+    from src.dividend_bot.dividend_portfolio_snapshot_evidence import (
+        write_portfolio_snapshot_evidence,
+    )
 
     root = Path(root_dir)
     cycle = run_daily_dividend_cycle(root_path=str(root))
@@ -81,6 +84,7 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
         output_path="results/strategy_performance_analytics.json",
     )
     income_evidence = write_income_payment_evidence(root)
+    portfolio_snapshot_path = write_portfolio_snapshot_evidence(root)
     evidence_path = write_dividend_strategy_kpi_evidence(root_dir=root)
 
     momentum_entries = _read_mapping(momentum_path).get("entries", [])
@@ -94,6 +98,7 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
         "ranking_count": int(ranking.get("ranking_count", 0) or 0),
         "momentum_evidence_path": str(momentum_path),
         "performance_evidence_path": str(performance_path),
+        "portfolio_snapshot_path": str(portfolio_snapshot_path),
         "payment_history_path": income_evidence["payment_history_path"],
         "upcoming_payments_path": income_evidence["upcoming_payments_path"],
         "payment_record_count": income_evidence["payment_record_count"],
