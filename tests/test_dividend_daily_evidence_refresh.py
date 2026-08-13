@@ -8,6 +8,7 @@ import dividend_ranking_engine
 import dividend_watchlist_engine
 import run_daily_dividend_cycle
 from src.dividend_bot import dividend_paper_trade_performance
+from src.dividend_bot import dividend_portfolio_snapshot_evidence
 from src.dividend_bot import dividend_income_payment_evidence
 from src.dividend_bot import dividend_strategy_kpi_evidence
 from src.dividend_bot import market_momentum_evidence
@@ -57,6 +58,10 @@ def test_refresh_runs_intelligence_momentum_ranking_watchlist_candidate_performa
             "upcoming_evidence_status": "AVAILABLE",
         }
 
+    def fake_portfolio(root_dir: str | Path, **_):
+        calls.append(f"portfolio:{root_dir}")
+        return Path(root_dir) / "results/portfolio_snapshot.json"
+
     def fake_evidence(*, root_dir: str | Path, output_path=dividend_strategy_kpi_evidence.DEFAULT_OUTPUT):
         calls.append(f"evidence:{root_dir}")
         return Path(root_dir) / output_path
@@ -68,6 +73,7 @@ def test_refresh_runs_intelligence_momentum_ranking_watchlist_candidate_performa
     monkeypatch.setattr(candidate_discovery_engine, "write_candidate_discovery", fake_candidate)
     monkeypatch.setattr(dividend_paper_trade_performance, "write_dividend_paper_trade_performance", fake_performance)
     monkeypatch.setattr(dividend_income_payment_evidence, "write_income_payment_evidence", fake_income)
+    monkeypatch.setattr(dividend_portfolio_snapshot_evidence, "write_portfolio_snapshot_evidence", fake_portfolio)
     monkeypatch.setattr(dividend_strategy_kpi_evidence, "write_dividend_strategy_kpi_evidence", fake_evidence)
 
     report = refresh_dividend_daily_evidence(tmp_path)
@@ -80,6 +86,7 @@ def test_refresh_runs_intelligence_momentum_ranking_watchlist_candidate_performa
         f"candidate:{tmp_path}",
         f"performance:{tmp_path}",
         f"income:{tmp_path}",
+        f"portfolio:{tmp_path}",
         f"evidence:{tmp_path}",
     ]
     assert report["status"] == "COMPLETE"
@@ -93,6 +100,7 @@ def test_refresh_runs_intelligence_momentum_ranking_watchlist_candidate_performa
     assert report["performance_evidence_path"].endswith("results/strategy_performance_analytics.json")
     assert report["payment_history_path"].endswith("results/payment_history.json")
     assert report["upcoming_payments_path"].endswith("results/upcoming_payments.json")
+    assert report["portfolio_snapshot_path"].endswith("results/portfolio_snapshot.json")
     assert report["payment_record_count"] == 2
     assert report["upcoming_payment_record_count"] == 1
     assert report["kpi_evidence_path"].endswith("results/dividend_strategy_kpi_evidence.json")
@@ -142,6 +150,11 @@ def test_refresh_preserves_governance_and_execution_locks(monkeypatch, tmp_path:
             "payment_evidence_status": "AVAILABLE_EMPTY",
             "upcoming_evidence_status": "NOT_REPORTED",
         },
+    )
+    monkeypatch.setattr(
+        dividend_portfolio_snapshot_evidence,
+        "write_portfolio_snapshot_evidence",
+        lambda *_args, **_kwargs: tmp_path / "results/portfolio_snapshot.json",
     )
     monkeypatch.setattr(
         dividend_strategy_kpi_evidence,
