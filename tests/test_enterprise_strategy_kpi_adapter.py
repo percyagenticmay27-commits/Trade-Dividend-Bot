@@ -362,3 +362,43 @@ def test_missing_external_swing_kpi_keeps_registered_fallback_visible(tmp_path: 
     assert row["evidence_paths"] == []
     assert any(str(swing_root.resolve()) in warning for warning in warnings)
 
+
+
+def test_dividend_strategy_health_markdown_is_accepted_evidence(tmp_path: Path) -> None:
+    health = tmp_path / "strategy_health_report.md"
+    health.write_text("# Strategy Health\n\nStatus: HEALTHY\n", encoding="utf-8")
+    registry = {
+        "strategy_plugins": [
+            {
+                "strategy_id": "dividend",
+                "display_name": "Dividend Income Strategy",
+                "enabled": True,
+                "paper_trade_mode": True,
+                "paper_compatible": True,
+                "advisory_only": True,
+                "reporting_only": True,
+                "live_trading_enabled": False,
+                "broker_execution_enabled": False,
+                "capital_movement_enabled": False,
+                "automatic_activation_allowed": False,
+                "direct_database_writes": False,
+                "dashboard_artifacts": [
+                    {
+                        "artifact_id": "strategy_health_report",
+                        "artifact_type": "STRATEGY_HEALTH",
+                        "path": "strategy_health_report.md",
+                        "format": "MARKDOWN",
+                    }
+                ],
+            }
+        ]
+    }
+
+    rows, warnings = build_strategy_kpis(
+        registry=registry,
+        strategy_allocations={"dividend": 5000.0},
+        root_dir=tmp_path,
+    )
+
+    assert not any("unsupported evidence path strategy_health_report.md" in item for item in warnings)
+    assert "strategy_health_report.md" in rows[0]["evidence_paths"][0]
