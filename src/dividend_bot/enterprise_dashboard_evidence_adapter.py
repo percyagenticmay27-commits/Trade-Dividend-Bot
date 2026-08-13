@@ -187,7 +187,7 @@ def build_investor_evidence(*, root_dir: Path, results_dir: Path, state_dir: Pat
     cash, warning = _mapping(state_dir / "paper_cash_account.json")
     if warning:
         warnings.append(warning)
-    holdings, row_warnings = _load_first_rows((results_dir / "portfolio_snapshot.csv", root_dir / "portfolio_snapshot.csv", results_dir / "portfolio_snapshot.json"))
+    holdings, row_warnings = _load_first_rows((results_dir / "portfolio_snapshot.json", results_dir / "portfolio_snapshot.csv", root_dir / "portfolio_snapshot.csv"))
     warnings.extend(row_warnings)
     payments, payment_warnings = _load_first_rows((results_dir / "payment_history.json", results_dir / "payment_history.csv", root_dir / "paper_dividend_history.csv", results_dir / "paper_dividend_history.csv"))
     warnings.extend(payment_warnings)
