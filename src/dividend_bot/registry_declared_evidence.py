@@ -63,9 +63,41 @@ def _declared_artifacts(registry: Mapping[str, Any], plugin: Mapping[str, Any]) 
     return []
 
 
-def _resolve_path(path_text: str, *, root_dir: Path) -> Path:
-    path = Path(path_text)
-    return path if path.is_absolute() else root_dir / path
+def _repository_root(plugin: Mapping[str, Any], *, host_root: Path) -> tuple[Path, bool]:
+    """Return the strategy-owned artifact root and whether it was registered."""
+
+    declared = _text(plugin.get("repository_root"))
+    if not declared:
+        return host_root.resolve(), False
+    path = Path(declared)
+    if not path.is_absolute():
+        path = host_root / path
+    return path.resolve(), True
+
+
+def _resolve_path(
+    path_text: str,
+    *,
+    repository_root: Path,
+    enforce_containment: bool,
+) -> tuple[Path, str | None]:
+    """Resolve one declaration without allowing an external root escape."""
+
+    declared = Path(path_text)
+    path = (
+        declared.resolve()
+        if declared.is_absolute()
+        else (repository_root / declared).resolve()
+    )
+    if enforce_containment:
+        try:
+            path.relative_to(repository_root)
+        except ValueError:
+            return path, (
+                "declared artifact path escapes registered repository_root: "
+                f"{path} is outside {repository_root}"
+            )
+    return path, None
 
 
 def _read_json(path: Path) -> Any:
@@ -156,6 +188,10 @@ def load_registry_declared_evidence(
 
     for plugin in sorted(_plugins(registry), key=_strategy_id):
         strategy_id = _strategy_id(plugin)
+        strategy_root, registered_repository_root = _repository_root(
+            plugin,
+            host_root=root,
+        )
         records: list[dict[str, Any]] = []
         required_failure = False
 
@@ -168,7 +204,11 @@ def load_registry_declared_evidence(
             required = bool(artifact.get("required", False))
             authoritative = bool(artifact.get("authoritative", True))
             declared_path = _text(artifact.get("path") or artifact.get("report_path") or artifact.get("artifact_path"))
-            path = _resolve_path(declared_path, root_dir=root)
+            path, path_error = _resolve_path(
+                declared_path,
+                repository_root=strategy_root,
+                enforce_containment=registered_repository_root,
+            )
             scope = _text(artifact.get("scope") or "STRATEGY").upper()
             record: dict[str, Any] = {
                 "artifact_id": artifact_id,
@@ -191,7 +231,12 @@ def load_registry_declared_evidence(
                 },
             }
 
-            if artifact_format not in SUPPORTED_FORMATS:
+            if path_error:
+                warning = f"{strategy_id}:{artifact_id}: {path_error}"
+                record["error"] = warning
+                warnings.append(warning)
+                required_failure = required_failure or required
+            elif artifact_format not in SUPPORTED_FORMATS:
                 warning = f"{strategy_id}:{artifact_id}: unsupported format {artifact_format}"
                 record["error"] = warning
                 warnings.append(warning)
@@ -241,6 +286,12 @@ def load_registry_declared_evidence(
             "strategy_id": strategy_id,
             "strategy_name": _strategy_name(plugin),
             "plugin_contract_version": _text(plugin.get("plugin_contract_version") or "1.0"),
+            "repository_root": str(strategy_root),
+            "repository_root_source": (
+                "REGISTERED_STRATEGY"
+                if registered_repository_root
+                else "HOST_FALLBACK"
+            ),
             "evidence_status": evidence_status,
             "declared_artifact_count": declared_count,
             "available_artifact_count": available_count,
