@@ -187,9 +187,9 @@ def build_investor_evidence(*, root_dir: Path, results_dir: Path, state_dir: Pat
         warnings.append(warning)
     holdings, row_warnings = _load_first_rows((results_dir / "portfolio_snapshot.csv", root_dir / "portfolio_snapshot.csv", results_dir / "portfolio_snapshot.json"))
     warnings.extend(row_warnings)
-    payments, payment_warnings = _load_first_rows((results_dir / "payment_history.csv", root_dir / "paper_dividend_history.csv", results_dir / "paper_dividend_history.csv", results_dir / "payment_history.json"))
+    payments, payment_warnings = _load_first_rows((results_dir / "payment_history.json", results_dir / "payment_history.csv", root_dir / "paper_dividend_history.csv", results_dir / "paper_dividend_history.csv"))
     warnings.extend(payment_warnings)
-    upcoming, upcoming_warnings = _load_first_rows((results_dir / "upcoming_payments.csv", results_dir / "upcoming_payments.json"))
+    upcoming, upcoming_warnings = _load_first_rows((results_dir / "upcoming_payments.json", results_dir / "upcoming_payments.csv"))
     warnings.extend(upcoming_warnings)
 
     summary: dict[str, Any] = {}
