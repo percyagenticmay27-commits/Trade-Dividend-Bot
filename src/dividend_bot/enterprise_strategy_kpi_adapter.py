@@ -127,7 +127,7 @@ def _safe_path(raw: str, root_dir: Path) -> Path | None:
         resolved = candidate.resolve(strict=False)
     except OSError:
         return None
-    return resolved if resolved.suffix.lower() in {".json", ".csv"} else None
+    return resolved if resolved.suffix.lower() in {".json", ".csv", ".md", ".markdown", ".html"} else None
 
 
 def _canonical_field_name(value: Any) -> str:
@@ -138,6 +138,12 @@ def _canonical_field_name(value: Any) -> str:
 def _read_artifact(path: Path) -> Any:
     if path.suffix.lower() == ".json":
         return json.loads(path.read_text(encoding="utf-8"))
+    if path.suffix.lower() in {".md", ".markdown", ".html"}:
+        return {
+            "artifact_text": path.read_text(encoding="utf-8"),
+            "artifact_format": path.suffix.lower().lstrip(".").upper(),
+            "source_path": str(path),
+        }
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         return [
             {
