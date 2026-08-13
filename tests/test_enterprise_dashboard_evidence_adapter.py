@@ -105,3 +105,45 @@ def test_unsafe_registry_entry_is_not_reported_healthy(tmp_path: Path) -> None:
     evidence = build_dashboard_evidence(root_dir=tmp_path, results_dir=results, state_dir=tmp_path / "state")
     assert evidence["enterprise_health"]["enterprise_status"] == "CRITICAL"
     assert evidence["strategy_inventory"]["summary"]["contract_complete_count"] == 1
+
+
+def test_adapter_prefers_canonical_payment_json_without_legacy_missing_warnings(
+    tmp_path: Path,
+) -> None:
+    results = tmp_path / "results"
+    state = tmp_path / "state"
+    _write_json(results / "enterprise_dividend_service_registry.json", _registry())
+    _write_json(state / "paper_cash_account.json", {"available_cash": 500})
+    _write_json(
+        results / "payment_history.json",
+        {
+            "evidence_status": "AVAILABLE",
+            "records": [
+                {
+                    "date": "2026-08-10",
+                    "symbol": "AMDW",
+                    "event_type": "DISTRIBUTION_RECEIVED",
+                    "amount": 2.50,
+                }
+            ],
+        },
+    )
+    _write_json(
+        results / "upcoming_payments.json",
+        {
+            "evidence_status": "NOT_REPORTED",
+            "records": [],
+            "empty_state_reason": "No authoritative upcoming date is currently reported.",
+        },
+    )
+
+    evidence = build_dashboard_evidence(
+        root_dir=tmp_path,
+        results_dir=results,
+        state_dir=state,
+    )
+
+    assert evidence["investor_evidence"]["payment_history"][0]["symbol"] == "AMDW"
+    assert evidence["investor_evidence"]["upcoming_payments"] == []
+    assert not any("paper_dividend_history.csv" in warning for warning in evidence["warnings"])
+    assert not any("upcoming_payments.csv" in warning for warning in evidence["warnings"])
