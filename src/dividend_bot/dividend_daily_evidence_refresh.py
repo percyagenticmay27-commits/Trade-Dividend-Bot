@@ -39,7 +39,9 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
     4. Build the explicit Dividend strategy watchlist from ranked, non-held candidates.
     5. Build candidate discovery so WATCHLIST is visible as an authoritative source.
     6. Reconstruct realized DIVIDEND-001 paper performance.
-    7. Publish canonical DIVIDEND-001 KPI evidence for Enterprise dashboards.
+    7. Publish canonical income/payment evidence.
+    8. Publish the current holding-level portfolio snapshot from paper state.
+    9. Publish canonical DIVIDEND-001 KPI evidence for Enterprise dashboards.
 
     The routine is reporting-only. Existing paper state and allocations are not
     modified by this bridge.
