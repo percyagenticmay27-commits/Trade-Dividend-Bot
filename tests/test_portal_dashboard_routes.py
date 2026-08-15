@@ -327,3 +327,71 @@ def test_executive_route_renders_authoritative_swing_alerts_workspace(tmp_path: 
     assert "$4,500.00 allocated" in page
     assert "PAPER ONLY" in page
     assert "ADVISORY ONLY" in page
+
+
+def test_executive_route_renders_swing_stock_decision_journal(tmp_path: Path) -> None:
+    app, _, paths = _app(tmp_path)
+    position = {
+        "decision_scope": "OPEN_POSITION",
+        "symbol": "SOXL",
+        "current_state": "OPEN",
+        "current_decision": "HOLD",
+        "current_owner": "Strategy A",
+        "rationale": "No authoritative exit decision is reported.",
+        "alternatives_considered": [],
+        "evidence_timestamp": "2026-08-15T15:00:00Z",
+        "timeline": [],
+    }
+    candidate = {
+        "decision_scope": "CANDIDATE",
+        "symbol": "NBIS",
+        "current_state": "REJECTED",
+        "current_decision": "WAITING_FOR_ENTRY",
+        "current_owner": "OPPORTUNITY_COMMITTEE",
+        "rationale": "ENTRY_EVIDENCE_PENDING",
+        "alternatives_considered": [],
+        "evidence_timestamp": "2026-08-15T15:00:00Z",
+        "timeline": [],
+    }
+    Path(paths["executive_dashboard_json"]).write_text(json.dumps({
+        "portfolio_summary": {"portfolio_value": 9500.0},
+        "ai_cio_verdict": {},
+        "capital_allocation_rankings": [],
+        "strategy_kpis": [{
+            "strategy_id": "SWING-001",
+            "display_name": "Trade Swing Bot",
+            "strategy_type": "SWING",
+            "allocated_capital": 4500.0,
+            "paper_trade_mode": True,
+            "advisory_only": True,
+            "capabilities": ["decision_journal"],
+            "published_artifacts": [],
+            "evidence_status": "AVAILABLE",
+            "decision_journal_status": "AVAILABLE",
+            "decision_journal": {
+                "strategy_id": "SWING-001",
+                "paper_trade_mode": True,
+                "advisory_only": True,
+                "decision_authority_policy":
+                    "CURRENT_MATCHED_AUTHORITATIVE_EVIDENCE_ONLY",
+                "position_decisions": [position],
+                "candidate_decisions": [candidate],
+                "decisions": [position, candidate],
+                "evaluation_status": "COMPLETE",
+                "evidence_warnings": [],
+            },
+        }],
+    }), encoding="utf-8")
+
+    status, page = _call(app, "GET", "/executive-dashboard")
+
+    assert status == "200 OK"
+    assert "Trade Swing Bot Decision Journal" in page
+    assert "Open Position Decisions" in page
+    assert "Candidate Decisions" in page
+    assert "SOXL" in page
+    assert "NBIS" in page
+    assert "OPPORTUNITY_COMMITTEE" in page
+    assert "Pair Lifecycle Overview" not in page
+    assert "$4,500.00 allocated" in page
+    assert "PAPER ONLY" in page
