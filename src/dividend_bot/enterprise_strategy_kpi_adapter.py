@@ -380,6 +380,59 @@ def _strategy_holdings_detail(
     return []
 
 
+def _strategy_alerts_report(
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> dict[str, Any] | None:
+    """Return authoritative strategy-owned Swing Alerts evidence.
+
+    Dedicated registered evidence has precedence over the Enterprise KPI embedded
+    view. Legacy dashboard risk flags are never treated as current Swing alerts.
+    """
+    if strategy_id != "SWING-001":
+        return None
+    owned = _strategy_owned_payloads(payloads, strategy_id)
+
+    def authoritative(source: Mapping[str, Any]) -> bool:
+        return (
+            source.get("alert_authority_policy")
+            == "CURRENT_AUTHORITATIVE_EVIDENCE_ONLY"
+            and source.get("paper_trade_mode") is True
+            and source.get("advisory_only") is True
+            and isinstance(source.get("alerts"), list)
+        )
+
+    # The registered, dedicated report is authoritative regardless of artifact
+    # loading order.
+    for payload in owned:
+        if str(payload.get("module_name") or "").lower() != "swing_strategy_alerts_report":
+            continue
+        if authoritative(payload):
+            return dict(payload)
+
+    # Backward-compatible view embedded in the registered Enterprise KPI.
+    for payload in owned:
+        section = _mapping_at(payload, "dashboard_sections", "alerts")
+        if section is None:
+            continue
+        candidates: list[Mapping[str, Any]] = [section]
+        evidence = section.get("evidence")
+        if isinstance(evidence, Mapping):
+            candidates.append(evidence)
+        for candidate in candidates:
+            if not authoritative(candidate):
+                continue
+            normalized = dict(candidate)
+            normalized.setdefault("strategy_id", strategy_id)
+            normalized.setdefault("generated_at_utc", payload.get("generated_at"))
+            normalized.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
+            normalized.setdefault("broker_execution_enabled", payload.get("broker_execution_enabled"))
+            normalized.setdefault("order_placement_enabled", payload.get("order_placement_enabled"))
+            normalized.setdefault("capital_movement_enabled", payload.get("capital_movement_enabled"))
+            return normalized
+    return None
+
+
 def _strategy_trade_analytics(
     payloads: Sequence[Any],
     strategy_id: str,
@@ -673,11 +726,26 @@ def build_strategy_kpis(
         trade_analytics = None
         if strategy_id == "SWING-001" and "trade_analytics" in capability_names:
             trade_analytics = _strategy_trade_analytics(payloads, strategy_id)
+        swing_alerts_report = None
+        if strategy_id == "SWING-001" and "alerts" in capability_names:
+            swing_alerts_report = _strategy_alerts_report(payloads, strategy_id)
         watchlist_detail = _detail_list(dashboard_evidence, "watchlist")
         if not watchlist_detail and strategy_id != "DIVIDEND-001":
             watchlist_detail = _strategy_watchlist_detail(payloads, strategy_id)
         income_events = _detail_list(dashboard_evidence, "income_events")
         alerts = _detail_list(dashboard_evidence, "alerts")
+        alert_evidence_warnings: list[str] = []
+        if swing_alerts_report is not None:
+            alerts = [
+                dict(item)
+                for item in swing_alerts_report.get("alerts", [])
+                if isinstance(item, Mapping)
+            ]
+            raw_disclosures = swing_alerts_report.get("evidence_warnings")
+            if isinstance(raw_disclosures, list):
+                alert_evidence_warnings = [
+                    str(item) for item in raw_disclosures if item not in (None, "")
+                ]
         risk_flags = _detail_list(dashboard_evidence, "risk_flags")
         decision_journal_source = (
             dashboard_evidence.get("decision_journal")
@@ -754,7 +822,10 @@ def build_strategy_kpis(
             "decision_count": decision_count,
             "decision_journal": decision_journal,
             "performance_detail": performance_detail,
+            "alerts_status": "AVAILABLE" if swing_alerts_report is not None else "NOT_REPORTED",
+            "alerts_report": swing_alerts_report,
             "alerts": alerts,
+            "alert_evidence_warnings": alert_evidence_warnings,
             "risk_flags": risk_flags,
             "evidence_paths": sorted(set(accepted_paths)),
             "evidence_root": str(evidence_root),
