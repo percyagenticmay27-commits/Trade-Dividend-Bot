@@ -70,9 +70,11 @@ def test_workspace_income_is_strategy_scoped() -> None:
         }
     )
     output = render_strategy_workspace(report, audience="executive")
-    assert output.count("class='income-pro'") == 2
+    assert output.count("class='income-pro'") == 1
     assert "Alpha Income ETF" in output
-    assert "No strategy-owned income projection evidence is currently reported" in output
+    assert "Trade Analytics / Position Performance" in output
+    assert "Trade analytics evidence is unavailable" in output
+    assert output.count("No strategy-owned income projection evidence is currently reported") == 0
 
 
 def test_strategy_css_includes_income_styles() -> None:
