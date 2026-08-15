@@ -170,3 +170,39 @@ def test_watchlist_count_never_fabricates_candidate_rows():
     assert "reports 3 candidate records" in page
     assert "Candidate rows are never fabricated" in page
     assert "<tbody>" not in page
+
+def test_swing_candidate_pipeline_supports_exact_published_field_names():
+    page = render_watchlist_panel({
+        "strategy_id": "SWING-001",
+        "watchlist_count": 2,
+        "watchlist": [
+            {
+                "underlying_symbol": "NBIS",
+                "leveraged_symbol": "NEBX",
+                "watchlist_status": "WATCHLIST",
+                "capacity_status": "ACTIVE",
+                "watchlist_rank": 1,
+                "financial_health_score": 77.29,
+                "themes": "AI Infrastructure;Data Centers",
+                "promotion_eligible": False,
+            },
+            {
+                "underlying_symbol": "BE",
+                "leveraged_symbol": "",
+                "watchlist_status": "REMOVED",
+                "capacity_status": "REMOVED",
+                "watchlist_rank": None,
+                "themes": "Clean Energy",
+                "promotion_eligible": False,
+            },
+        ],
+    })
+
+    assert "AI Infrastructure;Data Centers" in page
+    assert "Clean Energy" in page
+    assert "77.29" in page
+    assert page.count(">NO<") == 2
+    assert "watchlist-not-reported'>Not reported" in page
+    assert ">WATCHLIST<" in page
+    assert ">REMOVED<" in page
+
