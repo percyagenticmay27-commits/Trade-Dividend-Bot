@@ -257,10 +257,17 @@ def render_watchlist_panel(row: Mapping[str, Any]) -> str:
         "</div>"
     )
     if not items:
+        explanation = (
+            f"The strategy reports {count} candidate records, but no detailed strategy-owned rows are available. "
+            "Candidate rows are never fabricated from the summary count."
+            if count
+            else "The strategy currently reports a watchlist count of 0. Candidates will appear here only when "
+            "the strategy explicitly marks them for watchlist monitoring."
+        )
         return (
             "<section class='watchlist-pro'>" + heading + summary +
             "<div class='watchlist-empty'><strong>No active strategy watchlist candidates.</strong>"
-            f"<span>The strategy reports {count} candidate records, but no detailed strategy-owned rows are available. Candidate rows are never fabricated from the summary count.</span></div></section>"
+            f"<span>{html.escape(explanation)}</span></div></section>"
         )
     table = (
         "<div class='watchlist-table-wrap'><table class='watchlist-table'>"
