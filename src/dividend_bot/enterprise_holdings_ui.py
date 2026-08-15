@@ -362,8 +362,20 @@ def render_holdings_panel(row: Mapping[str, Any]) -> str:
     overview = "<section class='holdings-subsection'><div class='subsection-heading'><h4>Holdings Overview</h4><span>Position identity, owning entry method, and capital weights</span></div><div class='holdings-table-wrap'><table class='holdings-table holdings-overview-table'><thead><tr><th>Symbol</th><th>Name</th><th>Sleeve</th><th>Entry Method</th><th>Status</th><th>Shares</th><th>Market Price</th><th>Market Value</th><th>% Strategy Allocation</th><th>% Deployed Portfolio</th></tr></thead>" + f"<tbody>{_instrument_rows(holdings, allocation_base=allocated_capital, deployed_base=current_value)}</tbody></table></div></section>"
     analytics = "<section class='holdings-subsection'><div class='subsection-heading'><h4>Position Analytics</h4><span>Authoritative cost and performance evidence</span></div><div class='holdings-table-wrap'><table class='holdings-table holdings-analytics-table'><thead><tr><th>Symbol</th><th>Cost Basis</th><th>Avg Cost</th><th>Unrealized P&amp;L</th><th>Total Return</th><th>Daily Change</th></tr></thead>" + f"<tbody>{_analytics_rows(holdings)}</tbody></table></div></section>"
     management = "<section class='holdings-subsection'><div class='subsection-heading'><h4>Position Management</h4><span>Why each position is held and what would authorize an exit</span></div><div class='holdings-table-wrap'><table class='holdings-table holdings-management-table'><thead><tr><th>Symbol</th><th>Owning Strategy</th><th>Current Decision</th><th>Why Held / What Changes It</th><th>Evidence As-Of</th></tr></thead>" + f"<tbody>{_management_rows(holdings)}</tbody></table></div></section>"
-    income = "<section class='holdings-subsection'><div class='subsection-heading'><h4>Income</h4><span>Observed yearly distribution and income evidence</span></div><div class='holdings-table-wrap'><table class='holdings-table holdings-income-table'><thead><tr><th>Symbol</th><th>Yearly Distribution Yield</th><th>Annual Income</th><th>Next Ex-Date</th><th>Audit</th><th>Evidence</th></tr></thead>" + f"<tbody>{_income_rows(holdings)}</tbody></table></div></section>"
-    return f"<section class='{panel_class}'>" + heading + f"<div class='holdings-summary-grid'>{summary}</div>{reconciliation}{overview}{analytics}{management}{income}<p class='holdings-footnote'>Paper-only positions. Entry Method is strategy-owned lifecycle evidence and is never inferred when missing. Market gain/loss is never labeled as undeployed cash. Yearly Distribution Yield uses observed trailing-365-day distributions and the displayed current holding price when available; open Audit to review inputs.</p></section>"
+    income = (
+        ""
+        if is_swing
+        else "<section class='holdings-subsection'><div class='subsection-heading'><h4>Income</h4><span>Observed yearly distribution and income evidence</span></div><div class='holdings-table-wrap'><table class='holdings-table holdings-income-table'><thead><tr><th>Symbol</th><th>Yearly Distribution Yield</th><th>Annual Income</th><th>Next Ex-Date</th><th>Audit</th><th>Evidence</th></tr></thead>" + f"<tbody>{_income_rows(holdings)}</tbody></table></div></section>"
+    )
+    footnote = (
+        "Paper-only positions. Entry Method is strategy-owned lifecycle evidence and is never inferred when missing. "
+        "Market gain/loss is never labeled as undeployed cash."
+        if is_swing
+        else "Paper-only positions. Entry Method is strategy-owned lifecycle evidence and is never inferred when missing. "
+        "Market gain/loss is never labeled as undeployed cash. Yearly Distribution Yield uses observed trailing-365-day "
+        "distributions and the displayed current holding price when available; open Audit to review inputs."
+    )
+    return f"<section class='{panel_class}'>" + heading + f"<div class='holdings-summary-grid'>{summary}</div>{reconciliation}{overview}{analytics}{management}{income}<p class='holdings-footnote'>{footnote}</p></section>"
 
 
 def holdings_ui_css() -> str:
