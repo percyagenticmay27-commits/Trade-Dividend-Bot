@@ -64,7 +64,7 @@ def _status(item: Mapping[str, Any]) -> tuple[str, str]:
     raw = _first(item, ("status", "watchlist_status", "candidate_status"), "WATCH").upper()
     if raw in {"READY", "READY_FOR_SCORING", "PROMOTED", "BUY"}:
         return raw, "watchlist-status-ready"
-    if raw in {"WATCH", "MONITOR", "HOLD"}:
+    if raw in {"WATCH", "WATCHLIST", "DISCOVERY", "MONITOR", "HOLD"}:
         return raw, "watchlist-status-watch"
     if raw in {"REMOVED", "REJECTED", "BLOCKED"}:
         return raw, "watchlist-status-blocked"
@@ -260,7 +260,7 @@ def render_watchlist_panel(row: Mapping[str, Any]) -> str:
         return (
             "<section class='watchlist-pro'>" + heading + summary +
             "<div class='watchlist-empty'><strong>No active strategy watchlist candidates.</strong>"
-            "<span>The strategy reports {count} candidate records, but no detailed strategy-owned rows are available. Candidate rows are never fabricated from the summary count.</span></div></section>"
+            f"<span>The strategy reports {count} candidate records, but no detailed strategy-owned rows are available. Candidate rows are never fabricated from the summary count.</span></div></section>"
         )
     table = (
         "<div class='watchlist-table-wrap'><table class='watchlist-table'>"
