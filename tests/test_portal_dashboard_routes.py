@@ -230,3 +230,51 @@ def test_strategy_review_route_loads_owner_alerts_and_pair_history(tmp_path: Pat
     assert "Promotion Activated" in page
     assert cash.read_text(encoding="utf-8") == before
     assert not Path(paths["request_log"]).exists()
+
+
+def test_executive_route_renders_swing_trade_analytics_workspace(tmp_path: Path) -> None:
+    app, _, paths = _app(tmp_path)
+    Path(paths["executive_dashboard_json"]).write_text(json.dumps({
+        "portfolio_summary": {"portfolio_value": 9500.0},
+        "ai_cio_verdict": {},
+        "capital_allocation_rankings": [],
+        "strategy_kpis": [{
+            "strategy_id": "SWING-001",
+            "display_name": "Trade Swing Bot",
+            "strategy_type": "SWING",
+            "allocated_capital": 4500.0,
+            "paper_trade_mode": True,
+            "capabilities": ["trade_analytics"],
+            "published_artifacts": [],
+            "evidence_status": "AVAILABLE",
+            "trade_analytics": {
+                "max_drawdown_policy": "AUTHORITATIVE_POSITION_HISTORY_ONLY",
+                "max_drawdown_inference_allowed": False,
+                "open_positions": [{
+                    "symbol": "SOXL",
+                    "entry_date": "2026-08-04",
+                    "entry_price": 139.899993896484,
+                    "current_price": 143.264297485352,
+                    "gain_loss_amount": 27.05,
+                    "gain_loss_percent": 2.404444,
+                    "max_drawdown_amount": 82.42,
+                    "max_drawdown_percent": 7.308378,
+                    "position_status": "OPEN",
+                }],
+                "closed_positions": [],
+            },
+        }],
+    }), encoding="utf-8")
+
+    status, page = _call(
+        app,
+        "GET",
+        "/executive-dashboard?strategy=SWING-001&tab=income",
+    )
+
+    assert status == "200 OK"
+    assert "Trade Analytics / Position Performance" in page
+    assert ">Trade Analytics</button>" in page
+    assert "SOXL" in page
+    assert "$82.42" in page
+    assert "PAPER ONLY" in page
