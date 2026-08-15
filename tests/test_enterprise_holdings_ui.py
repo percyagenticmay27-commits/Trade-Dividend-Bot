@@ -200,3 +200,51 @@ def test_holdings_income_explains_estimated_ex_date_and_evidence_source() -> Non
     assert "Observed distribution history and current holding price support this projection." in page
     assert "Audit source" in page
     assert "market_data_snapshot.json" in page
+
+def test_swing_holdings_render_explicit_reconciliation_without_false_warning():
+    page = render_holdings_panel({
+        "strategy_id": "SWING-001",
+        "allocated_capital": 4500.0,
+        "portfolio_value": 4525.52,
+        "cash_balance": 2700.0,
+        "invested_capital": 1800.0,
+        "positions_market_value": 1825.52,
+        "position_count": 2,
+        "unrealized_pnl": 25.52,
+        "holdings": [
+            {
+                "symbol": "SOXL",
+                "shares": 8.04145854,
+                "entry_price": 139.899993896484,
+                "current_price": 143.264297485352,
+                "market_value": 1152.05,
+                "unrealized_pnl": 27.05,
+                "unrealized_pnl_percent": 2.404444,
+                "active_strategy": "Strategy A",
+            },
+            {
+                "symbol": "TQQQ",
+                "shares": 9.021652,
+                "entry_price": 74.819999694824,
+                "current_price": 74.650001525879,
+                "market_value": 673.47,
+                "unrealized_pnl": -1.53,
+                "unrealized_pnl_percent": -0.226667,
+                "active_strategy": "Strategy A",
+            },
+        ],
+    })
+
+    assert "2 positions" in page
+    assert "SOXL" in page and "TQQQ" in page
+    assert "Invested Capital" in page and "$1,800.00" in page
+    assert "Positions Market Value" in page and "$1,825.52" in page
+    assert "Cash Reserve" in page and "$2,700.00" in page
+    assert "Current Portfolio Value" in page and "$4,525.52" in page
+    assert "Unrealized P&amp;L" in page and "+$25.52" in page
+    assert "$143.26" in page and "$74.65" in page
+    assert "$139.90" in page and "$74.82" in page
+    assert "Strategy A" in page
+    assert "does not match reported portfolio value" not in page
+    assert "capital-reconciliation-ok" in page
+
