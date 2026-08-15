@@ -332,6 +332,52 @@ def _strategy_watchlist_detail(
     return []
 
 
+def _strategy_metric_value(
+    payloads: Sequence[Any],
+    strategy_id: str,
+    key: str,
+) -> float | None:
+    """Read an exact top-level metric from strategy-owned evidence only."""
+    for payload in _strategy_owned_payloads(payloads, strategy_id):
+        parsed = _number(payload.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _strategy_holdings_detail(
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> list[dict[str, Any]]:
+    """Read external open positions while preserving authoritative empty state."""
+    owned = _strategy_owned_payloads(payloads, strategy_id)
+    primary_published = False
+    for payload in owned:
+        holdings = _mapping_at(payload, "dashboard_sections", "holdings")
+        positions = holdings.get("open_positions") if holdings is not None else None
+        if isinstance(positions, list):
+            primary_published = True
+            normalized = [
+                dict(item) for item in positions if isinstance(item, Mapping)
+            ]
+            if normalized:
+                return normalized
+
+    # If every strategy-owned authoritative collection is explicitly empty, do
+    # not revive a stale legacy holdings collection.
+    if primary_published:
+        return []
+
+    for payload in owned:
+        holdings = _mapping_at(payload, "holdings")
+        positions = holdings.get("open_positions") if holdings is not None else None
+        if isinstance(positions, list):
+            return [
+                dict(item) for item in positions if isinstance(item, Mapping)
+            ]
+    return []
+
+
 def build_strategy_kpis(
     *,
     registry: Mapping[str, Any],
@@ -414,6 +460,10 @@ def build_strategy_kpis(
             else None
         )
         portfolio_value = dashboard_portfolio
+        if portfolio_value is None and strategy_id != "DIVIDEND-001":
+            portfolio_value = _strategy_metric_value(
+                payloads, strategy_id, "portfolio_value"
+            )
         if portfolio_value is None:
             portfolio_value = _metric(
                 payloads,
@@ -438,11 +488,33 @@ def build_strategy_kpis(
             else None
         )
         unrealized = dashboard_unrealized
+        if unrealized is None and strategy_id != "DIVIDEND-001":
+            unrealized = _strategy_metric_value(
+                payloads, strategy_id, "unrealized_pnl"
+            )
         if unrealized is None:
             unrealized = _metric(
                 payloads,
                 ("unrealized_gain", "unrealized_profit", "unrealized_pnl"),
             )
+
+        invested_capital = (
+            _strategy_metric_value(payloads, strategy_id, "invested_capital")
+            if strategy_id != "DIVIDEND-001"
+            else None
+        )
+        cash_balance = (
+            _strategy_metric_value(payloads, strategy_id, "cash_balance")
+            if strategy_id != "DIVIDEND-001"
+            else None
+        )
+        positions_market_value = (
+            _strategy_metric_value(
+                payloads, strategy_id, "positions_market_value"
+            )
+            if strategy_id != "DIVIDEND-001"
+            else None
+        )
 
         dashboard_income = (
             _number(dashboard_evidence.get("income"))
@@ -527,19 +599,28 @@ def build_strategy_kpis(
             dashboard_positions = _number(dashboard_evidence.get("position_count"))
             positions = int(dashboard_positions) if dashboard_positions is not None else None
         else:
-            positions = _count(
-                payloads,
-                (
-                    "positions",
-                    "holdings",
-                    "open_positions",
-                    "open_buckets",
-                    "position_count",
-                    "holding_count",
-                ),
+            external_position_count = _strategy_metric_value(
+                payloads, strategy_id, "position_count"
+            )
+            positions = (
+                int(external_position_count)
+                if external_position_count is not None
+                else _count(
+                    payloads,
+                    (
+                        "positions",
+                        "holdings",
+                        "open_positions",
+                        "open_buckets",
+                        "position_count",
+                        "holding_count",
+                    ),
+                )
             )
 
         holdings = _detail_list(dashboard_evidence, "holdings")
+        if strategy_id != "DIVIDEND-001":
+            holdings = _strategy_holdings_detail(payloads, strategy_id)
         watchlist_detail = _detail_list(dashboard_evidence, "watchlist")
         if not watchlist_detail and strategy_id != "DIVIDEND-001":
             watchlist_detail = _strategy_watchlist_detail(payloads, strategy_id)
@@ -591,6 +672,10 @@ def build_strategy_kpis(
             "published_artifacts": artifact_declarations,
             "allocated_capital": round(allocated, 2),
             "portfolio_value": round(portfolio_value, 2) if portfolio_value is not None else None,
+            "invested_capital": round(invested_capital, 2) if invested_capital is not None else None,
+            "cash_balance": round(cash_balance, 2) if cash_balance is not None else None,
+            "positions_market_value": round(positions_market_value, 2) if positions_market_value is not None else None,
+            "unrealized_pnl": round(unrealized, 2) if unrealized is not None else None,
             "realized_gain": round(realized, 2) if realized is not None else None,
             "unrealized_gain": round(unrealized, 2) if unrealized is not None else None,
             "income": round(income, 2) if income is not None else None,
