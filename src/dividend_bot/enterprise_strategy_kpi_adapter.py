@@ -422,7 +422,7 @@ def _strategy_alerts_report(
         for candidate in candidates:
             if not authoritative(candidate):
                 continue
-            result = normalized(candidate)
+            result = dict(candidate)
             result.setdefault("strategy_id", strategy_id)
             result.setdefault("generated_at_utc", payload.get("generated_at"))
             result.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
@@ -486,14 +486,14 @@ def _strategy_decision_journal_report(
         for candidate in candidates:
             if not authoritative(candidate):
                 continue
-            normalized = dict(candidate)
-            normalized.setdefault("strategy_id", strategy_id)
-            normalized.setdefault("generated_at_utc", payload.get("generated_at"))
-            normalized.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
-            normalized.setdefault("broker_execution_enabled", payload.get("broker_execution_enabled"))
-            normalized.setdefault("order_placement_enabled", payload.get("order_placement_enabled"))
-            normalized.setdefault("capital_movement_enabled", payload.get("capital_movement_enabled"))
-            return normalized
+            result = normalized(candidate)
+            result.setdefault("strategy_id", strategy_id)
+            result.setdefault("generated_at_utc", payload.get("generated_at"))
+            result.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
+            result.setdefault("broker_execution_enabled", payload.get("broker_execution_enabled"))
+            result.setdefault("order_placement_enabled", payload.get("order_placement_enabled"))
+            result.setdefault("capital_movement_enabled", payload.get("capital_movement_enabled"))
+            return result
     return None
 
 
