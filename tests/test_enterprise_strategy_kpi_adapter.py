@@ -1041,3 +1041,147 @@ def test_swing_alerts_require_registered_capability_and_safe_authority(
     )
     assert rows[0]["alerts_status"] == "NOT_REPORTED"
     assert rows[0]["alerts"] == []
+
+
+def _swing_decision_report(symbol: str = "SOXL") -> dict:
+    position = {
+        "decision_id": f"POSITION-{symbol}",
+        "decision_scope": "OPEN_POSITION",
+        "symbol": symbol,
+        "current_state": "OPEN",
+        "current_decision": "HOLD",
+        "current_owner": "Strategy A",
+        "rationale": "The authoritative paper position remains open.",
+        "alternatives_considered": [],
+        "evidence_timestamp": "2026-08-15T15:00:00Z",
+        "timeline": [],
+    }
+    return {
+        "module_name": "swing_decision_journal_report",
+        "strategy_id": "SWING-001",
+        "paper_trade_mode": True,
+        "advisory_only": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "order_placement_enabled": False,
+        "capital_movement_enabled": False,
+        "decision_authority_policy":
+            "CURRENT_MATCHED_AUTHORITATIVE_EVIDENCE_ONLY",
+        "position_decisions": [position],
+        "candidate_decisions": [],
+        "decisions": [position],
+        "decision_count": 1,
+        "evidence_warnings": [],
+        "evaluation_status": "COMPLETE",
+        "excluded_planning_sources": ["results/rebalance_actions.json"],
+    }
+
+
+def test_external_swing_decision_journal_resolves_from_repository_root(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "Trade-Swing-Bot" / "main"
+    results = swing_root / "results"
+    results.mkdir(parents=True)
+    artifact = results / "swing_decision_journal_report.json"
+    artifact.write_text(json.dumps(_swing_decision_report()), encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot")
+    plugin["repository_root"] = str(swing_root)
+    plugin["capabilities"].append("decision_journal")
+    plugin["dashboard_artifacts"] = [{
+        "artifact_id": "swing_decision_journal_report",
+        "artifact_type": "decision_journal",
+        "path": "results/swing_decision_journal_report.json",
+        "format": "json",
+        "authoritative": True,
+        "required": False,
+    }]
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    row = rows[0]
+    assert "decision_journal" in row["capabilities"]
+    assert row["allocated_capital"] == 4500.0
+    assert row["decision_journal_status"] == "AVAILABLE"
+    assert row["decision_count"] == 1
+    assert row["decision_journal"]["position_decisions"][0]["symbol"] == "SOXL"
+    assert str(artifact.resolve()) in row["evidence_paths"]
+
+
+def test_swing_decision_journal_embedded_kpi_is_contract_fallback(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "enterprise_strategy_kpis.json"
+    embedded = _swing_decision_report("TQQQ")
+    embedded.pop("module_name")
+    artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "paper_trade_mode": True,
+        "advisory_only": True,
+        "dashboard_sections": {"decisions": embedded},
+    }), encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot", str(artifact))
+    plugin["capabilities"].append("decision_journal")
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert rows[0]["decision_journal_status"] == "AVAILABLE"
+    assert rows[0]["decision_journal"]["position_decisions"][0]["symbol"] == "TQQQ"
+
+
+def test_swing_standalone_decision_journal_precedes_embedded_kpi(
+    tmp_path: Path,
+) -> None:
+    standalone = tmp_path / "standalone.json"
+    standalone.write_text(
+        json.dumps(_swing_decision_report("SOXL")), encoding="utf-8"
+    )
+    embedded = _swing_decision_report("STALE")
+    embedded.pop("module_name")
+    kpi = tmp_path / "kpi.json"
+    kpi.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "dashboard_sections": {"decisions": embedded},
+    }), encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot")
+    plugin["capabilities"].append("decision_journal")
+    plugin["dashboard_artifacts"] = [
+        {"artifact_id": "kpi", "path": str(kpi), "format": "json"},
+        {"artifact_id": "journal", "path": str(standalone), "format": "json"},
+    ]
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert rows[0]["decision_journal"]["position_decisions"][0]["symbol"] == "SOXL"
+    assert "STALE" not in json.dumps(rows[0]["decision_journal"])
+
+
+def test_swing_decision_journal_requires_registered_capability(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "journal.json"
+    artifact.write_text(json.dumps(_swing_decision_report()), encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot", str(artifact))
+
+    rows, _ = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=tmp_path,
+    )
+
+    assert rows[0]["decision_journal_status"] == "NOT_REPORTED"
+    assert rows[0]["decision_journal"] is None
+    assert rows[0]["allocated_capital"] == 4500.0
