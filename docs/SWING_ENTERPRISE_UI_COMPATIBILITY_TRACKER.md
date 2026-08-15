@@ -467,3 +467,15 @@ Decision:
 - Decision Journal standalone and embedded sources both use the journal-only safety normalizer so `read_only = true` reaches the legacy attachment layer.
 - Existing Alerts fallback and Decision Journal downstream-attachment tests guard the separation.
 - No external Swing artifact or Trade-Swing-Bot source was changed.
+
+
+### 2026-08-15 Decision Journal stylesheet containment
+
+Production visual verification showed the Swing Decision Journal CSS as visible text above the Enterprise portal. The component returned raw CSS after the base portal stylesheet had already closed its `<style>` element.
+
+Decision:
+
+- The Swing Decision Journal stylesheet now returns its own complete `<style>...</style>` block, matching the other Enterprise component renderers.
+- No decision evidence, routing, strategy ownership, allocation, or safety behavior changed.
+- The workspace integration test verifies that the combined stylesheet ends with a closed style block and that Swing journal rules are inside it.
+- Trade-Swing-Bot remains unchanged.
