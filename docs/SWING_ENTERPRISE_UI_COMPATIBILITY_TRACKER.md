@@ -455,3 +455,15 @@ Decision:
 - Unsafe reports still fail closed.
 - The downstream dashboard attachment adapter now preserves the registered Swing journal instead of replacing it with `NOT_REPORTED`.
 - Trade-Swing-Bot remains unchanged.
+
+
+### 2026-08-15 normalization scope regression
+
+The production-focused suite exposed a host regression in the embedded Swing Alerts fallback: the Decision Journal `normalized` helper had been referenced outside its local scope.
+
+Decision:
+
+- Alerts fallback normalization remains independent and returns a direct copy of validated Alerts evidence.
+- Decision Journal standalone and embedded sources both use the journal-only safety normalizer so `read_only = true` reaches the legacy attachment layer.
+- Existing Alerts fallback and Decision Journal downstream-attachment tests guard the separation.
+- No external Swing artifact or Trade-Swing-Bot source was changed.
