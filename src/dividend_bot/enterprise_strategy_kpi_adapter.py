@@ -235,6 +235,67 @@ def _detail_list(evidence: Mapping[str, Any] | None, key: str) -> list[dict[str,
     return [dict(item) for item in value if isinstance(item, Mapping)]
 
 
+def _mapping_at(value: Any, *keys: str) -> Mapping[str, Any] | None:
+    current = value
+    for key in keys:
+        if not isinstance(current, Mapping):
+            return None
+        current = current.get(key)
+    return current if isinstance(current, Mapping) else None
+
+
+def _strategy_owned_payloads(
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> list[Mapping[str, Any]]:
+    """Return only payload sections owned by the requested strategy."""
+    owned: list[Mapping[str, Any]] = []
+    for payload in payloads:
+        if not isinstance(payload, Mapping):
+            continue
+        reported_id = _first(payload, ("strategy_id", "service_id", "plugin_id"))
+        if reported_id in (None, "") or _canonical_strategy_id(reported_id) == strategy_id:
+            owned.append(payload)
+        for collection_key in ("strategy_kpis", "strategies"):
+            collection = payload.get(collection_key)
+            if not isinstance(collection, list):
+                continue
+            for item in collection:
+                if not isinstance(item, Mapping):
+                    continue
+                item_id = _first(item, ("strategy_id", "service_id", "plugin_id"))
+                if item_id not in (None, "") and _canonical_strategy_id(item_id) == strategy_id:
+                    owned.append(item)
+    return owned
+
+
+def _strategy_watchlist_detail(
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> list[dict[str, Any]]:
+    """Read authoritative candidate rows without deriving detail from a count."""
+    owned = _strategy_owned_payloads(payloads, strategy_id)
+    for payload in owned:
+        watchlist = _mapping_at(payload, "dashboard_sections", "watchlist")
+        evidence = _mapping_at(watchlist, "evidence") if watchlist is not None else None
+        rows = evidence.get("rows") if evidence is not None else None
+        if isinstance(rows, list):
+            return [dict(item) for item in rows if isinstance(item, Mapping)]
+
+    # Backward-compatible Swing contract used before dashboard_sections became
+    # authoritative. This is intentionally evaluated only after the primary path.
+    for payload in owned:
+        evidence = _mapping_at(
+            payload,
+            "strategy_intelligence",
+            "watchlist_evidence",
+        )
+        rows = evidence.get("rows") if evidence is not None else None
+        if isinstance(rows, list):
+            return [dict(item) for item in rows if isinstance(item, Mapping)]
+    return []
+
+
 def build_strategy_kpis(
     *,
     registry: Mapping[str, Any],
@@ -442,6 +503,8 @@ def build_strategy_kpis(
 
         holdings = _detail_list(dashboard_evidence, "holdings")
         watchlist_detail = _detail_list(dashboard_evidence, "watchlist")
+        if not watchlist_detail and strategy_id != "DIVIDEND-001":
+            watchlist_detail = _strategy_watchlist_detail(payloads, strategy_id)
         income_events = _detail_list(dashboard_evidence, "income_events")
         alerts = _detail_list(dashboard_evidence, "alerts")
         risk_flags = _detail_list(dashboard_evidence, "risk_flags")
