@@ -505,3 +505,76 @@ def test_swing_watchlist_rejects_explicit_dividend_owned_rows(
 
     assert rows[0]["strategy_id"] == "SWING-001"
     assert rows[0]["watchlist"] == []
+
+def test_swing_watchlist_skips_empty_declared_artifact_before_populated_kpi(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "swing"
+    results = swing_root / "results"
+    results.mkdir(parents=True)
+    empty_artifact = results / "00_empty_dashboard.json"
+    populated_artifact = results / "01_enterprise_strategy_kpis.json"
+
+    empty_artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "dashboard_sections": {
+            "watchlist": {"count": 0, "evidence": {"rows": []}}
+        },
+    }), encoding="utf-8")
+    populated_artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "dashboard_sections": {
+            "watchlist": {
+                "count": 3,
+                "evidence": {
+                    "rows": [
+                        {
+                            "underlying_symbol": "NBIS",
+                            "leveraged_symbol": "NEBX",
+                            "watchlist_status": "WATCHLIST",
+                        },
+                        {
+                            "underlying_symbol": "IREN",
+                            "leveraged_symbol": "IREL",
+                            "watchlist_status": "DISCOVERY",
+                        },
+                        {
+                            "underlying_symbol": "BE",
+                            "leveraged_symbol": "",
+                            "watchlist_status": "REMOVED",
+                        },
+                    ]
+                },
+            }
+        },
+    }), encoding="utf-8")
+
+    plugin = _plugin(
+        "SWING-001",
+        "Trade Swing Bot",
+        "results/00_empty_dashboard.json",
+    )
+    plugin["repository_root"] = str(swing_root)
+    plugin["dashboard_artifacts"].append({
+        "artifact_id": "swing-enterprise-kpis",
+        "artifact_type": "ENTERPRISE_STRATEGY_KPIS",
+        "path": "results/01_enterprise_strategy_kpis.json",
+        "format": "JSON",
+        "authoritative": True,
+        "required": True,
+    })
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert rows[0]["watchlist_count"] == 3
+    assert [
+        item["underlying_symbol"] for item in rows[0]["watchlist"]
+    ] == ["NBIS", "IREN", "BE"]
+    assert [
+        item["watchlist_status"] for item in rows[0]["watchlist"]
+    ] == ["WATCHLIST", "DISCOVERY", "REMOVED"]
+
