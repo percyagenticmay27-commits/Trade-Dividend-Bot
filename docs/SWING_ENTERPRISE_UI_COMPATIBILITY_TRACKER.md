@@ -350,3 +350,18 @@ Continuation point:
 - Run focused tests for `enterprise_strategy_kpi_adapter`, `enterprise_trade_analytics_ui`, and `enterprise_portal_trade_analytics_integration`.
 - Then run the complete relevant Enterprise portal suite.
 - Refresh Registry and Enterprise dashboards only after tests pass.
+
+
+## 2026-08-15 full Enterprise regression reconciliation
+
+The complete relevant Enterprise suite exposed five assertions after the Swing Trade Analytics consumer was added.
+
+Decisions:
+
+- Dividend realized income remains transaction-ledger authoritative. When normalized `net_income_received` is available, it overrides the paper-state cumulative compatibility total in the Enterprise KPI row.
+- Dividend Watchlist retains and displays its published evidence source as well as the evidence timestamp.
+- SWING-001 no longer receives a Dividend Income renderer, including when optional Trade Analytics evidence is unavailable. It receives an explicit non-fabricating Trade Analytics unavailable state.
+- Holdings reconciliation no longer promises an obsolete checkmark label.
+- Position history presents the human-readable `Why Sold` explanation while retaining the audit source; raw exit codes are not required as user-facing text.
+
+No Swing repository files or generated result artifacts were modified.
