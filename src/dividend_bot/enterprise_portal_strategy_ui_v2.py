@@ -19,6 +19,7 @@ from .enterprise_holdings_purchase_date_ui import holdings_ui_css, render_holdin
 from .enterprise_income_ui import income_ui_css, render_income_panel
 from .enterprise_position_history_ui import position_history_ui_css, render_position_history_panel
 from .enterprise_trade_analytics_ui import trade_analytics_ui_css, render_trade_analytics_panel
+from .enterprise_swing_alerts_ui import render_swing_alerts_panel, swing_alerts_ui_css
 
 render_left_navigation = _base.render_left_navigation
 
@@ -99,6 +100,12 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
                 tab="income",
                 body=render_trade_analytics_panel(row),
             )
+            output = _replace_panel(
+                output,
+                sid=sid,
+                tab="alerts",
+                body=render_swing_alerts_panel(row),
+            )
             output = output.replace(
                 f"id='tab-{sid}-income' role='tab'",
                 f"id='tab-{sid}-income' role='tab' data-section-kind='trade-analytics'",
@@ -132,4 +139,5 @@ def strategy_ui_css() -> str:
         + income_ui_css()
         + position_history_ui_css()
         + trade_analytics_ui_css()
+        + swing_alerts_ui_css()
     )
