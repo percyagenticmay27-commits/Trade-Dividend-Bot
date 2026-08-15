@@ -402,3 +402,106 @@ def test_dividend_strategy_health_markdown_is_accepted_evidence(tmp_path: Path) 
 
     assert not any("unsupported evidence path strategy_health_report.md" in item for item in warnings)
     assert "strategy_health_report.md" in rows[0]["evidence_paths"][0]
+
+
+def test_swing_watchlist_rows_use_authoritative_candidate_pipeline_evidence(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "swing"
+    (swing_root / "results").mkdir(parents=True)
+    artifact = swing_root / "results/enterprise_strategy_kpis.json"
+    artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "dashboard_sections": {
+            "watchlist": {
+                "count": 3,
+                "evidence": {
+                    "rows": [
+                        {
+                            "underlying_symbol": "NBIS",
+                            "leveraged_symbol": "NEBX",
+                            "lifecycle_status": "WATCHLIST",
+                            "capacity_status": "ACTIVE",
+                            "watchlist_rank": 1,
+                        },
+                        {
+                            "underlying_symbol": "IREN",
+                            "leveraged_symbol": "IREL",
+                            "lifecycle_status": "DISCOVERY",
+                            "capacity_status": "ACTIVE",
+                            "watchlist_rank": 2,
+                        },
+                        {
+                            "underlying_symbol": "BE",
+                            "leveraged_symbol": None,
+                            "lifecycle_status": "REMOVED",
+                            "capacity_status": "REMOVED",
+                            "watchlist_rank": 3,
+                        },
+                    ]
+                },
+            }
+        },
+        "strategy_intelligence": {
+            "watchlist_evidence": {
+                "rows": [{
+                    "underlying_symbol": "FALLBACK",
+                    "lifecycle_status": "WATCHLIST",
+                }]
+            }
+        },
+    }), encoding="utf-8")
+    plugin = _plugin(
+        "SWING-001",
+        "Trade Swing Bot",
+        "results/enterprise_strategy_kpis.json",
+    )
+    plugin["repository_root"] = str(swing_root)
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    row = rows[0]
+    assert row["watchlist_count"] == 3
+    assert [item["underlying_symbol"] for item in row["watchlist"]] == [
+        "NBIS", "IREN", "BE",
+    ]
+    assert [item["lifecycle_status"] for item in row["watchlist"]] == [
+        "WATCHLIST", "DISCOVERY", "REMOVED",
+    ]
+    assert "FALLBACK" not in {
+        item["underlying_symbol"] for item in row["watchlist"]
+    }
+
+
+def test_swing_watchlist_rejects_explicit_dividend_owned_rows(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "wrong-owner.json"
+    artifact.write_text(json.dumps({
+        "strategy_id": "DIVIDEND-001",
+        "dashboard_sections": {
+            "watchlist": {
+                "count": 1,
+                "evidence": {
+                    "rows": [{
+                        "underlying_symbol": "DIVIDEND-ONLY",
+                        "lifecycle_status": "WATCHLIST",
+                    }]
+                },
+            }
+        },
+    }), encoding="utf-8")
+    registry = {
+        "strategy_plugins": [
+            _plugin("SWING-001", "Trade Swing Bot", str(artifact))
+        ]
+    }
+
+    rows, _ = build_strategy_kpis(registry=registry, root_dir=tmp_path)
+
+    assert rows[0]["strategy_id"] == "SWING-001"
+    assert rows[0]["watchlist"] == []
