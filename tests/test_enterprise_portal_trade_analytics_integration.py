@@ -33,6 +33,16 @@ def _report() -> dict:
                     "path": "results/swing_trade_analytics_report.json",
                 }],
                 "evidence_status": "AVAILABLE",
+                "position_count": 1,
+                "portfolio_value": 4525.52,
+                "holdings": [{
+                    "symbol": "SOXL",
+                    "position_status": "OPEN",
+                    "shares": 8.04145854,
+                    "current_price": 143.264297485352,
+                    "market_value": 1152.05,
+                    "active_strategy": "Strategy A",
+                }],
                 "trade_analytics_status": "AVAILABLE",
                 "trade_analytics": {
                     "generated_at": "2026-08-15T01:00:00Z",
@@ -68,6 +78,20 @@ def test_swing_income_tab_routes_to_trade_analytics() -> None:
     assert "$82.42" in swing_workspace
     assert "AUTHORITATIVE_POSITION_HISTORY_ONLY" in swing_workspace
     assert "<h3>Income</h3>" not in swing_workspace
+
+
+def test_swing_holdings_deep_link_uses_position_performance_not_dividend_income() -> None:
+    output = render_strategy_workspace(_report(), audience="executive")
+
+    swing_start = output.index("id='strategy-SWING-001'")
+    swing_workspace = output[swing_start:]
+    assert "holdings-overview-table" in swing_workspace
+    assert "holdings-management-table" in swing_workspace
+    assert "holdings-income-table" not in swing_workspace
+    # One authoritative renderer is on Holdings and one is on the backward-
+    # compatible former Income tab.
+    assert swing_workspace.count("Trade Analytics / Position Performance") == 2
+    assert swing_workspace.count("$82.42") == 2
 
 
 def test_dividend_income_section_remains_unchanged() -> None:
