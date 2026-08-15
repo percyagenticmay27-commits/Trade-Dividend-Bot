@@ -792,3 +792,79 @@ def test_external_trade_analytics_path_cannot_escape_repository_root(
     assert rows[0]["trade_analytics"] is None
     assert rows[0]["evidence_paths"] == []
     assert any("unsupported evidence path ../outside.json" in item for item in warnings)
+
+
+def test_swing_trade_analytics_falls_back_to_registered_enterprise_kpi_section(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "swing"
+    results = swing_root / "results"
+    results.mkdir(parents=True)
+    artifact = results / "enterprise_strategy_kpis.json"
+    artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "generated_at": "2026-08-15T01:00:00Z",
+        "paper_trade_mode": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "order_placement_enabled": False,
+        "capital_movement_enabled": False,
+        "trade_analytics": {
+            "max_drawdown_policy": "AUTHORITATIVE_POSITION_HISTORY_ONLY",
+            "max_drawdown_inference_allowed": False,
+            "open_positions": [{
+                "symbol": "SOXL",
+                "max_drawdown_amount": 82.42,
+                "max_drawdown_percent": 7.308378,
+            }],
+            "closed_positions": [],
+        },
+    }), encoding="utf-8")
+    plugin = _plugin(
+        "SWING-001",
+        "Trade Swing Bot",
+        "results/enterprise_strategy_kpis.json",
+    )
+    plugin["repository_root"] = str(swing_root)
+    plugin["capabilities"].append("trade_analytics")
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    analytics = rows[0]["trade_analytics"]
+    assert analytics["strategy_id"] == "SWING-001"
+    assert analytics["generated_at"] == "2026-08-15T01:00:00Z"
+    assert analytics["max_drawdown_inference_allowed"] is False
+    assert analytics["open_positions"][0]["max_drawdown_amount"] == 82.42
+    assert analytics["closed_positions"] == []
+
+
+def test_swing_trade_analytics_rejects_non_authoritative_drawdown_policy(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "analytics.json"
+    artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "report_type": "TRADE_ANALYTICS_POSITION_PERFORMANCE",
+        "max_drawdown_policy": "HOST_INFERENCE",
+        "max_drawdown_inference_allowed": True,
+        "open_positions": [{
+            "symbol": "SOXL",
+            "max_drawdown_amount": 999.0,
+        }],
+    }), encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot", str(artifact))
+    plugin["capabilities"].append("trade_analytics")
+
+    rows, _ = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=tmp_path,
+    )
+
+    assert rows[0]["trade_analytics_status"] == "NOT_REPORTED"
+    assert rows[0]["trade_analytics"] is None
