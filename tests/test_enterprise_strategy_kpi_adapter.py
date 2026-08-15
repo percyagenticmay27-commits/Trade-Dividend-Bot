@@ -4,6 +4,9 @@ import json
 from pathlib import Path
 
 from src.dividend_bot.enterprise_strategy_kpi_adapter import build_strategy_kpis
+from src.dividend_bot.enterprise_dashboard_decision_journal_adapter import (
+    attach_strategy_decision_journals,
+)
 
 
 def _plugin(strategy_id: str, name: str, artifact_path: str | None = None) -> dict:
@@ -1110,6 +1113,13 @@ def test_external_swing_decision_journal_resolves_from_repository_root(
     assert row["decision_journal_status"] == "AVAILABLE"
     assert row["decision_count"] == 1
     assert row["decision_journal"]["position_decisions"][0]["symbol"] == "SOXL"
+    assert row["decision_journal"]["read_only"] is True
+    attached, attachment_warnings = attach_strategy_decision_journals(
+        rows, results_dir=tmp_path / "host-results"
+    )
+    assert attachment_warnings == []
+    assert attached[0]["decision_journal_status"] == "AVAILABLE"
+    assert attached[0]["decision_journal"]["position_decisions"][0]["symbol"] == "SOXL"
     assert str(artifact.resolve()) in row["evidence_paths"]
 
 
