@@ -273,14 +273,20 @@ def _strategy_watchlist_count(
     payloads: Sequence[Any],
     strategy_id: str,
 ) -> int | None:
+    published_zero = False
     for payload in _strategy_owned_payloads(payloads, strategy_id):
         watchlist = _mapping_at(payload, "dashboard_sections", "watchlist")
         if watchlist is None:
             continue
         parsed = _number(watchlist.get("count"))
-        if parsed is not None:
-            return int(parsed)
-    return None
+        if parsed is None:
+            continue
+        count = int(parsed)
+        if count > 0:
+            return count
+        if count == 0:
+            published_zero = True
+    return 0 if published_zero else None
 
 
 def _strategy_watchlist_detail(
