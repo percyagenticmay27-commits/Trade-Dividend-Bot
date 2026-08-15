@@ -177,7 +177,7 @@ def render_swing_decision_journal_panel(row: Mapping[str, Any]) -> str:
 
 
 def swing_decision_journal_ui_css() -> str:
-    return """
+    return """<style>
 .swing-decision-journal{display:grid;gap:14px}
 .swing-decision-heading{display:flex;justify-content:space-between;gap:18px;padding:18px;background:#0b1d3a;color:#fff;border-radius:12px}
 .swing-decision-heading h2{margin:4px 0;color:#fff}.swing-decision-heading p{color:#fff;margin:4px 0}
@@ -204,4 +204,4 @@ def swing_decision_journal_ui_css() -> str:
 .swing-decision-empty,.swing-decision-planning-note,.swing-decision-unavailable p{color:#475467}
 .swing-decision-unavailable{border:1px solid #dbe3ef;border-radius:12px;padding:16px}
 @media(max-width:700px){.swing-decision-heading{display:block}.swing-decision-badges{justify-content:flex-start;margin-top:10px}.swing-decision-grid{grid-template-columns:1fr}}
-"""
+</style>"""
