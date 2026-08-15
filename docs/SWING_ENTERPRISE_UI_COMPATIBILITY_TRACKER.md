@@ -409,3 +409,35 @@ Continuation point:
 - Run the focused Swing Alerts UI, adapter, workspace integration, and portal-route regressions.
 - Refresh Registry and Enterprise dashboards only after the tests pass.
 - Restart `dividend-allocation.service` and validate the SWING-001 Alerts deep link.
+
+
+## 2026-08-15 Swing authoritative Decision Journal consumer
+
+The Enterprise host now consumes the registered SWING-001 Decision Journal and replaces the Dividend pair-lifecycle presentation with a Swing-specific stock, position, and candidate lifecycle view. DIVIDEND-001 remains unchanged.
+
+Architecture decision:
+
+- Registry v2 capability `decision_journal` gates the consumer.
+- The dedicated registered `results/swing_decision_journal_report.json` is preferred regardless of declared artifact loading order.
+- `dashboard_sections.decisions` in the registered Swing Enterprise KPI is the contract-compatible fallback.
+- Relative paths resolve beneath the external strategy's registered `repository_root`; path containment remains enforced.
+- The consumer accepts only `CURRENT_MATCHED_AUTHORITATIVE_EVIDENCE_ONLY` reports that remain paper-only and advisory-only.
+- `position_decisions` and `candidate_decisions` are consumed separately; the host does not derive category membership from counts or from the combined list.
+- Open-position cards display symbol, scope, state, decision, owner, rationale, alternatives, timestamp, and committee timeline.
+- Candidate cards use the same evidence fields but remain visually and structurally separate.
+- Evidence warnings render separately as **Evidence Disclosures**.
+- A verified empty report displays the Swing-published no-decisions message.
+- Missing, stale, unsafe, or cross-strategy evidence remains unavailable without fabrication.
+- Decisions outside the registered advisory set fail closed. The host does not manufacture BUY, SELL, sale, exit, or closure evidence.
+- `rebalance_actions.json` remains a planning source and is never consumed as an executed Decision Journal source.
+- No Dividend pair, income-leg, or leverage-leg terminology appears in the SWING-001 view.
+- SWING-001 remains allocated $4,500 and all paper-only safety locks remain intact.
+- No Trade-Swing-Bot file or generated artifact was modified.
+
+Continuation point:
+
+- Pull `feature/dashboard-refresh-discovery-summary`.
+- Run the focused adapter, Swing Decision Journal UI, workspace integration, and portal-route tests.
+- Refresh Registry and Enterprise dashboards after tests pass.
+- Restart only `dividend-allocation.service`.
+- Validate `/executive-dashboard?strategy=SWING-001&tab=decisions`.
