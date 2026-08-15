@@ -120,12 +120,14 @@ def _artifact_declarations(plugin: Mapping[str, Any]) -> list[dict[str, Any]]:
 
 
 def _safe_path(raw: str, root_dir: Path) -> Path | None:
+    root = root_dir.resolve(strict=False)
     candidate = Path(raw)
     if not candidate.is_absolute():
-        candidate = root_dir / candidate
+        candidate = root / candidate
     try:
         resolved = candidate.resolve(strict=False)
-    except OSError:
+        resolved.relative_to(root)
+    except (OSError, ValueError):
         return None
     return resolved if resolved.suffix.lower() in {".json", ".csv", ".md", ".markdown", ".html"} else None
 
@@ -378,6 +380,37 @@ def _strategy_holdings_detail(
     return []
 
 
+def _strategy_trade_analytics(
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> dict[str, Any] | None:
+    """Return authoritative strategy-owned Swing trade analytics evidence."""
+    if strategy_id != "SWING-001":
+        return None
+    owned = _strategy_owned_payloads(payloads, strategy_id)
+
+    # Prefer the dedicated registered trade-analytics artifact. Its rows are
+    # already normalized by Swing and include authoritative days-held values.
+    for payload in owned:
+        if str(payload.get("report_type") or "").upper() != "TRADE_ANALYTICS_POSITION_PERFORMANCE":
+            continue
+        return dict(payload)
+
+    # Backward-compatible source from the registered Enterprise KPI artifact.
+    for payload in owned:
+        analytics = payload.get("trade_analytics")
+        if isinstance(analytics, Mapping):
+            normalized = dict(analytics)
+            normalized.setdefault("strategy_id", strategy_id)
+            normalized.setdefault("paper_trade_mode", payload.get("paper_trade_mode"))
+            normalized.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
+            normalized.setdefault("broker_execution_enabled", payload.get("broker_execution_enabled"))
+            normalized.setdefault("order_placement_enabled", payload.get("order_placement_enabled"))
+            normalized.setdefault("capital_movement_enabled", payload.get("capital_movement_enabled"))
+            return normalized
+    return None
+
+
 def build_strategy_kpis(
     *,
     registry: Mapping[str, Any],
@@ -621,6 +654,10 @@ def build_strategy_kpis(
         holdings = _detail_list(dashboard_evidence, "holdings")
         if strategy_id != "DIVIDEND-001":
             holdings = _strategy_holdings_detail(payloads, strategy_id)
+
+        trade_analytics = None
+        if strategy_id == "SWING-001" and "trade_analytics" in capability_names:
+            trade_analytics = _strategy_trade_analytics(payloads, strategy_id)
         watchlist_detail = _detail_list(dashboard_evidence, "watchlist")
         if not watchlist_detail and strategy_id != "DIVIDEND-001":
             watchlist_detail = _strategy_watchlist_detail(payloads, strategy_id)
@@ -694,6 +731,8 @@ def build_strategy_kpis(
             "win_rate_percent": round(win_rate, 2) if win_rate is not None else None,
             "holdings": holdings,
             "positions": holdings,
+            "trade_analytics_status": "AVAILABLE" if trade_analytics is not None else "NOT_REPORTED",
+            "trade_analytics": trade_analytics,
             "watchlist": watchlist_detail,
             "income_events": income_events,
             "decision_journal_status": decision_journal_status,
