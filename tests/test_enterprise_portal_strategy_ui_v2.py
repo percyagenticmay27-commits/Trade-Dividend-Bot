@@ -209,3 +209,52 @@ def test_swing_candidate_pipeline_reaches_strategy_workspace_watchlist_tab() -> 
     assert "IREN" in swing_workspace and "IREL" in swing_workspace
     assert ">BE<" in swing_workspace
     assert "No active strategy watchlist candidates." not in swing_workspace
+
+def test_swing_holdings_reach_strategy_workspace_without_reconciliation_warning() -> None:
+    report = _report()
+    swing = report["strategy_kpis"][1]
+    swing.update({
+        "allocated_capital": 4500.0,
+        "portfolio_value": 4525.52,
+        "cash_balance": 2700.0,
+        "invested_capital": 1800.0,
+        "positions_market_value": 1825.52,
+        "position_count": 2,
+        "unrealized_pnl": 25.52,
+        "holdings": [
+            {
+                "symbol": "SOXL",
+                "shares": 8.04145854,
+                "entry_price": 139.899993896484,
+                "current_price": 143.264297485352,
+                "market_value": 1152.05,
+                "unrealized_pnl": 27.05,
+                "unrealized_pnl_percent": 2.404444,
+                "active_strategy": "Strategy A",
+            },
+            {
+                "symbol": "TQQQ",
+                "shares": 9.021652,
+                "entry_price": 74.819999694824,
+                "current_price": 74.650001525879,
+                "market_value": 673.47,
+                "unrealized_pnl": -1.53,
+                "unrealized_pnl_percent": -0.226667,
+                "active_strategy": "Strategy A",
+            },
+        ],
+    })
+
+    output = render_strategy_workspace(report, audience="executive")
+    swing_start = output.index("id='strategy-SWING-001'")
+    swing_workspace = output[swing_start:]
+
+    assert "SOXL" in swing_workspace and "TQQQ" in swing_workspace
+    assert "Invested Capital" in swing_workspace
+    assert "$1,800.00" in swing_workspace
+    assert "$2,700.00" in swing_workspace
+    assert "$1,825.52" in swing_workspace
+    assert "$4,525.52" in swing_workspace
+    assert "+$25.52" in swing_workspace
+    assert "does not match reported portfolio value" not in swing_workspace
+
