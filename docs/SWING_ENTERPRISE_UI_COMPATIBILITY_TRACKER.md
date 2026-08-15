@@ -365,3 +365,17 @@ Decisions:
 - Position history presents the human-readable `Why Sold` explanation while retaining the audit source; raw exit codes are not required as user-facing text.
 
 No Swing repository files or generated result artifacts were modified.
+
+
+## 2026-08-15 Swing Holdings deep-link correction
+
+Visual validation showed that `?strategy=SWING-001&tab=holdings` still contained the shared Holdings renderer's Dividend-oriented Income subsection. The initial Trade Analytics integration had replaced only the former Income tab.
+
+Decision:
+
+- SWING-001 Holdings preserves capital reconciliation, holdings overview, position analytics, and position management.
+- SWING-001 Holdings omits the Dividend distribution-income subsection.
+- The authoritative Trade Analytics / Position Performance renderer is appended to the Swing Holdings route because Holdings is a common direct link.
+- The former Income tab remains a backward-compatible route labeled Trade Analytics.
+- DIVIDEND-001 Holdings and Income remain unchanged.
+- No host-side drawdown calculation, exit fabrication, or Swing repository mutation is permitted.
