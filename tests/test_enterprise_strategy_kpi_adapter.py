@@ -868,3 +868,176 @@ def test_swing_trade_analytics_rejects_non_authoritative_drawdown_policy(
 
     assert rows[0]["trade_analytics_status"] == "NOT_REPORTED"
     assert rows[0]["trade_analytics"] is None
+
+
+def _swing_alerts_report(*, alerts: list[dict] | None = None) -> dict:
+    rows = alerts or []
+    return {
+        "module_name": "swing_strategy_alerts_report",
+        "strategy_id": "SWING-001",
+        "paper_trade_mode": True,
+        "advisory_only": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "order_placement_enabled": False,
+        "capital_movement_enabled": False,
+        "alert_authority_policy": "CURRENT_AUTHORITATIVE_EVIDENCE_ONLY",
+        "actionable_alert_count": len(rows),
+        "alerts": rows,
+        "evidence_warning_count": 1,
+        "evidence_warnings": ["KPI disclosure: Win rate unavailable."],
+        "evaluation_status": "COMPLETE_WITH_EVIDENCE_WARNINGS",
+    }
+
+
+def test_external_swing_alerts_resolve_under_registered_repository_root(
+    tmp_path: Path,
+) -> None:
+    host_root = tmp_path / "dividend-host"
+    swing_root = tmp_path / "swing-repo"
+    host_root.mkdir()
+    (swing_root / "results").mkdir(parents=True)
+    artifact = swing_root / "results/swing_strategy_alerts_report.json"
+    artifact.write_text(json.dumps(_swing_alerts_report()), encoding="utf-8")
+
+    plugin = _plugin("SWING-001", "Trade Swing Bot")
+    plugin["repository_root"] = str(swing_root)
+    plugin["capabilities"].append("alerts")
+    plugin["dashboard_artifacts"].append({
+        "artifact_id": "swing_strategy_alerts_report",
+        "artifact_type": "alerts",
+        "path": "results/swing_strategy_alerts_report.json",
+        "format": "json",
+        "authoritative": True,
+        "required": False,
+    })
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=host_root,
+    )
+
+    assert warnings == []
+    row = rows[0]
+    assert "alerts" in row["capabilities"]
+    assert row["allocated_capital"] == 4500.0
+    assert row["alerts_status"] == "AVAILABLE"
+    assert row["alerts"] == []
+    assert row["alerts_report"]["alert_authority_policy"] == "CURRENT_AUTHORITATIVE_EVIDENCE_ONLY"
+    assert row["alert_evidence_warnings"] == ["KPI disclosure: Win rate unavailable."]
+    assert str(artifact.resolve()) in row["evidence_paths"]
+
+
+def test_dedicated_swing_alerts_take_precedence_over_embedded_fallback(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "swing"
+    results = swing_root / "results"
+    results.mkdir(parents=True)
+    dedicated = results / "swing_strategy_alerts_report.json"
+    embedded = results / "enterprise_strategy_kpis.json"
+    dedicated.write_text(json.dumps(_swing_alerts_report()), encoding="utf-8")
+    embedded.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "paper_trade_mode": True,
+        "advisory_only": True,
+        "dashboard_sections": {
+            "alerts": {
+                "alert_authority_policy": "CURRENT_AUTHORITATIVE_EVIDENCE_ONLY",
+                "paper_trade_mode": True,
+                "advisory_only": True,
+                "actionable_alert_count": 1,
+                "alerts": [{
+                    "strategy_id": "SWING-001",
+                    "message": "Fallback alert must not override dedicated evidence",
+                }],
+                "evidence_warnings": [],
+            }
+        },
+    }), encoding="utf-8")
+
+    plugin = _plugin("SWING-001", "Trade Swing Bot")
+    plugin["repository_root"] = str(swing_root)
+    plugin["capabilities"].append("alerts")
+    plugin["dashboard_artifacts"].extend([
+        {
+            "artifact_id": "enterprise-kpis",
+            "artifact_type": "strategy_kpis",
+            "path": "results/enterprise_strategy_kpis.json",
+            "format": "json",
+        },
+        {
+            "artifact_id": "swing-alerts",
+            "artifact_type": "alerts",
+            "path": "results/swing_strategy_alerts_report.json",
+            "format": "json",
+            "authoritative": True,
+        },
+    ])
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert rows[0]["alerts"] == []
+    assert rows[0]["alerts_report"]["module_name"] == "swing_strategy_alerts_report"
+
+
+def test_embedded_swing_alerts_are_fallback_when_dedicated_report_is_unavailable(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "enterprise_strategy_kpis.json"
+    report = _swing_alerts_report(alerts=[{
+        "strategy_id": "SWING-001",
+        "symbol": "SOXL",
+        "severity": "ERROR",
+        "priority": "HIGH",
+        "message": "Current scheduled cycle failed",
+    }])
+    report.pop("module_name")
+    artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "paper_trade_mode": True,
+        "advisory_only": True,
+        "dashboard_sections": {"alerts": report},
+    }), encoding="utf-8")
+
+    plugin = _plugin("SWING-001", "Trade Swing Bot", str(artifact))
+    plugin["capabilities"].append("alerts")
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert rows[0]["alerts_status"] == "AVAILABLE"
+    assert rows[0]["alerts"][0]["symbol"] == "SOXL"
+
+
+def test_swing_alerts_require_registered_capability_and_safe_authority(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "alerts.json"
+    unsafe = _swing_alerts_report()
+    unsafe["paper_trade_mode"] = False
+    artifact.write_text(json.dumps(unsafe), encoding="utf-8")
+
+    plugin = _plugin("SWING-001", "Trade Swing Bot", str(artifact))
+    rows, _ = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+    assert rows[0]["alerts_status"] == "NOT_REPORTED"
+    assert rows[0]["alerts"] == []
+
+    plugin["capabilities"].append("alerts")
+    rows, _ = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+    assert rows[0]["alerts_status"] == "NOT_REPORTED"
+    assert rows[0]["alerts"] == []
