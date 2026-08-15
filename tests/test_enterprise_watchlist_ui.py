@@ -93,3 +93,80 @@ def test_watchlist_css_is_self_contained_and_responsive():
     assert ".watchlist-summary-grid" in css
     assert ".watchlist-status-ready" in css
     assert "@media(max-width:520px)" in css
+
+
+def test_swing_candidate_pipeline_renders_all_published_lifecycle_rows():
+    page = render_watchlist_panel({
+        "strategy_id": "SWING-001",
+        "watchlist_count": 3,
+        "watchlist": [
+            {
+                "underlying_symbol": "NBIS",
+                "leveraged_symbol": "NEBX",
+                "lifecycle_status": "WATCHLIST",
+                "capacity_status": "ACTIVE",
+                "watchlist_rank": 1,
+                "composite_score": 91.2,
+                "financial_health": "STRONG",
+                "theme": "AI Infrastructure",
+                "promotion_eligible": True,
+                "source_count": 5,
+                "win_rate": 62.5,
+                "paper_return": 8.4,
+            },
+            {
+                "underlying_symbol": "IREN",
+                "leveraged_symbol": "IREL",
+                "lifecycle_status": "DISCOVERY",
+                "capacity_status": "ACTIVE",
+                "watchlist_rank": 2,
+            },
+            {
+                "underlying_symbol": "BE",
+                "leveraged_symbol": None,
+                "lifecycle_status": "REMOVED",
+                "capacity_status": "REMOVED",
+                "watchlist_rank": 3,
+            },
+        ],
+    })
+
+    assert "Candidate Pipeline" in page
+    assert "Total Candidate Records</span><strong>3" in page
+    assert "Active Watchlist</span><strong>1" in page
+    assert "Discovery</span><strong>1" in page
+    assert "Removed</span><strong>1" in page
+    assert "NBIS" in page and "NEBX" in page
+    assert "IREN" in page and "IREL" in page
+    assert ">BE<" in page
+    assert ">WATCHLIST<" in page
+    assert ">DISCOVERY<" in page
+    assert ">REMOVED<" in page
+    for heading in (
+        "Underlying Symbol",
+        "Leveraged Symbol",
+        "Lifecycle Status",
+        "Capacity Status",
+        "Watchlist Rank",
+        "Composite Score",
+        "Financial Health",
+        "Theme",
+        "Promotion Eligible",
+        "Source Count",
+        "Win Rate",
+        "Paper Return",
+    ):
+        assert heading in page
+
+
+def test_watchlist_count_never_fabricates_candidate_rows():
+    page = render_watchlist_panel({
+        "strategy_id": "SWING-001",
+        "watchlist_count": 3,
+        "watchlist": [],
+    })
+
+    assert "3 candidates" in page
+    assert "reports 3 candidate records" in page
+    assert "Candidate rows are never fabricated" in page
+    assert "<tbody>" not in page
