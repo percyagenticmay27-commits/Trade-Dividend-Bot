@@ -422,14 +422,14 @@ def _strategy_alerts_report(
         for candidate in candidates:
             if not authoritative(candidate):
                 continue
-            normalized = dict(candidate)
-            normalized.setdefault("strategy_id", strategy_id)
-            normalized.setdefault("generated_at_utc", payload.get("generated_at"))
-            normalized.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
-            normalized.setdefault("broker_execution_enabled", payload.get("broker_execution_enabled"))
-            normalized.setdefault("order_placement_enabled", payload.get("order_placement_enabled"))
-            normalized.setdefault("capital_movement_enabled", payload.get("capital_movement_enabled"))
-            return normalized
+            result = normalized(candidate)
+            result.setdefault("strategy_id", strategy_id)
+            result.setdefault("generated_at_utc", payload.get("generated_at"))
+            result.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
+            result.setdefault("broker_execution_enabled", payload.get("broker_execution_enabled"))
+            result.setdefault("order_placement_enabled", payload.get("order_placement_enabled"))
+            result.setdefault("capital_movement_enabled", payload.get("capital_movement_enabled"))
+            return result
     return None
 
 
@@ -452,16 +452,28 @@ def _strategy_decision_journal_report(
             == "CURRENT_MATCHED_AUTHORITATIVE_EVIDENCE_ONLY"
             and source.get("paper_trade_mode") is True
             and source.get("advisory_only") is True
+            and source.get("live_trading_enabled") is False
+            and source.get("broker_execution_enabled") is False
+            and source.get("order_placement_enabled") is False
+            and source.get("capital_movement_enabled") is False
             and isinstance(source.get("position_decisions"), list)
             and isinstance(source.get("candidate_decisions"), list)
             and isinstance(source.get("decisions"), list)
         )
 
+    def normalized(source: Mapping[str, Any]) -> dict[str, Any]:
+        result = dict(source)
+        # The legacy dashboard attachment layer names this presentation-only
+        # safety property read_only. Swing publishes the stronger explicit
+        # advisory and execution locks, so expose their equivalent host field.
+        result.setdefault("read_only", True)
+        return result
+
     for payload in owned:
         if str(payload.get("module_name") or "").lower() != "swing_decision_journal_report":
             continue
         if authoritative(payload):
-            return dict(payload)
+            return normalized(payload)
 
     for payload in owned:
         section = _mapping_at(payload, "dashboard_sections", "decisions")
