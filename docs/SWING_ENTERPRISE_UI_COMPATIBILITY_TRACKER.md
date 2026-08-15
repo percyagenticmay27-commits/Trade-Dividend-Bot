@@ -379,3 +379,33 @@ Decision:
 - The former Income tab remains a backward-compatible route labeled Trade Analytics.
 - DIVIDEND-001 Holdings and Income remain unchanged.
 - No host-side drawdown calculation, exit fabrication, or Swing repository mutation is permitted.
+
+
+## 2026-08-15 Swing authoritative Alerts consumer
+
+The Enterprise host now consumes the registered SWING-001 Alerts report and renders it through a Swing-specific Alerts presentation. DIVIDEND-001 continues using the existing Dividend Alerts path unchanged.
+
+Architecture decision:
+
+- Discovery remains Registry v2 driven. SWING-001 must declare capability `alerts` and the strategy-scoped `swing_strategy_alerts_report` artifact.
+- Relative artifact paths resolve beneath the registered external strategy `repository_root`; external evidence is never copied into Dividend results.
+- The dedicated registered report is authoritative and takes precedence over embedded compatibility evidence.
+- `dashboard_sections.alerts` in the registered Swing KPI artifact is a backward-compatible fallback only when the dedicated report is unavailable.
+- The internal Swing fallback remains eligible only when external registered evidence is genuinely unavailable.
+- The host accepts only policy `CURRENT_AUTHORITATIVE_EVIDENCE_ONLY` with `paper_trade_mode = true` and `advisory_only = true`.
+- Actionable rows are displayed exactly as published. The host does not infer severity, priority, recommended action, or alert state.
+- A verified zero-actionable-alert report displays the authoritative Swing all-clear message.
+- `evidence_warnings` render separately as **Evidence Disclosures** and never become trade alerts.
+- Legacy risk flags rejected by Swing authority are not revived by the host Alerts renderer.
+- Missing or invalid optional evidence remains visibly unavailable and does not generate an all-clear.
+- Strategy-owned text is HTML escaped.
+- SWING-001 allocation remains $4,500 and DIVIDEND-001 remains $5,000.
+- The consumer is read-only, paper-only, advisory-only, and cannot place orders, execute through a broker, move capital, or enable Robinhood execution.
+- No Trade-Swing-Bot source or generated result was modified.
+
+Continuation point:
+
+- Pull `feature/dashboard-refresh-discovery-summary`.
+- Run the focused Swing Alerts UI, adapter, workspace integration, and portal-route regressions.
+- Refresh Registry and Enterprise dashboards only after the tests pass.
+- Restart `dividend-allocation.service` and validate the SWING-001 Alerts deep link.
