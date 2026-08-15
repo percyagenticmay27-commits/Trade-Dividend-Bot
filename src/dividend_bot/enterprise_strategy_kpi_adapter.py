@@ -389,19 +389,28 @@ def _strategy_trade_analytics(
         return None
     owned = _strategy_owned_payloads(payloads, strategy_id)
 
+    def authoritative(source: Mapping[str, Any]) -> bool:
+        return (
+            source.get("max_drawdown_policy")
+            == "AUTHORITATIVE_POSITION_HISTORY_ONLY"
+            and source.get("max_drawdown_inference_allowed") is False
+        )
+
     # Prefer the dedicated registered trade-analytics artifact. Its rows are
     # already normalized by Swing and include authoritative days-held values.
     for payload in owned:
         if str(payload.get("report_type") or "").upper() != "TRADE_ANALYTICS_POSITION_PERFORMANCE":
             continue
-        return dict(payload)
+        if authoritative(payload):
+            return dict(payload)
 
     # Backward-compatible source from the registered Enterprise KPI artifact.
     for payload in owned:
         analytics = payload.get("trade_analytics")
-        if isinstance(analytics, Mapping):
+        if isinstance(analytics, Mapping) and authoritative(analytics):
             normalized = dict(analytics)
             normalized.setdefault("strategy_id", strategy_id)
+            normalized.setdefault("generated_at", payload.get("generated_at"))
             normalized.setdefault("paper_trade_mode", payload.get("paper_trade_mode"))
             normalized.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
             normalized.setdefault("broker_execution_enabled", payload.get("broker_execution_enabled"))
