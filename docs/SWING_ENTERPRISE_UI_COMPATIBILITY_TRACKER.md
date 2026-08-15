@@ -314,3 +314,39 @@ As UI 2.0 development continues, append Swing compatibility notes for Portfolio 
 ## Handoff rule
 
 When the Dividend-side UI/evidence work is complete, this file should be provided to the Swing Bot development chat as the authoritative compatibility checklist. Swing changes should be implemented only in the Swing repository, while host rendering and aggregation changes remain in the Dividend repository.
+
+
+### 2026-08-15 — Swing Trade Analytics / Position Performance consumer
+
+The Enterprise host now renders a SWING-001-specific Trade Analytics section in place of the Dividend-oriented Income presentation. DIVIDEND-001 continues using the existing Income renderer without a contract or layout change.
+
+Architecture decision:
+
+- Discovery remains Registry v2 driven. SWING-001 must declare capability `trade_analytics` and the authoritative `trade_analytics` JSON artifact.
+- Relative artifact paths resolve beneath the strategy registration's `repository_root`; paths that escape that root are rejected.
+- The preferred source is the dedicated registered `results/swing_trade_analytics_report.json`.
+- The `trade_analytics` section of registered `enterprise_strategy_kpis.json` remains a backward-compatible fallback.
+- Generated Swing results are never copied into or edited inside Trade-Dividend-Bot.
+- The host displays authoritative open and authentic closed rows only. A count never creates a position.
+- Open rows do not display exit/sale fields.
+- Closed-position columns render only when authentic `closed_positions` evidence is present.
+- Missing optional evidence displays `Unavailable`; it is not inferred.
+- Maximum drawdown is consumed only under policy `AUTHORITATIVE_POSITION_HISTORY_ONLY`, with `max_drawdown_inference_allowed = false`.
+- Profit values render green and loss values render red.
+- Strategy-owned text is HTML escaped.
+- The presentation remains paper-only and read-only. It does not place orders, connect to a broker, move capital, or change allocations.
+
+Current validated evidence expectation:
+
+- SWING-001 allocation remains $4,500.
+- DIVIDEND-001 allocation remains $5,000.
+- Current authentic Swing ledger contains two open positions (SOXL and TQQQ) and zero closed positions.
+- SOXL authoritative maximum drawdown is $82.42 / 7.308378%.
+- TQQQ authoritative maximum drawdown is $25.17 / 3.728951%.
+
+Continuation point:
+
+- Pull branch `feature/dashboard-refresh-discovery-summary`.
+- Run focused tests for `enterprise_strategy_kpi_adapter`, `enterprise_trade_analytics_ui`, and `enterprise_portal_trade_analytics_integration`.
+- Then run the complete relevant Enterprise portal suite.
+- Refresh Registry and Enterprise dashboards only after tests pass.
