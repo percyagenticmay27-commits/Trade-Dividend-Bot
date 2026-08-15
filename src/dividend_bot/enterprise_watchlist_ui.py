@@ -89,7 +89,18 @@ def _rows(items: list[Mapping[str, Any]]) -> str:
         market_state = "STALE" if item.get("market_data_stale") is True else "FRESH" if item.get("market_data_stale") is False else "Not reported"
         market_class = "watchlist-market-stale" if market_state == "STALE" else "watchlist-market-fresh" if market_state == "FRESH" else "watchlist-status-neutral"
         held = "YES" if item.get("currently_held") is True else "NO" if item.get("currently_held") is False else "Not reported"
-        evidence = _first(item, ("entry_evidence_generated_at_utc",), "Not reported")
+        evidence_at = _first(item, ("entry_evidence_generated_at_utc",), "")
+        source_value = item.get("sources")
+        if isinstance(source_value, list):
+            evidence_sources = ", ".join(str(value) for value in source_value if value)
+        else:
+            evidence_sources = _first(
+                item,
+                ("evidence_source", "source", "source_path"),
+                "",
+            )
+        evidence_parts = [value for value in (evidence_sources, evidence_at) if value]
+        evidence = " · ".join(evidence_parts) if evidence_parts else "Not reported"
         result.append(
             "<tr>"
             f"<td class='num'>{html.escape(rank)}</td>"
@@ -102,7 +113,7 @@ def _rows(items: list[Mapping[str, Any]]) -> str:
             f"<td class='watchlist-explanation'>{html.escape(next_step)}</td>"
             f"<td><span class='watchlist-status {market_class}'>{_missing(market_state)}</span></td>"
             f"<td>{_missing(held)}</td>"
-            f"<td class='watchlist-source'>{_missing(html.escape(evidence))}</td>"
+            f"<td class='watchlist-source'>{_missing(evidence)}</td>"
             "</tr>"
         )
     return "".join(result)
