@@ -78,7 +78,7 @@ def test_dividend_income_section_remains_unchanged() -> None:
     dividend_workspace = output[dividend_start:swing_start]
     assert "id='tab-DIVIDEND-001-income'" in dividend_workspace
     assert ">Income</button>" in dividend_workspace
-    assert "Income Attribution" in dividend_workspace
+    assert "<h3>Income</h3>" in dividend_workspace
     assert "Trade Analytics / Position Performance" not in dividend_workspace
     assert "$5,000.00" in dividend_workspace
 
