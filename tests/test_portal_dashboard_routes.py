@@ -278,3 +278,52 @@ def test_executive_route_renders_swing_trade_analytics_workspace(tmp_path: Path)
     assert "SOXL" in page
     assert "$82.42" in page
     assert "PAPER ONLY" in page
+
+
+def test_executive_route_renders_authoritative_swing_alerts_workspace(tmp_path: Path) -> None:
+    app, _, paths = _app(tmp_path)
+    Path(paths["executive_dashboard_json"]).write_text(json.dumps({
+        "portfolio_summary": {"portfolio_value": 9500.0},
+        "ai_cio_verdict": {},
+        "capital_allocation_rankings": [],
+        "strategy_kpis": [{
+            "strategy_id": "SWING-001",
+            "display_name": "Trade Swing Bot",
+            "strategy_type": "SWING",
+            "allocated_capital": 4500.0,
+            "paper_trade_mode": True,
+            "advisory_only": True,
+            "capabilities": ["alerts"],
+            "published_artifacts": [],
+            "evidence_status": "AVAILABLE",
+            "risk_flags": ["Exit review attention required"],
+            "alerts_status": "AVAILABLE",
+            "alerts": [],
+            "alerts_report": {
+                "strategy_id": "SWING-001",
+                "paper_trade_mode": True,
+                "advisory_only": True,
+                "alert_authority_policy": "CURRENT_AUTHORITATIVE_EVIDENCE_ONLY",
+                "actionable_alert_count": 0,
+                "alerts": [],
+                "evidence_warnings": [
+                    "KPI disclosure: Win rate is unavailable until authentic closed trades exist.",
+                    "Legacy dashboard excluded because its timestamp is unavailable.",
+                ],
+                "evaluation_status": "COMPLETE_WITH_EVIDENCE_WARNINGS",
+            },
+        }],
+    }), encoding="utf-8")
+
+    status, page = _call(app, "GET", "/executive-dashboard")
+
+    assert status == "200 OK"
+    assert "CURRENT_AUTHORITATIVE_EVIDENCE_ONLY" in page
+    assert "Current authoritative Swing evidence was evaluated and no actionable alerts were found." in page
+    assert "Evidence Disclosures" in page
+    assert "Win rate is unavailable" in page
+    assert "Legacy dashboard excluded" in page
+    assert "Exit review attention required" not in page
+    assert "$4,500.00 allocated" in page
+    assert "PAPER ONLY" in page
+    assert "ADVISORY ONLY" in page
