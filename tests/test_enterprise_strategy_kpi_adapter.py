@@ -678,3 +678,117 @@ def test_swing_explicit_empty_authoritative_holdings_blocks_stale_fallback(
     assert rows[0]["holdings"] == []
     assert rows[0]["positions"] == []
 
+
+
+def test_external_swing_trade_analytics_resolves_from_registered_repository_root(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "Trade-Swing-Bot" / "main"
+    results = swing_root / "results"
+    results.mkdir(parents=True)
+    report_path = results / "swing_trade_analytics_report.json"
+    report_path.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "report_type": "TRADE_ANALYTICS_POSITION_PERFORMANCE",
+        "paper_trade_mode": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "order_placement_enabled": False,
+        "capital_movement_enabled": False,
+        "max_drawdown_policy": "AUTHORITATIVE_POSITION_HISTORY_ONLY",
+        "max_drawdown_inference_allowed": False,
+        "open_position_count": 2,
+        "closed_position_count": 0,
+        "open_positions": [
+            {
+                "symbol": "SOXL",
+                "entry_date": "2026-08-04",
+                "max_drawdown_amount": 82.42,
+                "max_drawdown_percent": 7.308378,
+                "position_status": "OPEN",
+            },
+            {
+                "symbol": "TQQQ",
+                "entry_date": "2026-08-04",
+                "max_drawdown_amount": 25.17,
+                "max_drawdown_percent": 3.728951,
+                "position_status": "OPEN",
+            },
+        ],
+        "closed_positions": [],
+    }), encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot")
+    plugin["repository_root"] = str(swing_root)
+    plugin["capabilities"].append("trade_analytics")
+    plugin["dashboard_artifacts"] = [{
+        "artifact_id": "swing_trade_analytics_report",
+        "artifact_type": "trade_analytics",
+        "path": "results/swing_trade_analytics_report.json",
+        "format": "json",
+        "authoritative": True,
+        "required": False,
+    }]
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    row = rows[0]
+    assert row["strategy_id"] == "SWING-001"
+    assert row["allocated_capital"] == 4500.0
+    assert row["trade_analytics_status"] == "AVAILABLE"
+    assert row["trade_analytics"]["max_drawdown_inference_allowed"] is False
+    assert row["trade_analytics"]["open_positions"][0]["max_drawdown_amount"] == 82.42
+    assert row["trade_analytics"]["open_positions"][1]["max_drawdown_percent"] == 3.728951
+    assert row["trade_analytics"]["closed_positions"] == []
+    assert str(report_path.resolve()) in row["evidence_paths"]
+
+
+def test_swing_trade_analytics_requires_registered_capability(tmp_path: Path) -> None:
+    report_path = tmp_path / "analytics.json"
+    report_path.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "report_type": "TRADE_ANALYTICS_POSITION_PERFORMANCE",
+        "open_positions": [{"symbol": "SOXL"}],
+    }), encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot", str(report_path))
+
+    rows, _ = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=tmp_path,
+    )
+
+    assert rows[0]["trade_analytics_status"] == "NOT_REPORTED"
+    assert rows[0]["trade_analytics"] is None
+    assert rows[0]["allocated_capital"] == 4500.0
+
+
+def test_external_trade_analytics_path_cannot_escape_repository_root(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "swing"
+    swing_root.mkdir()
+    outside = tmp_path / "outside.json"
+    outside.write_text("{}", encoding="utf-8")
+    plugin = _plugin("SWING-001", "Trade Swing Bot")
+    plugin["repository_root"] = str(swing_root)
+    plugin["capabilities"].append("trade_analytics")
+    plugin["dashboard_artifacts"] = [{
+        "artifact_id": "trade_analytics",
+        "artifact_type": "trade_analytics",
+        "path": "../outside.json",
+        "format": "json",
+    }]
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+
+    assert rows[0]["trade_analytics"] is None
+    assert rows[0]["evidence_paths"] == []
+    assert any("unsupported evidence path ../outside.json" in item for item in warnings)
