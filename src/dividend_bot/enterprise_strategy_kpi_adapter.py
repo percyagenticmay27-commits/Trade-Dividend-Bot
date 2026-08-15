@@ -289,15 +289,27 @@ def _strategy_watchlist_detail(
 ) -> list[dict[str, Any]]:
     """Read authoritative candidate rows without deriving detail from a count."""
     owned = _strategy_owned_payloads(payloads, strategy_id)
+    primary_rows_published = False
     for payload in owned:
         watchlist = _mapping_at(payload, "dashboard_sections", "watchlist")
         evidence = _mapping_at(watchlist, "evidence") if watchlist is not None else None
         rows = evidence.get("rows") if evidence is not None else None
         if isinstance(rows, list):
-            return [dict(item) for item in rows if isinstance(item, Mapping)]
+            primary_rows_published = True
+            normalized = [
+                dict(item) for item in rows if isinstance(item, Mapping)
+            ]
+            if normalized:
+                return normalized
+
+    # An explicitly published primary rows collection is authoritative even when
+    # every declaring artifact reports it empty. Do not revive stale fallback rows.
+    if primary_rows_published:
+        return []
 
     # Backward-compatible Swing contract used before dashboard_sections became
-    # authoritative. This is intentionally evaluated only after the primary path.
+    # authoritative. This is intentionally evaluated only when no primary rows
+    # collection was published by any strategy-owned artifact.
     for payload in owned:
         evidence = _mapping_at(
             payload,
@@ -306,7 +318,11 @@ def _strategy_watchlist_detail(
         )
         rows = evidence.get("rows") if evidence is not None else None
         if isinstance(rows, list):
-            return [dict(item) for item in rows if isinstance(item, Mapping)]
+            normalized = [
+                dict(item) for item in rows if isinstance(item, Mapping)
+            ]
+            if normalized:
+                return normalized
     return []
 
 
