@@ -441,3 +441,17 @@ Continuation point:
 - Refresh Registry and Enterprise dashboards after tests pass.
 - Restart only `dividend-allocation.service`.
 - Validate `/executive-dashboard?strategy=SWING-001&tab=decisions`.
+
+
+### 2026-08-15 production reconciliation — legacy read-only alias
+
+Production refresh validation exposed a host-only compatibility mismatch after all focused tests passed: the legacy dashboard Decision Journal attachment adapter requires `read_only = true`, while the frozen Swing report publishes the stronger explicit safety contract (`advisory_only = true` plus live trading, broker execution, order placement, and capital movement all false).
+
+Decision:
+
+- Trade-Dividend-Bot normalizes a validated authoritative Swing Decision Journal with presentation field `read_only = true`.
+- This alias is added only after every explicit Swing execution lock is verified.
+- No Swing decision, classification, timestamp, owner, rationale, timeline, or warning is altered.
+- Unsafe reports still fail closed.
+- The downstream dashboard attachment adapter now preserves the registered Swing journal instead of replacing it with `NOT_REPORTED`.
+- Trade-Swing-Bot remains unchanged.
