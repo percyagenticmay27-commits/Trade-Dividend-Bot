@@ -269,7 +269,7 @@ def test_executive_route_renders_swing_trade_analytics_workspace(tmp_path: Path)
     status, page = _call(
         app,
         "GET",
-        "/executive-dashboard?strategy=SWING-001&tab=income",
+        "/executive-dashboard",
     )
 
     assert status == "200 OK"
