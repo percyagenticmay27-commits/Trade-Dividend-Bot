@@ -85,7 +85,13 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
             continue
         raw_sid = str(row.get("strategy_id") or f"strategy-{index}")
         sid = html.escape(raw_sid, quote=True)
-        output = _replace_panel(output, sid=sid, tab="holdings", body=render_holdings_panel(row))
+        holdings_body = render_holdings_panel(row)
+        if raw_sid.upper() == "SWING-001":
+            # The Holdings route is a common deep link. Keep its capital and
+            # management tables, remove Dividend income in the holdings renderer,
+            # and append the same authoritative Swing position performance.
+            holdings_body += render_trade_analytics_panel(row)
+        output = _replace_panel(output, sid=sid, tab="holdings", body=holdings_body)
         if raw_sid.upper() == "SWING-001":
             output = _replace_panel(
                 output,
