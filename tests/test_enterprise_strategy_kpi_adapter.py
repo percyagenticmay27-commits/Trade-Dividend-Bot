@@ -578,3 +578,103 @@ def test_swing_watchlist_skips_empty_declared_artifact_before_populated_kpi(
         item["watchlist_status"] for item in rows[0]["watchlist"]
     ] == ["WATCHLIST", "DISCOVERY", "REMOVED"]
 
+def test_swing_holdings_and_reconciliation_use_strategy_owned_kpi_evidence(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "swing"
+    (swing_root / "results").mkdir(parents=True)
+    artifact = swing_root / "results/enterprise_strategy_kpis.json"
+    positions = [
+        {
+            "symbol": "SOXL",
+            "shares": 8.04145854,
+            "entry_price": 139.899993896484,
+            "current_price": 143.264297485352,
+            "market_value": 1152.05,
+            "unrealized_pnl": 27.05,
+            "unrealized_pnl_percent": 2.404444,
+            "active_strategy": "Strategy A",
+        },
+        {
+            "symbol": "TQQQ",
+            "shares": 9.021652,
+            "entry_price": 74.819999694824,
+            "current_price": 74.650001525879,
+            "market_value": 673.47,
+            "unrealized_pnl": -1.53,
+            "unrealized_pnl_percent": -0.226667,
+            "active_strategy": "Strategy A",
+        },
+    ]
+    artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "allocated_capital": 4500.0,
+        "portfolio_value": 4525.52,
+        "cash_balance": 2700.0,
+        "invested_capital": 1800.0,
+        "positions_market_value": 1825.52,
+        "position_count": 2,
+        "unrealized_pnl": 25.52,
+        "dashboard_sections": {
+            "holdings": {"open_positions": positions}
+        },
+        "holdings": {
+            "open_positions": [{"symbol": "STALE"}]
+        },
+    }), encoding="utf-8")
+    plugin = _plugin(
+        "SWING-001",
+        "Trade Swing Bot",
+        "results/enterprise_strategy_kpis.json",
+    )
+    plugin["repository_root"] = str(swing_root)
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        strategy_allocations={"SWING-001": 4500.0},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    row = rows[0]
+    assert row["allocated_capital"] == 4500.0
+    assert row["portfolio_value"] == 4525.52
+    assert row["cash_balance"] == 2700.0
+    assert row["invested_capital"] == 1800.0
+    assert row["positions_market_value"] == 1825.52
+    assert row["position_count"] == 2
+    assert row["unrealized_pnl"] == 25.52
+    assert row["unrealized_gain"] == 25.52
+    assert [item["symbol"] for item in row["holdings"]] == ["SOXL", "TQQQ"]
+    assert row["positions"] == row["holdings"]
+
+
+def test_swing_explicit_empty_authoritative_holdings_blocks_stale_fallback(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "swing.json"
+    artifact.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "position_count": 0,
+        "dashboard_sections": {
+            "holdings": {"open_positions": []}
+        },
+        "holdings": {
+            "open_positions": [{"symbol": "STALE"}]
+        },
+    }), encoding="utf-8")
+
+    rows, warnings = build_strategy_kpis(
+        registry={
+            "strategy_plugins": [
+                _plugin("SWING-001", "Trade Swing Bot", str(artifact))
+            ]
+        },
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert rows[0]["position_count"] == 0
+    assert rows[0]["holdings"] == []
+    assert rows[0]["positions"] == []
+
