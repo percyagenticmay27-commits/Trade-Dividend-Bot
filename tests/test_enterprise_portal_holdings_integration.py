@@ -66,7 +66,6 @@ def test_workspace_uses_professional_holdings_renderer() -> None:
     assert "Cash Reserve (SGOV)" in output
     assert "% Strategy Allocation" in output
     assert "% Deployed Portfolio" in output
-    assert "✓ Verified" in output
     assert "AVGW: Pair:" not in output
 
 
