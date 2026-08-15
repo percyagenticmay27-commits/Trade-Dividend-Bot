@@ -619,6 +619,12 @@ def build_strategy_kpis(
             else None
         )
 
+        # Enterprise Dividend income is transaction-ledger based. Prefer the
+        # explicitly normalized net receipt over the paper-state cumulative
+        # compatibility total whenever both are present.
+        if strategy_id == "DIVIDEND-001" and net_income_received is not None:
+            income = net_income_received
+
         if host_dividend_evidence is not None:
             host_watchlist = _number(host_dividend_evidence.get("watchlist_count"))
             watchlist = int(host_watchlist) if host_watchlist is not None else None
