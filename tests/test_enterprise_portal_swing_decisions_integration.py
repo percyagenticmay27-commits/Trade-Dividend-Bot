@@ -138,3 +138,7 @@ def test_decisions_workspace_preserves_allocations_safety_and_styles() -> None:
     assert "ADVISORY ONLY" in output
     assert "READ ONLY" in output
     assert ".swing-decision-card" in css
+    assert css.rstrip().endswith("</style>")
+    journal_css_start = css.rfind("<style>")
+    assert journal_css_start >= 0
+    assert ".swing-decision-journal" in css[journal_css_start:]
