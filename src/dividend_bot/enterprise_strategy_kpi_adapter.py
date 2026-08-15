@@ -433,6 +433,58 @@ def _strategy_alerts_report(
     return None
 
 
+def _strategy_decision_journal_report(
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> dict[str, Any] | None:
+    """Return authoritative strategy-owned Swing Decision Journal evidence.
+
+    The registered standalone report takes precedence over the Enterprise KPI
+    embedded view. Planning/rebalance artifacts are deliberately not consumed.
+    """
+    if strategy_id != "SWING-001":
+        return None
+    owned = _strategy_owned_payloads(payloads, strategy_id)
+
+    def authoritative(source: Mapping[str, Any]) -> bool:
+        return (
+            source.get("decision_authority_policy")
+            == "CURRENT_MATCHED_AUTHORITATIVE_EVIDENCE_ONLY"
+            and source.get("paper_trade_mode") is True
+            and source.get("advisory_only") is True
+            and isinstance(source.get("position_decisions"), list)
+            and isinstance(source.get("candidate_decisions"), list)
+            and isinstance(source.get("decisions"), list)
+        )
+
+    for payload in owned:
+        if str(payload.get("module_name") or "").lower() != "swing_decision_journal_report":
+            continue
+        if authoritative(payload):
+            return dict(payload)
+
+    for payload in owned:
+        section = _mapping_at(payload, "dashboard_sections", "decisions")
+        if section is None:
+            continue
+        candidates: list[Mapping[str, Any]] = [section]
+        evidence = section.get("evidence")
+        if isinstance(evidence, Mapping):
+            candidates.append(evidence)
+        for candidate in candidates:
+            if not authoritative(candidate):
+                continue
+            normalized = dict(candidate)
+            normalized.setdefault("strategy_id", strategy_id)
+            normalized.setdefault("generated_at_utc", payload.get("generated_at"))
+            normalized.setdefault("live_trading_enabled", payload.get("live_trading_enabled"))
+            normalized.setdefault("broker_execution_enabled", payload.get("broker_execution_enabled"))
+            normalized.setdefault("order_placement_enabled", payload.get("order_placement_enabled"))
+            normalized.setdefault("capital_movement_enabled", payload.get("capital_movement_enabled"))
+            return normalized
+    return None
+
+
 def _strategy_trade_analytics(
     payloads: Sequence[Any],
     strategy_id: str,
@@ -729,6 +781,11 @@ def build_strategy_kpis(
         swing_alerts_report = None
         if strategy_id == "SWING-001" and "alerts" in capability_names:
             swing_alerts_report = _strategy_alerts_report(payloads, strategy_id)
+        swing_decision_journal = None
+        if strategy_id == "SWING-001" and "decision_journal" in capability_names:
+            swing_decision_journal = _strategy_decision_journal_report(
+                payloads, strategy_id
+            )
         watchlist_detail = _detail_list(dashboard_evidence, "watchlist")
         if not watchlist_detail and strategy_id != "DIVIDEND-001":
             watchlist_detail = _strategy_watchlist_detail(payloads, strategy_id)
@@ -747,11 +804,13 @@ def build_strategy_kpis(
                     str(item) for item in raw_disclosures if item not in (None, "")
                 ]
         risk_flags = _detail_list(dashboard_evidence, "risk_flags")
-        decision_journal_source = (
-            dashboard_evidence.get("decision_journal")
-            if isinstance(dashboard_evidence, Mapping)
-            else None
-        )
+        decision_journal_source: Any = swing_decision_journal
+        if not isinstance(decision_journal_source, Mapping):
+            decision_journal_source = (
+                dashboard_evidence.get("decision_journal")
+                if isinstance(dashboard_evidence, Mapping)
+                else None
+            )
         if not isinstance(decision_journal_source, Mapping) and isinstance(host_dividend_evidence, Mapping):
             decision_journal_source = host_dividend_evidence.get("decision_journal")
         decision_journal = (
