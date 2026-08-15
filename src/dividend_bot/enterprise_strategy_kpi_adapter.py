@@ -269,6 +269,20 @@ def _strategy_owned_payloads(
     return owned
 
 
+def _strategy_watchlist_count(
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> int | None:
+    for payload in _strategy_owned_payloads(payloads, strategy_id):
+        watchlist = _mapping_at(payload, "dashboard_sections", "watchlist")
+        if watchlist is None:
+            continue
+        parsed = _number(watchlist.get("count"))
+        if parsed is not None:
+            return int(parsed)
+    return None
+
+
 def _strategy_watchlist_detail(
     payloads: Sequence[Any],
     strategy_id: str,
@@ -475,10 +489,12 @@ def build_strategy_kpis(
             opportunity = _number(host_dividend_evidence.get("opportunity_quality"))
             win_rate = _number(host_dividend_evidence.get("win_rate_percent"))
         else:
-            watchlist = _count(
-                payloads,
-                ("watchlist", "watchlist_count", "candidate_count", "candidates"),
-            )
+            watchlist = _strategy_watchlist_count(payloads, strategy_id)
+            if watchlist is None:
+                watchlist = _count(
+                    payloads,
+                    ("watchlist", "watchlist_count", "candidate_count", "candidates"),
+                )
             opportunity = _metric(
                 payloads,
                 ("opportunity_quality", "opportunity_quality_score", "average_opportunity_score"),
