@@ -108,11 +108,138 @@ def _rows(items: list[Mapping[str, Any]]) -> str:
     return "".join(result)
 
 
+
+def _lifecycle(item: Mapping[str, Any]) -> str:
+    return _first(
+        item,
+        ("lifecycle_status", "lifecycle_state", "watchlist_status", "status"),
+        "Not reported",
+    ).upper()
+
+
+def _pipeline_cell(value: Any) -> str:
+    if value in (None, "", [], {}):
+        return _missing("Not reported")
+    if isinstance(value, bool):
+        return "YES" if value else "NO"
+    return html.escape(str(value))
+
+
+def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
+    rows: list[str] = []
+    for index, item in enumerate(items, start=1):
+        lifecycle = _lifecycle(item)
+        _, status_class = _status({"status": lifecycle})
+        rank = _first(item, ("watchlist_rank", "rank", "candidate_rank"), str(index))
+        underlying = _first(
+            item,
+            ("underlying_symbol", "symbol", "underlying", "ticker"),
+            "UNKNOWN",
+        )
+        leveraged = _first(
+            item,
+            ("leveraged_symbol", "leveraged_ticker", "paired_symbol"),
+            "Not reported",
+        )
+        capacity = _first(
+            item,
+            ("capacity_status", "capacity", "allocation_capacity_status"),
+            "Not reported",
+        )
+        composite = _score(_first(
+            item,
+            ("composite_score", "opportunity_quality", "opportunity_quality_score"),
+            "",
+        ))
+        financial = _first(
+            item,
+            ("financial_health", "financial_health_score", "financial_status"),
+            "Not reported",
+        )
+        theme = _first(item, ("theme", "theme_name", "sector_theme"), "Not reported")
+        promotion = _first(
+            item,
+            ("promotion_eligible", "eligible_for_promotion", "promotion_status"),
+            "Not reported",
+        )
+        sources = _first(
+            item,
+            ("source_count", "evidence_source_count", "sources_count"),
+            "Not reported",
+        )
+        win_rate = _percent(_first(
+            item,
+            ("win_rate", "win_rate_percent", "win_rate_pct"),
+            "",
+        ))
+        paper_return = _percent(_first(
+            item,
+            ("paper_return", "paper_return_percent", "paper_return_pct", "total_return_percent"),
+            "",
+        ))
+        rows.append(
+            "<tr>"
+            f"<td class='num'>{html.escape(rank)}</td>"
+            f"<td><strong>{html.escape(underlying)}</strong></td>"
+            f"<td>{_pipeline_cell(leveraged)}</td>"
+            f"<td><span class='watchlist-status {status_class}'>{html.escape(lifecycle)}</span></td>"
+            f"<td>{_pipeline_cell(capacity)}</td>"
+            f"<td class='num'>{_missing(composite)}</td>"
+            f"<td>{_pipeline_cell(financial)}</td>"
+            f"<td>{_pipeline_cell(theme)}</td>"
+            f"<td>{_pipeline_cell(promotion)}</td>"
+            f"<td class='num'>{_pipeline_cell(sources)}</td>"
+            f"<td class='num'>{_missing(win_rate)}</td>"
+            f"<td class='num'>{_missing(paper_return)}</td>"
+            "</tr>"
+        )
+    return "".join(rows)
+
+
+def _render_candidate_pipeline(
+    row: Mapping[str, Any],
+    items: list[Mapping[str, Any]],
+) -> str:
+    count_value = _number(row.get("watchlist_count"))
+    total = int(count_value) if count_value is not None else len(items)
+    active = sum(_lifecycle(item) == "WATCHLIST" for item in items)
+    discovery = sum(_lifecycle(item) == "DISCOVERY" for item in items)
+    removed = sum(_lifecycle(item) == "REMOVED" for item in items)
+    heading = (
+        "<div class='watchlist-heading'><div><h3>Candidate Pipeline</h3>"
+        "<p>All strategy-owned Swing candidate lifecycle records, including discovery and removed records.</p></div>"
+        f"<span class='watchlist-count'>{total} records</span></div>"
+    )
+    summary = (
+        "<div class='watchlist-summary-grid'>"
+        f"<div class='watchlist-summary-card'><span>Total Candidate Records</span><strong>{total}</strong></div>"
+        f"<div class='watchlist-summary-card'><span>Active Watchlist</span><strong>{active}</strong></div>"
+        f"<div class='watchlist-summary-card'><span>Discovery</span><strong>{discovery}</strong></div>"
+        f"<div class='watchlist-summary-card'><span>Removed</span><strong>{removed}</strong></div>"
+        "</div>"
+    )
+    table = (
+        "<div class='watchlist-table-wrap'><table class='watchlist-table candidate-pipeline-table'>"
+        "<thead><tr><th>Watchlist Rank</th><th>Underlying Symbol</th><th>Leveraged Symbol</th>"
+        "<th>Lifecycle Status</th><th>Capacity Status</th><th>Composite Score</th>"
+        "<th>Financial Health</th><th>Theme</th><th>Promotion Eligible</th>"
+        "<th>Source Count</th><th>Win Rate</th><th>Paper Return</th></tr></thead>"
+        f"<tbody>{_pipeline_rows(items)}</tbody></table></div>"
+    )
+    return (
+        "<section class='watchlist-pro candidate-pipeline'>" + heading + summary + table
+        + "<p class='watchlist-footnote'>Rows are rendered from SWING-001 authoritative published evidence. "
+        "The Enterprise host preserves lifecycle states and does not infer candidates from the summary count.</p></section>"
+    )
+
+
 def render_watchlist_panel(row: Mapping[str, Any]) -> str:
     raw = row.get("watchlist")
     items = [x for x in raw if isinstance(x, Mapping)] if isinstance(raw, list) else []
     count_value = _number(row.get("watchlist_count"))
     count = int(count_value) if count_value is not None else len(items)
+    if str(row.get("strategy_id") or "").upper() == "SWING-001" and items:
+        return _render_candidate_pipeline(row, items)
     stale = sum(1 for item in items if item.get("market_data_stale") is True)
     held = sum(1 for item in items if item.get("currently_held") is True)
     ready = sum(1 for item in items if str(item.get("status") or "").upper() in {"READY", "READY_FOR_SCORING", "PROMOTED", "BUY"})
@@ -133,7 +260,7 @@ def render_watchlist_panel(row: Mapping[str, Any]) -> str:
         return (
             "<section class='watchlist-pro'>" + heading + summary +
             "<div class='watchlist-empty'><strong>No active strategy watchlist candidates.</strong>"
-            "<span>The strategy currently reports a watchlist count of 0. Candidates will appear here only when the strategy explicitly marks them for watchlist monitoring.</span></div></section>"
+            "<span>The strategy reports {count} candidate records, but no detailed strategy-owned rows are available. Candidate rows are never fabricated from the summary count.</span></div></section>"
         )
     table = (
         "<div class='watchlist-table-wrap'><table class='watchlist-table'>"
@@ -150,6 +277,6 @@ def render_watchlist_panel(row: Mapping[str, Any]) -> str:
 def watchlist_ui_css() -> str:
     return """
 <style>
-.watchlist-pro{color:#10213b}.watchlist-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.watchlist-heading h3{margin:0 0 5px;font-size:1.2rem}.watchlist-heading p{margin:0;color:#64748b}.watchlist-count{background:#eef2ff;color:#5b21b6;border:1px solid #d8ccff;border-radius:999px;padding:7px 11px;font-weight:800;white-space:nowrap}.watchlist-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}.watchlist-summary-card{background:linear-gradient(180deg,#fff,#f8faff);border:1px solid #dbe4f0;border-radius:12px;padding:13px 14px;box-shadow:0 5px 14px rgba(23,43,77,.06)}.watchlist-summary-card span{display:block;color:#64748b}.watchlist-summary-card strong{display:block;margin-top:5px;font-size:1.15rem}.watchlist-table-wrap{overflow-x:auto;border:1px solid #dbe4f0;border-radius:13px;background:#fff;box-shadow:0 7px 18px rgba(23,43,77,.06)}.watchlist-table{width:100%;min-width:1180px;border-collapse:collapse}.watchlist-table th{padding:11px 12px;text-align:left;background:#f4f7fc;color:#53627a;font-size:.72rem;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid #dbe4f0;white-space:nowrap}.watchlist-table td{padding:12px;border-bottom:1px solid #edf1f6;vertical-align:middle;white-space:nowrap}.watchlist-table tbody tr:last-child td{border-bottom:0}.watchlist-table td.num{text-align:right;font-variant-numeric:tabular-nums}.watchlist-candidate-name{display:block;margin-top:4px;color:#64748b;white-space:normal}.watchlist-explanation{min-width:250px;max-width:360px;white-space:normal!important;line-height:1.35}.watchlist-explanation strong{color:#334155}.watchlist-status,.watchlist-not-reported{display:inline-block;border-radius:999px;padding:5px 8px;font-size:.75rem;font-weight:800}.watchlist-status-ready,.watchlist-market-fresh{background:#e9f9f0;color:#087443}.watchlist-status-watch{background:#fff7df;color:#8a4b08}.watchlist-status-blocked,.watchlist-market-stale{background:#fff0f0;color:#b42318}.watchlist-status-neutral,.watchlist-not-reported{background:#f1f5f9;color:#7a8798}.watchlist-source{color:#64748b;font-size:.82rem}.watchlist-empty{padding:24px;border:1px dashed #b9c7db;border-radius:12px;background:#f8fafc;text-align:center;color:#64748b}.watchlist-empty strong,.watchlist-empty span{display:block}.watchlist-empty strong{color:#334155;margin-bottom:7px}.watchlist-footnote{margin:12px 2px 0;color:#718096;font-size:.8rem}@media(max-width:900px){.watchlist-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.watchlist-heading{display:block}.watchlist-count{display:inline-block;margin-top:10px}.watchlist-summary-grid{grid-template-columns:1fr}}
+.watchlist-pro{color:#10213b}.watchlist-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.watchlist-heading h3{margin:0 0 5px;font-size:1.2rem}.watchlist-heading p{margin:0;color:#64748b}.watchlist-count{background:#eef2ff;color:#5b21b6;border:1px solid #d8ccff;border-radius:999px;padding:7px 11px;font-weight:800;white-space:nowrap}.watchlist-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}.watchlist-summary-card{background:linear-gradient(180deg,#fff,#f8faff);border:1px solid #dbe4f0;border-radius:12px;padding:13px 14px;box-shadow:0 5px 14px rgba(23,43,77,.06)}.watchlist-summary-card span{display:block;color:#64748b}.watchlist-summary-card strong{display:block;margin-top:5px;font-size:1.15rem}.watchlist-table-wrap{overflow-x:auto;border:1px solid #dbe4f0;border-radius:13px;background:#fff;box-shadow:0 7px 18px rgba(23,43,77,.06)}.watchlist-table{width:100%;min-width:1180px;border-collapse:collapse}.candidate-pipeline-table{min-width:1450px}.watchlist-table th{padding:11px 12px;text-align:left;background:#f4f7fc;color:#53627a;font-size:.72rem;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid #dbe4f0;white-space:nowrap}.watchlist-table td{padding:12px;border-bottom:1px solid #edf1f6;vertical-align:middle;white-space:nowrap}.watchlist-table tbody tr:last-child td{border-bottom:0}.watchlist-table td.num{text-align:right;font-variant-numeric:tabular-nums}.watchlist-candidate-name{display:block;margin-top:4px;color:#64748b;white-space:normal}.watchlist-explanation{min-width:250px;max-width:360px;white-space:normal!important;line-height:1.35}.watchlist-explanation strong{color:#334155}.watchlist-status,.watchlist-not-reported{display:inline-block;border-radius:999px;padding:5px 8px;font-size:.75rem;font-weight:800}.watchlist-status-ready,.watchlist-market-fresh{background:#e9f9f0;color:#087443}.watchlist-status-watch{background:#fff7df;color:#8a4b08}.watchlist-status-blocked,.watchlist-market-stale{background:#fff0f0;color:#b42318}.watchlist-status-neutral,.watchlist-not-reported{background:#f1f5f9;color:#7a8798}.watchlist-source{color:#64748b;font-size:.82rem}.watchlist-empty{padding:24px;border:1px dashed #b9c7db;border-radius:12px;background:#f8fafc;text-align:center;color:#64748b}.watchlist-empty strong,.watchlist-empty span{display:block}.watchlist-empty strong{color:#334155;margin-bottom:7px}.watchlist-footnote{margin:12px 2px 0;color:#718096;font-size:.8rem}@media(max-width:900px){.watchlist-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.watchlist-heading{display:block}.watchlist-count{display:inline-block;margin-top:10px}.watchlist-summary-grid{grid-template-columns:1fr}}
 </style>
 """
