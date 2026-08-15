@@ -159,3 +159,53 @@ def test_decision_journal_filter_controls_have_visible_portal_styles() -> None:
     assert ".strategy-decision-panel .decision-card header .status{" in css
     assert "color:#5b21b6!important" in css
     assert "color:#334155!important" in css
+
+
+def test_swing_candidate_pipeline_reaches_strategy_workspace_watchlist_tab() -> None:
+    report = _report()
+    swing = report["strategy_kpis"][1]
+    swing["watchlist_count"] = 3
+    swing["watchlist"] = [
+        {
+            "underlying_symbol": "NBIS",
+            "leveraged_symbol": "NEBX",
+            "lifecycle_status": "WATCHLIST",
+            "capacity_status": "ACTIVE",
+            "watchlist_rank": 1,
+            "composite_score": 91.2,
+            "financial_health": "STRONG",
+            "theme": "AI Infrastructure",
+            "promotion_eligible": True,
+            "source_count": 5,
+            "win_rate": 62.5,
+            "paper_return": 8.4,
+        },
+        {
+            "underlying_symbol": "IREN",
+            "leveraged_symbol": "IREL",
+            "lifecycle_status": "DISCOVERY",
+            "capacity_status": "ACTIVE",
+            "watchlist_rank": 2,
+        },
+        {
+            "underlying_symbol": "BE",
+            "leveraged_symbol": None,
+            "lifecycle_status": "REMOVED",
+            "capacity_status": "REMOVED",
+            "watchlist_rank": 3,
+        },
+    ]
+
+    output = render_strategy_workspace(report, audience="executive")
+    swing_start = output.index("id='strategy-SWING-001'")
+    swing_workspace = output[swing_start:]
+
+    assert "Candidate Pipeline" in swing_workspace
+    assert "Total Candidate Records</span><strong>3" in swing_workspace
+    assert "Active Watchlist</span><strong>1" in swing_workspace
+    assert "Discovery</span><strong>1" in swing_workspace
+    assert "Removed</span><strong>1" in swing_workspace
+    assert "NBIS" in swing_workspace and "NEBX" in swing_workspace
+    assert "IREN" in swing_workspace and "IREL" in swing_workspace
+    assert ">BE<" in swing_workspace
+    assert "No active strategy watchlist candidates." not in swing_workspace
