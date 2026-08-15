@@ -130,7 +130,7 @@ def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
     for index, item in enumerate(items, start=1):
         lifecycle = _lifecycle(item)
         _, status_class = _status({"status": lifecycle})
-        rank = _first(item, ("watchlist_rank", "rank", "candidate_rank"), str(index))
+        rank = _first(item, ("watchlist_rank", "rank", "candidate_rank"), "Not reported")
         underlying = _first(
             item,
             ("underlying_symbol", "symbol", "underlying", "ticker"),
@@ -156,10 +156,21 @@ def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
             ("financial_health", "financial_health_score", "financial_status"),
             "Not reported",
         )
-        theme = _first(item, ("theme", "theme_name", "sector_theme"), "Not reported")
-        promotion = _first(
+        theme = _first(
             item,
-            ("promotion_eligible", "eligible_for_promotion", "promotion_status"),
+            ("theme", "themes", "theme_name", "sector_theme"),
+            "Not reported",
+        )
+        promotion = next(
+            (
+                item.get(key)
+                for key in (
+                    "promotion_eligible",
+                    "eligible_for_promotion",
+                    "promotion_status",
+                )
+                if item.get(key) not in (None, "", [], {})
+            ),
             "Not reported",
         )
         sources = _first(
