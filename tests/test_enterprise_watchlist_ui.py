@@ -200,7 +200,7 @@ def test_swing_candidate_pipeline_supports_exact_published_field_names():
 
     assert "AI Infrastructure;Data Centers" in page
     assert "Clean Energy" in page
-    assert "77.3" in page
+    assert "77.29" in page
     assert page.count(">NO<") == 2
     assert "watchlist-not-reported'>Not reported" in page
     assert ">WATCHLIST<" in page
