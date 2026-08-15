@@ -44,7 +44,8 @@ def test_position_history_ui_shows_owner_controlled_exit_reason() -> None:
     })
     assert "Entry Method" in page
     assert "Exit Method" in page
-    assert "Exit Reason" in page
+    assert "Why Sold" in page
     assert page.count("STRATEGY_B") >= 2
-    assert "PRICE_BELOW_EMA20" in page
+    assert "Price fell below its 20-day exponential moving average." in page
+    assert "PRICE_BELOW_EMA20" not in page
     assert "paper_state.json" in page
