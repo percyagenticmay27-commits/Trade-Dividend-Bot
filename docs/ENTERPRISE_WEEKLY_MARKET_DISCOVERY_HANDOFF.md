@@ -227,3 +227,23 @@ across repeated validation runs. Only a genuinely later weekly cycle can create
 a STABLE, ACCELERATING, or DECELERATING comparison. If an intermediate
 same-week artifact was already polluted, first-discovered-this-week evidence
 repairs the baseline, week count, and prior state automatically.
+
+
+## 2026-08-18 — Reviewed professional-news feed boundary
+
+- PROFESSIONAL_RSS supports official HTTPS RSS/Atom feeds only. The source
+  must be manually marked credibility-reviewed with PROFESSIONAL_MEDIA
+  authority; otherwise it is skipped with a warning.
+- Headlines are matched only against the SEC-established exchange-listed
+  underlying universe and require explicit ticker/market syntax. A news feed
+  cannot introduce an unknown ticker or a leveraged product.
+- Publisher, story URL, date, title, and source class remain attached. News
+  evidence is neutral unless an upstream authoritative source explicitly
+  publishes a stance; the host does not infer sentiment from headline wording.
+- A reviewed professional item may independently confirm an existing SEC lead,
+  but cannot trade, map a vehicle, or directly promote either strategy.
+- No production professional feed is enabled yet. Nasdaq documents official RSS
+  publication support, but the former catalog page now redirects to its
+  newsroom and the exact endpoint still requires live server validation.
+  Reuters/Bloomberg/paywalled pages are not scraped and no access controls are
+  bypassed.
