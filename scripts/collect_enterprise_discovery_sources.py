@@ -32,6 +32,7 @@ def main() -> int:
         as_of=datetime.now(timezone.utc),
         user_agent=user_agent,
         youtube_api_key=os.environ.get("YOUTUBE_API_KEY", "").strip(),
+        alpha_vantage_api_key=os.environ.get("ALPHA_VANTAGE_API_KEY", "").strip(),
         market_snapshot=market,
     )
     report = attach_candidate_market_evidence(report, MarketDataService(root_path=str(root)))
