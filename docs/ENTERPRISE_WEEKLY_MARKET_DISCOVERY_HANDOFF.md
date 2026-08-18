@@ -376,3 +376,20 @@ can be created until Swing independently approves a vehicle mapping. The Swing
 repository was read only and was not modified. Dividend received the same seven
 underlying nominations with `requires_dividend_income_mapping=true`; Dividend
 mapping remains a later strategy-owned phase after discovery is complete.
+
+
+## 2026-08-18 — Reddit access request pending
+
+Reddit's current policy requires explicit Data API approval and OAuth access,
+including for requests originating from hosted-provider IP space. The owner
+submitted the official Data Access Request for a private, external,
+DigitalOcean-hosted, read-only Saturday market-attention collector. Reddit
+Support confirmed receipt by email, but has not approved access.
+
+No Reddit client, credential, source configuration, collector request, scraping
+fallback, or production evidence is authorized yet. Reddit remains disabled.
+If approved, Reddit evidence will be bounded community attention/sentiment only:
+it cannot independently confirm fundamentals, nominate a symbol, train a model,
+profile users, create trades, or mutate either strategy. The owner must retain
+the approval response, and credentials must be stored only in the protected
+server environment file after the approved authentication method is known.
