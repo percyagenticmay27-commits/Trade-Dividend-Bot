@@ -697,3 +697,19 @@ independent stories are deduplicated rather than replaced. Missing confirmation
 does not update last-confirmed time or extend expiration. Normal retention and
 STALE expiration rules remain authoritative, and no retained nomination gains
 strategy promotion or execution authority.
+### FSBW, SJM, and ULTA Dividend mapping review
+
+The stabilized live cycle introduced FSBW, SJM, and ULTA. Dividend-owned review
+approved direct-dividend-equity mappings FSBW→FSBW and SJM→SJM. FS Bancorp's
+official investor site reports its 54th consecutive quarterly cash dividend in
+July 2026, and its dividend-history page is retained as mapping evidence. J.M.
+Smucker's official dividend history confirms quarterly payments, and its July
+2026 issuer announcement records an increase from $1.10 to $1.12 per share.
+Both mappings have matching reviewed suitability profiles and remain subject to
+live yield, liquidity, return, freshness, and manual paper-review gates.
+
+ULTA remains RESEARCH_REQUIRED. Ulta Beauty's official investor FAQ and May 2026
+Form 10-Q state that the company does not currently pay a regular dividend. No
+single-stock income ETF or unrelated fund was substituted. This negative review
+preserves the strategy boundary: absence of an evidence-backed income vehicle
+cannot be converted into a mapping, activation, or trade.
