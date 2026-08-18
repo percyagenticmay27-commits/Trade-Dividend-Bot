@@ -87,3 +87,6 @@ Continuation:
 - Evidence-only rows remain in the rich neutral report for research but are
   excluded from the strict Swing projection. AI CIO cannot create or promote a
   Swing lifecycle record from a filing alone.
+- The initial production source catalog enables only broad SEC daily-index
+  evidence. Company-specific IR feeds will be added only after their official
+  HTTPS endpoints are verified; example placeholder URLs are never executed.
