@@ -20,10 +20,12 @@ def test_weekly_discovery_service_runs_collector_before_generator_as_tradebot():
     assert "Group=tradebot" in text
     assert "WorkingDirectory=/home/tradebot/Trade-Dividend-Bot" in text
     starts = [line for line in text.splitlines() if line.startswith("ExecStart=")]
-    assert len(starts) == 3
+    assert len(starts) == 5
     assert starts[0].endswith("/scripts/collect_enterprise_discovery_sources.py")
     assert starts[1].endswith("/scripts/generate_enterprise_weekly_market_discovery.py")
     assert starts[2].endswith("/scripts/generate_enterprise_dividend_income_mapping.py")
+    assert starts[3].endswith("/scripts/collect_enterprise_dividend_suitability_evidence.py")
+    assert starts[4].endswith("/scripts/generate_enterprise_dividend_suitability.py")
 
 
 def test_weekly_discovery_service_uses_protected_credentials_and_no_swing_writes():
