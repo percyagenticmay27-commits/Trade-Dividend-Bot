@@ -20,6 +20,16 @@
       "url": "https://example.com/investor-relations/feed.xml",
       "sector": "Example Sector",
       "themes": ["Example Theme"]
+    },
+    {
+      "source_type": "YOUTUBE_SEARCH",
+      "source_name": "Reviewed financial creator",
+      "channel_id": "REPLACE_WITH_VERIFIED_CHANNEL_ID",
+      "query": "weekly markets stocks earnings",
+      "max_results": 10,
+      "authority": "REVIEWED_CREATOR",
+      "credibility_reviewed": true,
+      "themes": []
     }
   ]
 }
