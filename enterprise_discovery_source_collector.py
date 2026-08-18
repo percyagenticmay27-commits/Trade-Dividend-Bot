@@ -342,6 +342,29 @@ def _alpha_vantage_stance(label: Any) -> str:
     return "UNSPECIFIED"
 
 
+
+_COMPANY_SUFFIXES = {
+    "INC", "INCORPORATED", "CORP", "CORPORATION", "CO", "COMPANY", "LTD",
+    "LIMITED", "PLC", "GROUP", "HOLDING", "HOLDINGS", "SA", "AG", "NV", "THE",
+}
+
+
+def _headline_confirms_underlying(title: str, symbol: str, company_name: str | None = None) -> bool:
+    """Require explicit headline identity; provider relevance alone is insufficient."""
+    if re.search(rf"(?<![A-Z0-9]){re.escape(symbol)}(?![A-Z0-9])", str(title or "")):
+        return True
+    title_tokens = re.findall(r"[A-Z0-9]+", str(title or "").upper())
+    company_tokens = [
+        token for token in re.findall(r"[A-Z0-9]+", str(company_name or "").upper())
+        if token not in _COMPANY_SUFFIXES
+    ]
+    # Two significant company-name tokens prevent loose single-word family/fund matches.
+    if len(company_tokens) < 2:
+        return False
+    phrase = " ".join(company_tokens)
+    return phrase in " ".join(title_tokens)
+
+
 def collect_alpha_vantage_news_evidence(
     sources: Iterable[Mapping[str, Any]],
     *,
@@ -360,10 +383,14 @@ def collect_alpha_vantage_news_evidence(
     now = datetime.fromisoformat(str(as_of).replace("Z", "+00:00")) if not isinstance(as_of, datetime) else as_of
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    allowed = set()
-    for value in allowed_symbols:
+    allowed: dict[str, str | None] = {}
+    if isinstance(allowed_symbols, Mapping):
+        iterator = allowed_symbols.items()
+    else:
+        iterator = ((value, None) for value in allowed_symbols)
+    for value, company_name in iterator:
         try:
-            allowed.add(_symbol(value))
+            allowed[_symbol(value)] = str(company_name).strip() if company_name else None
         except ValueError:
             continue
     rows: list[dict[str, Any]] = []
@@ -409,6 +436,8 @@ def collect_alpha_vantage_news_evidence(
                     continue
                 raw_ticker = str(ticker_row.get("ticker") or "").strip().upper()
                 if raw_ticker not in allowed:
+                    continue
+                if not _headline_confirms_underlying(title, raw_ticker, allowed.get(raw_ticker)):
                     continue
                 provider_label = str(ticker_row.get("ticker_sentiment_label") or "").strip() or None
                 rows.append({
@@ -592,6 +621,7 @@ def collect_credential_free_observations(
                         "source_evidence": [],
                         "nomination_eligible": False,
                         "evidence_only_reason": "A material SEC filing is neutral discovery evidence and requires independent confirmation.",
+                        "company_name": item.get("company_name"),
                     })
                     broad["source_evidence"].append(item["evidence"])
                 continue
@@ -651,7 +681,7 @@ def collect_credential_free_observations(
         alpha_vantage_sources,
         as_of=now,
         api_key=alpha_vantage_api_key,
-        allowed_symbols=by_symbol,
+        allowed_symbols={symbol: row.get("company_name") for symbol, row in by_symbol.items()},
         user_agent=user_agent,
         get_bytes=get_bytes,
     ) if alpha_vantage_sources else ([], [])
