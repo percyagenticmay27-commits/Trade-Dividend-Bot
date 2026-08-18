@@ -77,6 +77,46 @@ def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, An
     return sorted(rows, key=lambda row: (row["mentioned_on"], row["source"], row["story_id"]))
 
 
+def _evidence_analysis(evidence: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
+    rows = list(evidence)
+    independent_stories = {
+        (str(row.get("story_id") or "").lower(), str(row.get("producer") or "").lower())
+        for row in rows
+    }
+    producers = {str(row.get("producer") or "").strip().lower() for row in rows if str(row.get("producer") or "").strip()}
+    source_classes = sorted({
+        str(row.get("source_class") or "UNCLASSIFIED").upper()
+        for row in rows
+    })
+    stances = {"BULLISH": 0, "BEARISH": 0, "NEUTRAL": 0, "MIXED": 0, "UNSPECIFIED": 0}
+    for row in rows:
+        stance = str(row.get("stance") or "UNSPECIFIED").upper()
+        stances[stance if stance in stances else "UNSPECIFIED"] += 1
+    independent_count = len(independent_stories)
+    class_count = len(source_classes)
+    if independent_count >= 3 and class_count >= 2:
+        level = "STRONG"
+    elif independent_count >= 2:
+        level = "CONFIRMED"
+    elif independent_count == 1:
+        level = "SINGLE_SOURCE"
+    else:
+        level = "NONE"
+    return {
+        "independent_source_count": independent_count,
+        "independent_producer_count": len(producers),
+        "source_class_count": class_count,
+        "source_classes": source_classes,
+        "level": level,
+        "syndicated_repeats_counted_separately": False,
+        "stance_summary": {
+            **stances,
+            "disagreement_present": stances["BULLISH"] > 0 and stances["BEARISH"] > 0,
+        },
+        "inference_allowed": False,
+    }
+
+
 def _retention_days(status: str) -> int:
     if status == "EMERGING":
         return 21
@@ -108,7 +148,8 @@ def build_weekly_discovery(
         first = _utc(prior.get("first_discovered_at")) if prior and prior.get("first_discovered_at") else now
         weeks = int(prior.get("consecutive_weeks_detected", 0)) + 1 if prior else 1
         evidence = _normalize_evidence(raw.get("source_evidence") or raw.get("evidence_sources") or [])
-        independent = len({(row["story_id"].lower(), row["producer"].lower()) for row in evidence})
+        evidence_analysis = _evidence_analysis(evidence)
+        independent = evidence_analysis["independent_source_count"]
         expires = now + timedelta(days=_retention_days(requested))
         candidate = {
             "underlying_symbol": symbol,
@@ -126,7 +167,8 @@ def build_weekly_discovery(
             "bearish_thesis": raw.get("bearish_thesis"),
             "source_evidence": evidence,
             "independent_source_count": independent,
-            "source_confluence": raw.get("source_confluence"),
+            "source_confluence": evidence_analysis,
+            "evidence_stance_summary": evidence_analysis["stance_summary"],
             "attention_acceleration": raw.get("attention_acceleration"),
             "market_evidence": raw.get("market_evidence"),
             "discovery_confidence": raw.get("discovery_confidence"),
