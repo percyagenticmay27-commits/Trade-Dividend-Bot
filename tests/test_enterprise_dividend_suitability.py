@@ -133,6 +133,28 @@ def test_direct_dividend_equity_uses_dividend_specific_evidence():
     assert report["candidates"][0]["suitability_status"] == "ELIGIBLE_FOR_PAPER_REVIEW"
 
 
+
+def test_low_yield_direct_dividend_equity_remains_watch_only():
+    evidence = _evidence(
+        "AMAT",
+        forward_dividend_yield_percent=0.4,
+        dividend_cut_last_12m=False,
+    )
+    evidence.pop("expense_ratio_percent")
+    evidence.pop("latest_distribution_roc_percent")
+    evidence.pop("fund_age_days")
+    report = build_suitability_report(
+        _mapping_report("DIRECT_DIVIDEND_EQUITY", "AMAT", "AMAT"),
+        _catalog(evidence),
+        generated_at="2026-08-18T18:00:00Z",
+    )
+    row = report["candidates"][0]
+    assert row["suitability_status"] == "WATCH_ONLY"
+    assert row["suitability_score"] == 65
+    assert row["paper_review_allowed"] is False
+    assert "below 1.00%" in row["decision_reasons"][0]
+
+
 def test_unreviewed_or_insecure_evidence_is_rejected():
     row = _evidence()
     row["reviewed"] = False
