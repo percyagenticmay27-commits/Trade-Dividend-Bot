@@ -273,3 +273,12 @@ seconds. The earlier failure was transient. Professional feed review and
 collection now use at most three attempts with bounded linear backoff and a
 45-second per-attempt timeout. Exhaustion remains a structured REQUEST_FAILED
 result; no scraping fallback or silent evidence fabrication is permitted.
+
+
+Repeated server validation showed Python urllib timing out while the same
+official Nasdaq endpoint returned valid RSS over curl/HTTP2 in three seconds.
+After bounded urllib attempts, reviewed professional HTTPS feeds may therefore
+use an argument-list curl fallback with explicit connect/total timeouts and
+content Accept headers. No shell is invoked, the URL must remain HTTPS, and a
+nonzero response still fails closed. This transport exception applies only to
+professional feed retrieval, not arbitrary discovery sources.
