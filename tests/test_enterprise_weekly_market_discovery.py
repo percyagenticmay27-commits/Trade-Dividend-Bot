@@ -93,5 +93,19 @@ def test_evidence_only_candidate_is_not_sent_to_swing():
     observation = _observation(status="NEW")
     observation["nomination_eligible"] = False
     report = build_weekly_discovery([observation], generated_at="2026-08-16T01:00:00Z")
-    assert report["candidates"][0]["underlying_symbol"] == "NVDA"
+    assert report["candidates"] == []
+    assert report["research_evidence_pool"][0]["underlying_symbol"] == "NVDA"
+    assert report["research_evidence_pool"][0]["record_type"] == "RESEARCH_EVIDENCE_ONLY"
     assert build_swing_projection(report)["candidates"] == []
+    assert build_dividend_projection(report)["candidates"] == []
+
+
+def test_research_only_evidence_is_historically_retained_without_entering_active_bucket(tmp_path):
+    observation = _observation(status="NEW")
+    observation["nomination_eligible"] = False
+    report = write_weekly_discovery(tmp_path, [observation], generated_at="2026-08-16T01:00:00Z")
+    assert report["candidates"] == []
+    history = (tmp_path / "state/enterprise_market_discovery_history.jsonl").read_text()
+    assert "RESEARCH_EVIDENCE_ONLY" in history
+    dividend = json.loads((tmp_path / "results/enterprise_dividend_discovery_bucket.json").read_text())
+    assert dividend["candidates"] == []
