@@ -138,8 +138,12 @@ def test_professional_feed_uses_argument_safe_curl_fallback(monkeypatch):
     assert payload == b"<rss><channel/></rss>"
     arguments, kwargs = calls[0]
     assert arguments[0] == "curl"
+    assert "--http1.1" in arguments
+    assert "--retry-all-errors" in arguments
+    assert arguments[arguments.index("--retry") + 1] == "2"
     assert "--max-time" in arguments
     assert kwargs["check"] is False
+    assert kwargs["timeout"] == 130
     assert isinstance(arguments, list)
 
 
