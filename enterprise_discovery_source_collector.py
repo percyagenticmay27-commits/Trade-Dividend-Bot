@@ -25,6 +25,8 @@ SEC_FORMS = {"8-K", "10-K", "10-Q", "20-F", "40-F", "6-K", "S-1", "S-3", "DEF 14
 SEC_BROAD_DISCOVERY_FORMS = {"8-K", "6-K", "S-1"}
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 YOUTUBE_MAX_RESULTS = 25
+ALPHA_VANTAGE_NEWS_URL = "https://www.alphavantage.co/query"
+ALPHA_VANTAGE_NEWS_MAX_RESULTS = 200
 
 
 def _as_date(value: Any) -> date | None:
@@ -325,6 +327,117 @@ def collect_professional_feed_evidence(
     return rows, warnings
 
 
+
+def _alpha_vantage_stance(label: Any) -> str:
+    """Normalize only Alpha Vantage's explicit ticker sentiment label."""
+    normalized = str(label or "").strip().upper().replace("-", "_").replace(" ", "_")
+    if normalized in {"BULLISH", "SOMEWHAT_BULLISH"}:
+        return "BULLISH"
+    if normalized in {"BEARISH", "SOMEWHAT_BEARISH"}:
+        return "BEARISH"
+    if normalized == "NEUTRAL":
+        return "NEUTRAL"
+    return "UNSPECIFIED"
+
+
+def collect_alpha_vantage_news_evidence(
+    sources: Iterable[Mapping[str, Any]],
+    *,
+    as_of: str | datetime,
+    api_key: str,
+    allowed_symbols: Iterable[str],
+    user_agent: str,
+    get_bytes: Callable[[str, str], bytes] = _default_get,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Collect one bounded NEWS_SENTIMENT response for known underlyings only."""
+    configured = list(sources)
+    if not configured:
+        return [], []
+    if not str(api_key).strip():
+        return [], ["Alpha Vantage API key is unavailable; professional news evidence was not collected."]
+    now = datetime.fromisoformat(str(as_of).replace("Z", "+00:00")) if not isinstance(as_of, datetime) else as_of
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    allowed = set()
+    for value in allowed_symbols:
+        try:
+            allowed.add(_symbol(value))
+        except ValueError:
+            continue
+    rows: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    # One request protects the free 25-request daily allowance.
+    source = configured[0]
+    name = str(source.get("source_name") or "Alpha Vantage News & Sentiment").strip()
+    if not bool(source.get("credibility_reviewed", False)) or str(source.get("authority") or "").upper() != "PROFESSIONAL_MEDIA":
+        return [], [f"{name}: professional news source is not credibility-reviewed and was skipped"]
+    cutoff = now - timedelta(days=7)
+    params = {
+        "function": "NEWS_SENTIMENT",
+        "time_from": cutoff.astimezone(timezone.utc).strftime("%Y%m%dT%H%M"),
+        "time_to": now.astimezone(timezone.utc).strftime("%Y%m%dT%H%M"),
+        "sort": "LATEST",
+        "limit": str(min(ALPHA_VANTAGE_NEWS_MAX_RESULTS, max(1, int(source.get("max_results", 200))))),
+        "apikey": api_key,
+    }
+    try:
+        payload = json.loads(get_bytes(f"{ALPHA_VANTAGE_NEWS_URL}?{urllib.parse.urlencode(params)}", user_agent).decode("utf-8"))
+        if not isinstance(payload, Mapping):
+            raise ValueError("professional news response is not a JSON object")
+        provider_error = payload.get("Error Message") or payload.get("Information") or payload.get("Note")
+        if provider_error:
+            raise ValueError(f"provider declined the bounded news request: {provider_error}")
+        feed = payload.get("feed")
+        if not isinstance(feed, list):
+            raise ValueError("professional news response does not contain a feed list")
+        for article in feed:
+            if not isinstance(article, Mapping):
+                continue
+            published = _as_date(article.get("time_published"))
+            url = str(article.get("url") or "").strip()
+            title = str(article.get("title") or "").strip()
+            producer = str(article.get("source") or name).strip()
+            if not published or published < cutoff.date() or not url or not title:
+                continue
+            ticker_rows = article.get("ticker_sentiment")
+            if not isinstance(ticker_rows, list):
+                continue
+            for ticker_row in ticker_rows:
+                if not isinstance(ticker_row, Mapping):
+                    continue
+                raw_ticker = str(ticker_row.get("ticker") or "").strip().upper()
+                if raw_ticker not in allowed:
+                    continue
+                provider_label = str(ticker_row.get("ticker_sentiment_label") or "").strip() or None
+                rows.append({
+                    "underlying_symbol": raw_ticker,
+                    "evidence": {
+                        "source": producer,
+                        "source_class": "PROFESSIONAL_MEDIA",
+                        "producer": producer,
+                        "mentioned_on": published.isoformat(),
+                        "story_id": url,
+                        "source_url": url,
+                        "title": title,
+                        "stance": _alpha_vantage_stance(provider_label),
+                        "provider_sentiment_label": provider_label,
+                        "provider_relevance_score": ticker_row.get("relevance_score"),
+                        "provider_sentiment_score": ticker_row.get("ticker_sentiment_score"),
+                        "themes": [],
+                        "earnings_growth_related": False,
+                        "analyst_upgrade_related": False,
+                        "platform": "ALPHA_VANTAGE_NEWS_SENTIMENT",
+                        "credibility_reviewed": True,
+                        "authority": "PROFESSIONAL_MEDIA",
+                    },
+                    "confirmation_eligible": True,
+                })
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+        # Never include the request URL because it contains the API key.
+        warnings.append(f"{name}: professional news request failed: {exc}")
+    return rows, warnings
+
+
 def _ticker_map(payload: Any) -> dict[str, dict[str, str]]:
     if isinstance(payload, Mapping) and isinstance(payload.get("fields"), list) and isinstance(payload.get("data"), list):
         fields = [str(value) for value in payload["fields"]]
@@ -437,6 +550,7 @@ def collect_credential_free_observations(
     user_agent: str,
     market_snapshot: Mapping[str, Any] | None = None,
     youtube_api_key: str = "",
+    alpha_vantage_api_key: str = "",
     get_bytes: Callable[[str, str], bytes] = _default_get,
     minimum_request_interval: float = 0.11,
 ) -> dict[str, Any]:
@@ -453,7 +567,8 @@ def collect_credential_free_observations(
     source_rows = list(sources)
     youtube_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() == "YOUTUBE_SEARCH"]
     professional_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() == "PROFESSIONAL_RSS"]
-    deferred_types = {"YOUTUBE_SEARCH", "PROFESSIONAL_RSS"}
+    alpha_vantage_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() == "ALPHA_VANTAGE_NEWS"]
+    deferred_types = {"YOUTUBE_SEARCH", "PROFESSIONAL_RSS", "ALPHA_VANTAGE_NEWS"}
     non_youtube_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() not in deferred_types]
     for source in non_youtube_sources:
         try:
@@ -527,6 +642,22 @@ def collect_credential_free_observations(
         row = by_symbol[symbol]
         row["source_evidence"].append(item["evidence"])
         row["themes"].update(str(value).strip() for value in item["evidence"].get("themes", []) if str(value).strip())
+        if item.get("confirmation_eligible"):
+            row.setdefault("confirmation_producers", set()).add(str(item["evidence"].get("producer") or "").lower())
+
+    alpha_rows, alpha_warnings = collect_alpha_vantage_news_evidence(
+        alpha_vantage_sources,
+        as_of=now,
+        api_key=alpha_vantage_api_key,
+        allowed_symbols=by_symbol,
+        user_agent=user_agent,
+        get_bytes=get_bytes,
+    ) if alpha_vantage_sources else ([], [])
+    warnings.extend(alpha_warnings)
+    for item in alpha_rows:
+        symbol = item["underlying_symbol"]
+        row = by_symbol[symbol]
+        row["source_evidence"].append(item["evidence"])
         if item.get("confirmation_eligible"):
             row.setdefault("confirmation_producers", set()).add(str(item["evidence"].get("producer") or "").lower())
 
