@@ -37,6 +37,8 @@ def _as_date(value: Any) -> date | None:
         return date.fromisoformat(text[:10])
     except ValueError:
         try:
+            if re.fullmatch(r"\\d{8}(?:T\\d{4,6})?", text):
+                return datetime.strptime(text[:8], "%Y%m%d").date()
             parsed = parsedate_to_datetime(text)
             return parsed.date()
         except (TypeError, ValueError, OverflowError):
