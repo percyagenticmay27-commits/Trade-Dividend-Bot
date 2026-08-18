@@ -90,3 +90,11 @@ Continuation:
 - The initial production source catalog enables only broad SEC daily-index
   evidence. Company-specific IR feeds will be added only after their official
   HTTPS endpoints are verified; example placeholder URLs are never executed.
+
+### Direct script execution correction
+
+The first controlled server run exposed that executing a Python file beneath
+`scripts/` sets that directory, rather than the repository root, as the first
+import location. Both scheduled commands now insert their resolved repository
+root before importing host modules. Dedicated tests load each script exactly by
+path so compilation-only validation cannot miss this deployment behavior again.
