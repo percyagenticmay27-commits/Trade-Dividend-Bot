@@ -116,6 +116,13 @@ def test_short_ticker_requires_cashtag_in_youtube_prose():
     assert _youtube_symbols("Why $BE moved this week", ["BE"]) == ["BE"]
 
 
+def test_common_words_and_generic_descriptions_are_not_ticker_mentions():
+    from enterprise_discovery_source_collector import _youtube_symbols
+    text = "These companies HELP you build wealth. This portfolio is MINE. MFG data follows."
+    assert _youtube_symbols(text, ["HELP", "MINE", "MFG"]) == []
+    assert _youtube_symbols("Super Micro Computer (SMCI) Stock Roller-Coaster", ["SMCI"]) == ["SMCI"]
+
+
 def test_missing_youtube_key_degrades_without_fabricating_evidence():
     rows, warnings = collect_youtube_evidence(
         [{"source_type": "YOUTUBE_SEARCH", "query": "stocks"}],
@@ -129,7 +136,7 @@ def test_missing_youtube_key_degrades_without_fabricating_evidence():
 def test_reviewed_youtube_can_confirm_sec_lead_but_unreviewed_source_cannot():
     tickers = {"fields": ["cik", "name", "ticker", "exchange"], "data": [[1045810, "NVIDIA CORP", "NVDA", "Nasdaq"]]}
     index = b"Description\n-----\n1045810|NVIDIA CORP|8-K|2026-08-14|edgar/data/1045810/a.txt\n"
-    youtube = {"items": [{"id": {"videoId": "v1"}, "snippet": {"publishedAt": "2026-08-16T12:00:00Z", "channelId": "channel-1", "channelTitle": "Reviewed Analyst", "title": "NVDA weekly review", "description": ""}}]}
+    youtube = {"items": [{"id": {"videoId": "v1"}, "snippet": {"publishedAt": "2026-08-16T12:00:00Z", "channelId": "channel-1", "channelTitle": "Reviewed Analyst", "title": "NVDA stock weekly review", "description": ""}}]}
     def get_bytes(url, _user_agent):
         if "company_tickers" in url:
             return json.dumps(tickers).encode()
