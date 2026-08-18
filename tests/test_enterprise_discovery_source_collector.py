@@ -1,6 +1,6 @@
 import json
 
-from enterprise_discovery_source_collector import collect_broad_sec_filing_evidence, collect_credential_free_observations, collect_professional_feed_evidence, collect_youtube_evidence, fetch_professional_url
+from enterprise_discovery_source_collector import collect_alpha_vantage_news_evidence, collect_broad_sec_filing_evidence, collect_credential_free_observations, collect_professional_feed_evidence, collect_youtube_evidence, fetch_professional_url
 from enterprise_weekly_market_discovery import build_swing_projection, build_weekly_discovery
 
 
@@ -286,3 +286,95 @@ def test_reviewed_youtube_can_confirm_sec_lead_but_unreviewed_source_cannot():
         youtube_api_key="secret-key", get_bytes=get_bytes, minimum_request_interval=0,
     )
     assert unreviewed["observations"][0]["nomination_eligible"] is False
+
+
+def test_alpha_vantage_news_is_bounded_to_known_underlyings_and_preserves_provider_classification():
+    payload = {
+        "feed": [{
+            "title": "Semiconductor weekly review",
+            "url": "https://news.example/story-1",
+            "time_published": "20260816T120000",
+            "source": "Reuters",
+            "ticker_sentiment": [
+                {"ticker": "SMCI", "relevance_score": "0.91", "ticker_sentiment_score": "-0.22", "ticker_sentiment_label": "Somewhat-Bearish"},
+                {"ticker": "UNKNOWN", "relevance_score": "0.99", "ticker_sentiment_score": "0.80", "ticker_sentiment_label": "Bullish"},
+            ],
+        }]
+    }
+    seen = []
+    def get_bytes(url, _user_agent):
+        seen.append(url)
+        return json.dumps(payload).encode()
+
+    rows, warnings = collect_alpha_vantage_news_evidence(
+        [{"source_type": "ALPHA_VANTAGE_NEWS", "source_name": "Alpha Vantage News & Sentiment",
+          "authority": "PROFESSIONAL_MEDIA", "credibility_reviewed": True, "max_results": 200}],
+        as_of="2026-08-17T20:00:00Z", api_key="private-key", allowed_symbols=["SMCI"],
+        user_agent="AI-CIO operator@example.com", get_bytes=get_bytes,
+    )
+    assert warnings == []
+    assert len(seen) == 1
+    assert "limit=200" in seen[0]
+    assert [row["underlying_symbol"] for row in rows] == ["SMCI"]
+    evidence = rows[0]["evidence"]
+    assert evidence["producer"] == "Reuters"
+    assert evidence["provider_sentiment_label"] == "Somewhat-Bearish"
+    assert evidence["stance"] == "BEARISH"
+    assert evidence["platform"] == "ALPHA_VANTAGE_NEWS_SENTIMENT"
+
+
+def test_alpha_vantage_missing_or_limited_evidence_fails_closed_without_exposing_key():
+    source = [{"source_type": "ALPHA_VANTAGE_NEWS", "source_name": "Professional News",
+               "authority": "PROFESSIONAL_MEDIA", "credibility_reviewed": True}]
+    rows, warnings = collect_alpha_vantage_news_evidence(
+        source, as_of="2026-08-17T20:00:00Z", api_key="", allowed_symbols=["SMCI"],
+        user_agent="AI-CIO operator@example.com",
+    )
+    assert rows == []
+    assert "unavailable" in warnings[0]
+
+    secret = "never-log-this-key"
+    rows, warnings = collect_alpha_vantage_news_evidence(
+        source, as_of="2026-08-17T20:00:00Z", api_key=secret, allowed_symbols=["SMCI"],
+        user_agent="AI-CIO operator@example.com",
+        get_bytes=lambda *_: json.dumps({"Note": "daily request allowance reached"}).encode(),
+    )
+    assert rows == []
+    assert "declined" in warnings[0]
+    assert secret not in warnings[0]
+
+
+def test_alpha_vantage_professional_news_can_confirm_sec_lead_but_cannot_introduce_symbol():
+    tickers = {"fields": ["cik", "name", "ticker", "exchange"], "data": [[1375365, "SUPER MICRO COMPUTER", "SMCI", "Nasdaq"]]}
+    index = b"Description\n-----\n1375365|SUPER MICRO COMPUTER|8-K|2026-08-14|edgar/data/1375365/a.txt\n"
+    news = {"feed": [{
+        "title": "Company developments",
+        "url": "https://news.example/smci",
+        "time_published": "20260816T120000",
+        "source": "Market Publisher",
+        "ticker_sentiment": [
+            {"ticker": "SMCI", "ticker_sentiment_label": "Neutral"},
+            {"ticker": "NVDX", "ticker_sentiment_label": "Bullish"},
+        ],
+    }]}
+    def get_bytes(url, _user_agent):
+        if "company_tickers" in url:
+            return json.dumps(tickers).encode()
+        if "alphavantage" in url:
+            return json.dumps(news).encode()
+        return index
+
+    result = collect_credential_free_observations(
+        [
+            {"source_type": "SEC_DAILY_INDEX", "source_name": "SEC Broad", "index_dates": ["2026-08-14"]},
+            {"source_type": "ALPHA_VANTAGE_NEWS", "source_name": "Professional News",
+             "authority": "PROFESSIONAL_MEDIA", "credibility_reviewed": True},
+        ],
+        as_of="2026-08-17T20:00:00Z", user_agent="AI-CIO operator@example.com",
+        alpha_vantage_api_key="private-key", get_bytes=get_bytes, minimum_request_interval=0,
+    )
+    assert [row["underlying_symbol"] for row in result["observations"]] == ["SMCI"]
+    assert result["observations"][0]["nomination_eligible"] is True
+    assert {item["source_class"] for item in result["observations"][0]["source_evidence"]} == {
+        "PRIMARY_COMPANY", "PROFESSIONAL_MEDIA"
+    }
