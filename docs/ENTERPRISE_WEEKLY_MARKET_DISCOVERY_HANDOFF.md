@@ -429,3 +429,28 @@ third-party Reddit datasets may be used. Any reconsideration must occur only by
 replying transparently to the existing Reddit Support ticket with additional
 policy, retention, request-volume, and use-case detail; denial remains the
 effective state unless Reddit explicitly approves access.
+
+### Eight-candidate identity inspection and syndication correction
+
+The post-install manual run produced AMAT, HD, INTC, KDP, SMCI, WNC, XXII,
+and ZBAO. Original observation evidence confirmed that every professional or
+creator headline explicitly identifies its assigned underlying, every candidate
+has available market evidence, and provider-supplied bullish, bearish, and
+neutral classifications remain unmodified. SMCI retains its reviewed YouTube
+confirmation; all other candidates use SEC plus professional-media evidence.
+
+Inspection found one counting defect rather than an identity defect. A single
+Zacks article mentioning KDP was routed through two Globe and Mail stock-path
+URLs (KO and PEP), so URL-only identity incorrectly elevated KDP from two
+independent stories / CONFIRMED to three / STRONG. Weekly normalization now
+deduplicates non-primary evidence by explicit canonical ID when supplied,
+otherwise by normalized headline plus producer. Primary-company filings retain
+their filing-specific story IDs, so ZBAO's two distinct SEC 6-K filings remain
+separate. Normalized rich evidence also preserves title and source URL for
+operator audit. A regression test locks the duplicate-route behavior.
+
+The Saturday timer remains disabled until the server pulls this correction,
+passes the focused suite, regenerates the artifacts, confirms KDP is
+CONFIRMED with two independent stories, and completes the current eight-symbol
+Swing read-only contract check.
+
