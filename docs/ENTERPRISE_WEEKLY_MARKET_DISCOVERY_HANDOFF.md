@@ -410,3 +410,22 @@ external source cannot hang indefinitely. These changes do not install or enable
 the unit. Deployment remains staged: run the focused scheduler/discovery suite,
 copy units, run systemd-analyze verification, manually start the oneshot service,
 inspect artifacts and journal output, and only then enable the timer.
+
+
+### Installed-unit manual validation and Reddit response
+
+The unit files passed `systemd-analyze verify` and initially remained disabled
+and inactive. A manual oneshot start then completed successfully in 41 seconds:
+the collector produced 1,528 observations with zero warnings, the generator
+produced eight candidates, systemd deactivated the oneshot normally, and no
+persistent process remained. The timer is still disabled pending inspection of
+the newly changed eighth candidate.
+
+Reddit Support subsequently declined the Data API request, stating that the
+submission was not compliant with the Responsible Builder Policy and/or lacked
+necessary detail. This is not authorization. Reddit remains disabled: no
+credentials, client registration, API calls, scraping, alternate endpoints, or
+third-party Reddit datasets may be used. Any reconsideration must occur only by
+replying transparently to the existing Reddit Support ticket with additional
+policy, retention, request-volume, and use-case detail; denial remains the
+effective state unless Reddit explicitly approves access.
