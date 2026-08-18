@@ -560,3 +560,27 @@ The live inspection also exposed a reporting-only identity gap: collected SEC co
 names were not copied into the rich weekly candidate. Weekly normalization now
 preserves company_name and a regression test locks that behavior. This does not alter
 nomination eligibility, confluence, lifecycle status, mappings, or any execution lock.
+
+
+### Reviewed option-income ETF mappings for non-dividend underlyings
+
+Official fund strategy and distribution records support three Dividend-owned
+income-ETF mappings for the previously unmapped current candidates: AMD to AMDY,
+INTC to INYY, and SMCI to SMCY. These are single-stock option-income ETFs, not
+ordinary dividend-equity substitutes and not recommendations to purchase. They
+seek weekly income through options exposure tied to the named underlying.
+
+The catalog and generated report explicitly retain the income mechanism,
+distribution frequency, mapping rationale, and risk disclosures. Distributions
+are not guaranteed, may vary materially, and can contain substantial return of
+capital. The strategies can limit upside participation while retaining material
+underlying downside, and repeated distributions may contribute to NAV erosion.
+SMCY additionally requires careful performance review because official fund data
+shows material historical losses.
+
+Validation now enforces mapping-type-specific evidence. A direct dividend equity
+must map to itself and contain issuer-dividend evidence. An income ETF must use a
+distinct symbol, include official fund strategy/holdings/prospectus evidence,
+include distribution history, and carry nonempty risk disclosures. All mappings
+remain advisory, manually reviewed, and automatically inactive. No allocation,
+watchlist, position, order, broker, or capital state is changed.
