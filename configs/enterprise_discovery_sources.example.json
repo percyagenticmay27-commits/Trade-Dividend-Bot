@@ -11,7 +11,9 @@
       "underlying_symbol": "EXAMPLE",
       "cik": "0000000000",
       "sector": "Example Sector",
-      "themes": ["Example Theme"]
+      "themes": [
+        "Example Theme"
+      ]
     },
     {
       "source_type": "COMPANY_FEED",
@@ -19,7 +21,9 @@
       "underlying_symbol": "EXAMPLE",
       "url": "https://example.com/investor-relations/feed.xml",
       "sector": "Example Sector",
-      "themes": ["Example Theme"]
+      "themes": [
+        "Example Theme"
+      ]
     },
     {
       "source_type": "YOUTUBE_SEARCH",
@@ -28,6 +32,15 @@
       "query": "weekly markets stocks earnings",
       "max_results": 10,
       "authority": "REVIEWED_CREATOR",
+      "credibility_reviewed": true,
+      "themes": []
+    },
+    {
+      "source_type": "PROFESSIONAL_RSS",
+      "source_name": "Reviewed professional financial publication",
+      "producer": "Reviewed professional financial publication",
+      "url": "https://example.com/official-financial-news-feed.xml",
+      "authority": "PROFESSIONAL_MEDIA",
       "credibility_reviewed": true,
       "themes": []
     }
