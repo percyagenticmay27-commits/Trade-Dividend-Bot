@@ -253,7 +253,19 @@ def collect_professional_feed_evidence(
             warnings.append(f"{name}: feed URL must use HTTPS")
             continue
         try:
-            evidence_rows = _recent_feed_evidence(get_bytes(url, user_agent), {
+            payload = None
+            last_error = None
+            for attempt in range(3):
+                try:
+                    payload = get_bytes(url, user_agent)
+                    break
+                except OSError as exc:
+                    last_error = exc
+                    if attempt < 2:
+                        time.sleep(1.0 * (attempt + 1))
+            if payload is None:
+                raise last_error or OSError("professional feed request failed")
+            evidence_rows = _recent_feed_evidence(payload, {
                 **dict(source),
                 "source_class": "PROFESSIONAL_MEDIA",
                 "producer": source.get("producer") or name,
