@@ -12,6 +12,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from enterprise_discovery_source_collector import collect_credential_free_observations, load_json_if_present
+from enterprise_discovery_market_evidence import attach_candidate_market_evidence
+from market_data_provider import MarketDataService
 
 
 def main() -> int:
@@ -32,6 +34,7 @@ def main() -> int:
         youtube_api_key=os.environ.get("YOUTUBE_API_KEY", "").strip(),
         market_snapshot=market,
     )
+    report = attach_candidate_market_evidence(report, MarketDataService(root_path=str(root)))
     output = root / "inputs" / "enterprise_weekly_market_observations.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
