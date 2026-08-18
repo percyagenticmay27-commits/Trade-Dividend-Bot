@@ -71,6 +71,8 @@ def fetch_professional_url(
             completed = subprocess.run(
                 [
                     "curl", "--fail", "--location", "--silent", "--show-error",
+                    "--http1.1", "--retry", "2", "--retry-delay", "1",
+                    "--retry-all-errors", "--retry-max-time", "120",
                     "--connect-timeout", "10", "--max-time", "60",
                     "--user-agent", user_agent,
                     "--header", "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml",
@@ -78,7 +80,7 @@ def fetch_professional_url(
                 ],
                 capture_output=True,
                 check=False,
-                timeout=65,
+                timeout=130,
             )
         except (OSError, subprocess.SubprocessError) as exc:
             raise OSError(f"professional feed curl fallback failed: {exc}") from exc
