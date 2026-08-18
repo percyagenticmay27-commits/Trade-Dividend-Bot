@@ -1,6 +1,7 @@
 import json
 
-from enterprise_discovery_source_collector import collect_credential_free_observations
+from enterprise_discovery_source_collector import collect_broad_sec_filing_evidence, collect_credential_free_observations
+from enterprise_weekly_market_discovery import build_swing_projection, build_weekly_discovery
 
 
 def test_sec_and_company_feed_create_provenanced_underlying_observation():
@@ -41,3 +42,22 @@ def test_no_user_agent_fails_closed():
         assert "User-Agent" in str(exc)
     else:
         raise AssertionError("missing user agent must fail closed")
+
+
+def test_broad_sec_index_maps_cik_to_underlying_but_remains_evidence_only():
+    tickers = {"0": {"cik_str": 1045810, "ticker": "NVDA", "title": "NVIDIA CORP"}}
+    index = b"Description\n-----\n1045810|NVIDIA CORP|8-K|2026-08-14|edgar/data/1045810/filing.txt\n"
+    def get_bytes(url, _user_agent):
+        return json.dumps(tickers).encode() if "company_tickers" in url else index
+    evidence, warnings = collect_broad_sec_filing_evidence(
+        as_of="2026-08-17T01:00:00Z", user_agent="AI-CIO operator@example.com",
+        get_bytes=get_bytes, index_dates=["2026-08-14"], minimum_request_interval=0,
+    )
+    assert warnings == []
+    assert evidence[0]["underlying_symbol"] == "NVDA"
+    source = {"source_type": "SEC_DAILY_INDEX", "source_name": "SEC Broad", "index_dates": ["2026-08-14"]}
+    collected = collect_credential_free_observations([source], as_of="2026-08-17T01:00:00Z", user_agent="AI-CIO operator@example.com", get_bytes=get_bytes, minimum_request_interval=0)
+    row = collected["observations"][0]
+    assert row["nomination_eligible"] is False
+    report = build_weekly_discovery(collected["observations"], generated_at="2026-08-17T01:00:00Z")
+    assert build_swing_projection(report)["candidates"] == []
