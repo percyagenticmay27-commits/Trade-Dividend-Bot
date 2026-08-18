@@ -169,9 +169,15 @@ def build_suitability_report(mapping_report: Mapping[str, Any], evidence_catalog
     candidates = []
     for mapping in mappings:
         income = mapping.get("income_symbol")
-        assessed = _assess(mapping, evidence.get(_symbol(income)) if income else None, generated)
-        candidates.append({**mapping, **assessed, "paper_review_allowed": assessed["suitability_status"] == "ELIGIBLE_FOR_PAPER_REVIEW",
-                           "automatic_activation_allowed": False})
+        reviewed_evidence = evidence.get(_symbol(income)) if income else None
+        assessed = _assess(mapping, reviewed_evidence, generated)
+        candidates.append({
+            **mapping,
+            **assessed,
+            "suitability_evidence": dict(reviewed_evidence) if reviewed_evidence else None,
+            "paper_review_allowed": assessed["suitability_status"] == "ELIGIBLE_FOR_PAPER_REVIEW",
+            "automatic_activation_allowed": False,
+        })
     return {
         "schema_version": SCHEMA_VERSION, "strategy_id": STRATEGY_ID, "generated_at": stamp,
         "paper_trade_mode": True, "advisory_only": True, "live_trading_enabled": False,
