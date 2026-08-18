@@ -129,6 +129,7 @@ def build_weekly_discovery(
             "attention_acceleration": raw.get("attention_acceleration"),
             "market_evidence": raw.get("market_evidence"),
             "discovery_confidence": raw.get("discovery_confidence"),
+            "nomination_eligible": bool(raw.get("nomination_eligible", True)),
         })
     expired_candidates: list[dict[str, Any]] = []
     for symbol, prior in previous.items():
@@ -161,6 +162,8 @@ def build_weekly_discovery(
 def build_swing_projection(report: Mapping[str, Any]) -> dict[str, Any]:
     candidates = []
     for row in report.get("candidates", []):
+        if row.get("nomination_eligible") is False:
+            continue
         status = str(row.get("discovery_status") or "").upper()
         if status == "NEW":
             status = "EMERGING"
@@ -197,6 +200,7 @@ def build_dividend_projection(report: Mapping[str, Any]) -> dict[str, Any]:
             "sector": row.get("sector"),
             "requires_dividend_income_mapping": True,
             "promotion_authority": DIVIDEND_STRATEGY_ID,
+            "nomination_eligible": bool(row.get("nomination_eligible", True)),
             "source_evidence": list(row.get("source_evidence") or []),
         })
     return {
