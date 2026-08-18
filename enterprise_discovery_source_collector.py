@@ -226,6 +226,54 @@ def _recent_feed_evidence(xml_bytes: bytes, source: Mapping[str, Any], cutoff: d
     return rows
 
 
+def collect_professional_feed_evidence(
+    sources: Iterable[Mapping[str, Any]],
+    *,
+    as_of: str | datetime,
+    allowed_symbols: Iterable[str],
+    user_agent: str,
+    get_bytes: Callable[[str, str], bytes] = _default_get,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Collect reviewed professional RSS/Atom headlines for known underlyings only."""
+    now = datetime.fromisoformat(str(as_of).replace("Z", "+00:00")) if not isinstance(as_of, datetime) else as_of
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    cutoff = now.date() - timedelta(days=7)
+    rows: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for source in sources:
+        name = str(source.get("source_name") or "Professional media feed").strip()
+        url = str(source.get("url") or "").strip()
+        reviewed = bool(source.get("credibility_reviewed", False))
+        authority = str(source.get("authority") or "").upper()
+        if not reviewed or authority != "PROFESSIONAL_MEDIA":
+            warnings.append(f"{name}: professional feed is not credibility-reviewed and was skipped")
+            continue
+        if not url.lower().startswith("https://"):
+            warnings.append(f"{name}: feed URL must use HTTPS")
+            continue
+        try:
+            evidence_rows = _recent_feed_evidence(get_bytes(url, user_agent), {
+                **dict(source),
+                "source_class": "PROFESSIONAL_MEDIA",
+                "producer": source.get("producer") or name,
+            }, cutoff)
+            for evidence in evidence_rows:
+                title = str(evidence.get("title") or "")
+                for symbol in _youtube_symbols(title, allowed_symbols):
+                    evidence["platform"] = "PROFESSIONAL_RSS"
+                    evidence["credibility_reviewed"] = True
+                    evidence["authority"] = "PROFESSIONAL_MEDIA"
+                    rows.append({
+                        "underlying_symbol": symbol,
+                        "evidence": dict(evidence),
+                        "confirmation_eligible": True,
+                    })
+        except (OSError, UnicodeError, ValueError, ET.ParseError) as exc:
+            warnings.append(f"{name}: professional feed request failed: {exc}")
+    return rows, warnings
+
+
 def _ticker_map(payload: Any) -> dict[str, dict[str, str]]:
     if isinstance(payload, Mapping) and isinstance(payload.get("fields"), list) and isinstance(payload.get("data"), list):
         fields = [str(value) for value in payload["fields"]]
@@ -353,7 +401,9 @@ def collect_credential_free_observations(
     last_request = 0.0
     source_rows = list(sources)
     youtube_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() == "YOUTUBE_SEARCH"]
-    non_youtube_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() != "YOUTUBE_SEARCH"]
+    professional_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() == "PROFESSIONAL_RSS"]
+    deferred_types = {"YOUTUBE_SEARCH", "PROFESSIONAL_RSS"}
+    non_youtube_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() not in deferred_types]
     for source in non_youtube_sources:
         try:
             kind = str(source.get("source_type") or "").upper()
@@ -412,6 +462,22 @@ def collect_credential_free_observations(
             row["source_evidence"].extend(evidence)
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError, ET.ParseError) as exc:
             warnings.append(f"{source.get('source_name') or source.get('underlying_symbol') or 'SOURCE'}: {exc}")
+
+    professional_rows, professional_warnings = collect_professional_feed_evidence(
+        professional_sources,
+        as_of=now,
+        allowed_symbols=by_symbol,
+        user_agent=user_agent,
+        get_bytes=get_bytes,
+    ) if professional_sources else ([], [])
+    warnings.extend(professional_warnings)
+    for item in professional_rows:
+        symbol = item["underlying_symbol"]
+        row = by_symbol[symbol]
+        row["source_evidence"].append(item["evidence"])
+        row["themes"].update(str(value).strip() for value in item["evidence"].get("themes", []) if str(value).strip())
+        if item.get("confirmation_eligible"):
+            row.setdefault("confirmation_producers", set()).add(str(item["evidence"].get("producer") or "").lower())
 
     youtube_rows, youtube_warnings = collect_youtube_evidence(
         youtube_sources,
