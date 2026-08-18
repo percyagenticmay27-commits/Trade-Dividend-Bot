@@ -1,0 +1,12 @@
+[Unit]
+Description=Enterprise AI CIO Weekly Market Discovery (paper-only)
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=tradebot
+Group=tradebot
+WorkingDirectory=/home/tradebot/Trade-Dividend-Bot
+ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/scripts/generate_enterprise_weekly_market_discovery.py
+NoNewPrivileges=true
+PrivateTmp=true
