@@ -45,7 +45,7 @@ def test_no_user_agent_fails_closed():
 
 
 def test_broad_sec_index_maps_cik_to_underlying_but_remains_evidence_only():
-    tickers = {"0": {"cik_str": 1045810, "ticker": "NVDA", "title": "NVIDIA CORP"}}
+    tickers = {"fields": ["cik", "name", "ticker", "exchange"], "data": [[1045810, "NVIDIA CORP", "NVDA", "Nasdaq"]]}
     index = b"Description\n-----\n1045810|NVIDIA CORP|8-K|2026-08-14|edgar/data/1045810/filing.txt\n"
     def get_bytes(url, _user_agent):
         return json.dumps(tickers).encode() if "company_tickers" in url else index
@@ -61,3 +61,33 @@ def test_broad_sec_index_maps_cik_to_underlying_but_remains_evidence_only():
     assert row["nomination_eligible"] is False
     report = build_weekly_discovery(collected["observations"], generated_at="2026-08-17T01:00:00Z")
     assert build_swing_projection(report)["candidates"] == []
+
+
+def test_exchange_directory_filters_otc_units_preferred_and_leveraged_products():
+    tickers = {
+        "fields": ["cik", "name", "ticker", "exchange"],
+        "data": [
+            [1, "OPERATING COMPANY", "GOOD", "NYSE"],
+            [2, "FOREIGN OTC COMPANY", "BADAF", ""],
+            [3, "SPAC UNIT", "SPACU", "Nasdaq"],
+            [4, "ISSUER PREFERRED", "ISS-PF", "NYSE"],
+            [5, "DAILY 3X BULL ETF", "BULL", "NYSE Arca"],
+            [1, "OPERATING COMPANY CLASS B", "GOOD-B", "NYSE"],
+        ],
+    }
+    index = (
+        b"Description\n-----\n"
+        b"1|OPERATING COMPANY|8-K|2026-08-14|edgar/data/1/a.txt\n"
+        b"2|FOREIGN OTC COMPANY|8-K|2026-08-14|edgar/data/2/a.txt\n"
+        b"3|SPAC UNIT|8-K|2026-08-14|edgar/data/3/a.txt\n"
+        b"4|ISSUER PREFERRED|8-K|2026-08-14|edgar/data/4/a.txt\n"
+        b"5|DAILY 3X BULL ETF|8-K|2026-08-14|edgar/data/5/a.txt\n"
+    )
+    evidence, warnings = collect_broad_sec_filing_evidence(
+        as_of="2026-08-17T01:00:00Z", user_agent="AI-CIO operator@example.com",
+        get_bytes=lambda url, _: json.dumps(tickers).encode() if "company_tickers" in url else index,
+        index_dates=["2026-08-14"], minimum_request_interval=0,
+    )
+    assert warnings == []
+    assert [row["underlying_symbol"] for row in evidence] == ["GOOD"]
+    assert evidence[0]["exchange"] == "NYSE"
