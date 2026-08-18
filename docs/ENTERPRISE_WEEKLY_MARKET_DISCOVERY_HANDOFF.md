@@ -215,3 +215,13 @@ unavailable price into zero.
   ratio when mathematically supported.
 - Attention is evidence context only. It cannot create a bullish thesis,
   promote either strategy's lifecycle, map a vehicle, or authorize a trade.
+
+
+### Same-cycle generation idempotency
+
+A manual second generation during the same ISO weekly cycle exposed that the
+current artifact could be mistaken for a prior-week baseline. Same-week reruns
+now retain the original previous-week comparison, previous lifecycle state, and
+consecutive-week count. A first-week candidate therefore remains NEW_BASELINE
+across repeated validation runs. Only a genuinely later weekly cycle can create
+a STABLE, ACCELERATING, or DECELERATING comparison.
