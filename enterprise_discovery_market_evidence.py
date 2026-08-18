@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+from math import isfinite
 from statistics import mean
 from typing import Any, Mapping
 
@@ -10,9 +11,10 @@ def _number(value: Any) -> float | None:
     if value is None or isinstance(value, bool):
         return None
     try:
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         return None
+    return number if isfinite(number) else None
 
 
 def _history_rows(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
