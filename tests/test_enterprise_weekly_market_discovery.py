@@ -54,6 +54,16 @@ def test_lifecycle_retention_and_history_are_preserved(tmp_path):
     assert len((tmp_path / "state/enterprise_market_discovery_history.jsonl").read_text().splitlines()) == 1
 
 
+def test_missing_candidate_is_retained_until_expiration_then_archived_stale():
+    first = build_weekly_discovery([_observation(status="COOLING")], generated_at="2026-08-09T01:00:00Z")
+    retained = build_weekly_discovery([], first["candidates"], generated_at="2026-08-15T01:00:00Z")
+    assert retained["candidates"][0]["underlying_symbol"] == "NVDA"
+    expired = build_weekly_discovery([], first["candidates"], generated_at="2026-08-17T01:00:01Z")
+    assert expired["candidates"] == []
+    assert expired["expired_candidates"][0]["discovery_status"] == "STALE"
+    assert build_swing_projection(expired)["candidates"] == []
+
+
 def test_dividend_projection_requires_strategy_owned_income_mapping():
     report = build_weekly_discovery([_observation()], generated_at="2026-08-16T01:00:00Z")
     row = build_dividend_projection(report)["candidates"][0]
