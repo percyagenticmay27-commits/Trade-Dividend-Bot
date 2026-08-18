@@ -48,7 +48,7 @@ def _default_get(url: str, user_agent: str) -> bytes:
 
 def _youtube_symbols(text: str, allowed_symbols: Iterable[str]) -> list[str]:
     """Return only explicit cashtags/tickers from a pre-approved underlying universe."""
-    upper = str(text or "").upper()
+    original = str(text or "")
     matches = set()
     for raw_symbol in allowed_symbols:
         try:
@@ -56,7 +56,11 @@ def _youtube_symbols(text: str, allowed_symbols: Iterable[str]) -> list[str]:
         except ValueError:
             continue
         escaped = re.escape(symbol)
-        if re.search(rf"(?<![A-Z0-9])(?:\${escaped}|{escaped})(?![A-Z0-9])", upper):
+        cashtag = re.search(rf"(?<![A-Z0-9])\${escaped}(?![A-Z0-9])", original, re.IGNORECASE)
+        # One- and two-letter tickers are ordinary English tokens too often;
+        # require an explicit cashtag for those symbols.
+        plain_ticker = len(symbol) >= 3 and re.search(rf"(?<![A-Z0-9]){escaped}(?![A-Z0-9])", original)
+        if cashtag or plain_ticker:
             matches.add(symbol)
     return sorted(matches)
 
