@@ -119,6 +119,33 @@ def test_reviewed_professional_feed_matches_only_known_explicit_underlyings():
     assert rows[0]["confirmation_eligible"] is True
 
 
+def test_professional_feed_retries_one_transient_timeout(monkeypatch):
+    rss = b"<rss><channel><item><title>SMCI stock update</title><link>https://media.example/smci</link><pubDate>Sun, 16 Aug 2026 10:00:00 GMT</pubDate></item></channel></rss>"
+    calls = []
+    def transient(*_):
+        calls.append(1)
+        if len(calls) == 1:
+            raise TimeoutError("temporary CDN stall")
+        return rss
+    monkeypatch.setattr("enterprise_discovery_source_collector.time.sleep", lambda *_: None)
+    rows, warnings = collect_professional_feed_evidence(
+        [{
+            "source_type": "PROFESSIONAL_RSS",
+            "source_name": "Reviewed Financial News",
+            "url": "https://media.example/rss",
+            "authority": "PROFESSIONAL_MEDIA",
+            "credibility_reviewed": True,
+        }],
+        as_of="2026-08-17T01:00:00Z",
+        allowed_symbols=["SMCI"],
+        user_agent="AI-CIO operator@example.com",
+        get_bytes=transient,
+    )
+    assert len(calls) == 2
+    assert warnings == []
+    assert rows[0]["underlying_symbol"] == "SMCI"
+
+
 def test_unreviewed_professional_feed_fails_closed():
     rows, warnings = collect_professional_feed_evidence(
         [{
