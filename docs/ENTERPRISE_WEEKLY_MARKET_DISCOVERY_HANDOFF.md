@@ -185,3 +185,19 @@ was reported as AVAILABLE. Numeric normalization now rejects NaN and infinity.
 The adapter uses the latest complete recorded session, recalculates return and
 dollar-volume evidence from finite observations only, and never converts an
 unavailable price into zero.
+
+
+## 2026-08-18 — Independent confluence and evidence disagreement
+
+- The rich neutral report now derives source confluence from unique
+  story/producer pairs instead of accepting an unverified precomputed value.
+  Syndicated repetitions of one originating story are not independent votes.
+- Confluence records independent story count, producer count, evidence classes,
+  and a deterministic NONE/SINGLE_SOURCE/CONFIRMED/STRONG level. STRONG requires
+  at least three independent stories across at least two evidence classes.
+- Bullish, bearish, neutral, mixed, and unspecified evidence counts remain
+  separate. The disagreement flag is true only when recorded bullish and
+  bearish evidence both exist.
+- Evidence stance is never converted into an invented bullish or bearish thesis.
+  Explicit theses, catalysts, and risks remain source-owned fields. Confluence
+  is informational and cannot promote a Swing or Dividend lifecycle record.
