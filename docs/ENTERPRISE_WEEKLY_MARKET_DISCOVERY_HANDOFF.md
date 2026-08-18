@@ -321,3 +321,22 @@ exhaustion still reject the feed.
   Request URLs are never included in warnings because they contain the key.
 - The Saturday timer remains uninstalled and disabled pending focused tests and
   a successful manual server collection.
+
+
+### Professional-news identity gate
+
+The first live Alpha Vantage collection returned valid current evidence but exposed
+loose portfolio/article associations: HD, NEE, NVDA, and STT were attached to
+headlines whose displayed subjects were other companies. Numeric relevance is
+not a safe gate; unrelated NEE associations scored as high as 0.749 while a
+direct DRMA headline scored 0.341. Therefore relevance scores are retained as
+provider metadata but never determine confirmation eligibility.
+
+Professional news now confirms an SEC lead only when the headline contains the
+exact case-sensitive market ticker or at least two significant tokens from the
+SEC company name after removing common corporate suffixes. This preserves
+explicit examples such as `(NASDAQ:CSCO)`, `FWDI`, `ING`, and Acrivon
+Therapeutics while rejecting loose family, fund, portfolio, and peer-company
+associations. Nonmatching provider associations are omitted rather than allowed
+to inflate source confluence. No strategy bucket is published until the
+corrected focused suite and a second controlled live collection pass.
