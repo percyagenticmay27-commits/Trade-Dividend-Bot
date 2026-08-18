@@ -39,3 +39,21 @@ def test_channel_review_requires_api_key():
         assert "YOUTUBE_API_KEY" in str(exc)
     else:
         raise AssertionError("missing API key must fail closed")
+
+
+def test_metadata_enrichment_preserves_unverified_gate():
+    module = _module()
+    report = {"searches": [{"seed_query": "Candidate", "candidates": [{"channel_id": "UC123", "review_status": "UNVERIFIED"}]}]}
+    requested = []
+    payload = {"items": [{
+        "id": "UC123",
+        "snippet": {"title": "Official Channel", "customUrl": "@official", "country": "US", "publishedAt": "2020-01-01T00:00:00Z"},
+        "statistics": {"subscriberCount": "100000", "videoCount": "500", "hiddenSubscriberCount": False},
+    }]}
+    enriched = module.enrich_channel_candidates(report, "secret-key", get_json=lambda url: requested.append(url) or payload)
+    candidate = enriched["searches"][0]["candidates"][0]
+    assert candidate["channel_metadata"]["custom_url"] == "@official"
+    assert candidate["channel_metadata"]["subscriber_count"] == "100000"
+    assert candidate["review_status"] == "UNVERIFIED"
+    assert enriched["automatically_approved"] is False
+    assert "part=snippet%2Cstatistics" in requested[0]
