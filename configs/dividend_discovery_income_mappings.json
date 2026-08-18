@@ -135,6 +135,28 @@
       ]
     },
     {
+      "underlying_symbol": "FSBW",
+      "income_symbol": "FSBW",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Issuer records confirm an active quarterly common-stock dividend, including the 54th consecutive quarterly declaration in July 2026.",
+      "mapping_evidence": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_HISTORY",
+          "source_url": "https://investorrelations.fsbwa.com/stock-information/dividends-splits/",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "ISSUER_DIVIDEND_DECLARATION",
+          "source_url": "https://investorrelations.fsbwa.com/",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
       "underlying_symbol": "HD",
       "income_symbol": "HD",
       "mapping_type": "DIRECT_DIVIDEND_EQUITY",
@@ -238,6 +260,28 @@
         {
           "evidence_type": "ISSUER_DIVIDEND_HISTORY",
           "source_url": "https://investors.parker.com/stock-information/dividend-history",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "underlying_symbol": "SJM",
+      "income_symbol": "SJM",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Issuer records confirm active quarterly common-stock dividends and a July 2026 dividend increase.",
+      "mapping_evidence": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_HISTORY",
+          "source_url": "https://investors.jmsmucker.com/stock-info/dividend-history/default.aspx",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "ISSUER_DIVIDEND_DECLARATION",
+          "source_url": "https://investors.jmsmucker.com/news/news-details/2026/The-J-M--Smucker-Co--Announces-Dividend-Increase/default.aspx",
           "as_of": "2026-08-18"
         }
       ]
