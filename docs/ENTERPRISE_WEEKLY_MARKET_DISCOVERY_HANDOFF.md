@@ -454,3 +454,21 @@ passes the focused suite, regenerates the artifacts, confirms KDP is
 CONFIRMED with two independent stories, and completes the current eight-symbol
 Swing read-only contract check.
 
+### Corrected artifact and final Swing consumer validation
+
+The server pulled the syndicated-headline correction and passed the focused
+weekly-discovery and systemd suite: 21 tests passed. A fresh collection produced
+1,528 observations with zero warnings and regenerated eight active candidates.
+KDP now contains two independent stories, two independent producers, two source
+classes, and CONFIRMED confluence; its duplicate Globe and Mail routing record
+is no longer counted separately.
+
+Swing's authoritative read-only consumer then loaded schema 1.0 / SWING-001
+successfully with eight EMERGING underlyings: AMAT, HD, INTC, KDP, SMCI, WNC,
+XXII, and ZBAO. It read 16 evidence mentions. Every underlying returned
+NO_APPROVED_MAPPING, so discovery created no Swing mapping, watchlist promotion,
+position, order, or trade. The Swing repository remained read only. With source
+identity, deduplication, systemd execution, safety controls, and the current
+consumer contract validated, the Saturday 8:00 PM America/Chicago timer is
+approved for operator enablement.
+
