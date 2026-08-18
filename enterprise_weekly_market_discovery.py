@@ -117,9 +117,16 @@ def _evidence_analysis(evidence: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
-def _attention_analysis(current_count: int, prior: Mapping[str, Any] | None) -> dict[str, Any]:
+def _attention_analysis(
+    current_count: int,
+    prior: Mapping[str, Any] | None,
+    *,
+    same_cycle: bool = False,
+) -> dict[str, Any]:
     previous_count = None
-    if prior:
+    if prior and same_cycle and isinstance(prior.get("attention_acceleration"), Mapping):
+        previous_count = prior["attention_acceleration"].get("previous_independent_evidence_count")
+    elif prior:
         previous_confluence = prior.get("source_confluence")
         if isinstance(previous_confluence, Mapping):
             previous_count = previous_confluence.get("independent_source_count")
@@ -184,17 +191,25 @@ def build_weekly_discovery(
         if requested not in ACTIVE_STATUSES:
             raise ValueError(f"unsupported discovery_status: {requested}")
         prior = previous.get(symbol)
+        prior_confirmed = _utc(prior.get("last_confirmed_at")) if prior and prior.get("last_confirmed_at") else None
+        same_cycle = bool(prior_confirmed and prior_confirmed.isocalendar()[:2] == now.isocalendar()[:2])
         first = _utc(prior.get("first_discovered_at")) if prior and prior.get("first_discovered_at") else now
-        weeks = int(prior.get("consecutive_weeks_detected", 0)) + 1 if prior else 1
+        weeks = (
+            int(prior.get("consecutive_weeks_detected", 1))
+            if same_cycle else int(prior.get("consecutive_weeks_detected", 0)) + 1
+        ) if prior else 1
         evidence = _normalize_evidence(raw.get("source_evidence") or raw.get("evidence_sources") or [])
         evidence_analysis = _evidence_analysis(evidence)
         independent = evidence_analysis["independent_source_count"]
-        attention = _attention_analysis(independent, prior)
+        attention = _attention_analysis(independent, prior, same_cycle=same_cycle)
         expires = now + timedelta(days=_retention_days(requested))
         candidate = {
             "underlying_symbol": symbol,
             "discovery_status": requested,
-            "previous_status": str(prior.get("discovery_status") or "ABSENT") if prior else "ABSENT",
+            "previous_status": (
+                str(prior.get("previous_status") or "ABSENT")
+                if same_cycle else str(prior.get("discovery_status") or "ABSENT")
+            ) if prior else "ABSENT",
             "first_discovered_at": _iso(first),
             "last_confirmed_at": _iso(now),
             "expires_at": _iso(expires),
