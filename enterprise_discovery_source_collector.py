@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import time
 import urllib.request
 import urllib.parse
@@ -44,6 +45,48 @@ def _default_get(url: str, user_agent: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": user_agent, "Accept": "application/json, application/atom+xml, application/rss+xml, application/xml, text/xml"})
     with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310: URLs are owner-configured HTTPS sources
         return response.read()
+
+
+def fetch_professional_url(
+    url: str,
+    user_agent: str,
+    *,
+    get_bytes: Callable[[str, str], bytes] = _default_get,
+    attempts: int = 3,
+    allow_curl_fallback: bool = True,
+) -> bytes:
+    """Fetch an approved HTTPS feed with bounded urllib retries and curl fallback."""
+    if not str(url).lower().startswith("https://"):
+        raise ValueError("professional feed URL must use HTTPS")
+    last_error: OSError | None = None
+    for attempt in range(max(1, attempts)):
+        try:
+            return get_bytes(url, user_agent)
+        except OSError as exc:
+            last_error = exc
+            if attempt + 1 < max(1, attempts):
+                time.sleep(1.0 * (attempt + 1))
+    if allow_curl_fallback:
+        try:
+            completed = subprocess.run(
+                [
+                    "curl", "--fail", "--location", "--silent", "--show-error",
+                    "--connect-timeout", "10", "--max-time", "60",
+                    "--user-agent", user_agent,
+                    "--header", "Accept: application/rss+xml, application/atom+xml, application/xml, text/xml",
+                    url,
+                ],
+                capture_output=True,
+                check=False,
+                timeout=65,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            raise OSError(f"professional feed curl fallback failed: {exc}") from exc
+        if completed.returncode == 0 and completed.stdout:
+            return completed.stdout
+        error = completed.stderr.decode("utf-8", errors="replace").strip()
+        raise OSError(f"professional feed curl fallback failed with code {completed.returncode}: {error}")
+    raise last_error or OSError("professional feed request failed")
 
 
 def _youtube_symbols(text: str, allowed_symbols: Iterable[str]) -> list[str]:
@@ -253,18 +296,12 @@ def collect_professional_feed_evidence(
             warnings.append(f"{name}: feed URL must use HTTPS")
             continue
         try:
-            payload = None
-            last_error = None
-            for attempt in range(3):
-                try:
-                    payload = get_bytes(url, user_agent)
-                    break
-                except OSError as exc:
-                    last_error = exc
-                    if attempt < 2:
-                        time.sleep(1.0 * (attempt + 1))
-            if payload is None:
-                raise last_error or OSError("professional feed request failed")
+            payload = fetch_professional_url(
+                url,
+                user_agent,
+                get_bytes=get_bytes,
+                allow_curl_fallback=get_bytes is _default_get,
+            )
             evidence_rows = _recent_feed_evidence(payload, {
                 **dict(source),
                 "source_class": "PROFESSIONAL_MEDIA",
