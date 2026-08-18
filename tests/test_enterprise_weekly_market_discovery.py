@@ -160,6 +160,47 @@ def test_same_week_regeneration_repairs_polluted_first_cycle_baseline():
     assert row["previous_status"] == "ABSENT"
 
 
+
+def test_same_week_research_only_refresh_does_not_drop_confirmed_candidate():
+    first = build_weekly_discovery(
+        [_observation("AMAT", status="NEW")],
+        generated_at="2026-08-18T14:00:00Z",
+    )
+    research_only = _observation("AMAT", status="NEW")
+    research_only["nomination_eligible"] = False
+    repeated = build_weekly_discovery(
+        [research_only],
+        first["candidates"],
+        generated_at="2026-08-18T15:00:00Z",
+    )
+    assert [row["underlying_symbol"] for row in repeated["candidates"]] == ["AMAT"]
+    assert repeated["candidates"][0]["last_confirmed_at"] == first["candidates"][0]["last_confirmed_at"]
+    assert repeated["research_evidence_pool"][0]["underlying_symbol"] == "AMAT"
+
+
+def test_same_week_confirmed_refresh_preserves_prior_independent_evidence():
+    first = build_weekly_discovery(
+        [_observation("AMAT", status="NEW")],
+        generated_at="2026-08-18T14:00:00Z",
+    )
+    refreshed = _observation("AMAT", status="NEW")
+    refreshed["source_evidence"] = [{
+        "source": "Company IR",
+        "producer": "Applied Materials",
+        "source_class": "PRIMARY_COMPANY",
+        "mentioned_on": "2026-08-18",
+        "story_id": "story-3",
+    }]
+    repeated = build_weekly_discovery(
+        [refreshed],
+        first["candidates"],
+        generated_at="2026-08-18T15:00:00Z",
+    )
+    row = repeated["candidates"][0]
+    assert row["independent_source_count"] == 3
+    assert {item["story_id"] for item in row["source_evidence"]} == {"story-1", "story-2", "story-3"}
+
+
 def test_attention_acceleration_compares_independent_weekly_evidence():
     first = build_weekly_discovery([_observation()], generated_at="2026-08-09T01:00:00Z")
     observation = _observation()
