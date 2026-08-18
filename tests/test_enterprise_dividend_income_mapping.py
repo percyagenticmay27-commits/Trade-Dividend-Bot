@@ -133,3 +133,14 @@ def test_output_preserves_all_execution_locks(tmp_path: Path):
     assert report["order_placement_enabled"] is False
     assert report["capital_movement_enabled"] is False
     assert report["automatic_activation_allowed"] is False
+
+def test_production_catalog_contains_only_reviewed_direct_dividend_mappings():
+    catalog_path = Path("configs/dividend_discovery_income_mappings.json")
+    payload = json.loads(catalog_path.read_text(encoding="utf-8"))
+    mappings = validate_mapping_catalog(payload)
+    assert set(mappings) == {"AMAT", "HD", "KDP", "WNC"}
+    assert all(row["income_symbol"] == symbol for symbol, row in mappings.items())
+    assert all(row["mapping_type"] == "DIRECT_DIVIDEND_EQUITY" for row in mappings.values())
+    assert all(row["automatic_activation_allowed"] is False for row in mappings.values())
+    assert all(row["mapping_evidence"] for row in mappings.values())
+
