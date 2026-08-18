@@ -47,7 +47,7 @@ def _default_get(url: str, user_agent: str) -> bytes:
 
 
 def _youtube_symbols(text: str, allowed_symbols: Iterable[str]) -> list[str]:
-    """Return only explicit cashtags/tickers from a pre-approved underlying universe."""
+    """Return explicit, market-context tickers from an approved underlying universe."""
     original = str(text or "")
     matches = set()
     for raw_symbol in allowed_symbols:
@@ -56,11 +56,15 @@ def _youtube_symbols(text: str, allowed_symbols: Iterable[str]) -> list[str]:
         except ValueError:
             continue
         escaped = re.escape(symbol)
+        boundary_symbol = rf"(?<![A-Z0-9]){escaped}(?![A-Z0-9])"
         cashtag = re.search(rf"(?<![A-Z0-9])\${escaped}(?![A-Z0-9])", original, re.IGNORECASE)
-        # One- and two-letter tickers are ordinary English tokens too often;
-        # require an explicit cashtag for those symbols.
-        plain_ticker = len(symbol) >= 3 and re.search(rf"(?<![A-Z0-9]){escaped}(?![A-Z0-9])", original)
-        if cashtag or plain_ticker:
+        parenthesized = re.search(rf"\(\s*{escaped}\s*\)", original)
+        market_context = re.search(
+            rf"(?:{boundary_symbol}\s+(?:stock|shares?|earnings|ticker)|(?:stock|shares?|ticker)\s+{boundary_symbol})",
+            original,
+            re.IGNORECASE,
+        )
+        if cashtag or parenthesized or market_context:
             matches.add(symbol)
     return sorted(matches)
 
