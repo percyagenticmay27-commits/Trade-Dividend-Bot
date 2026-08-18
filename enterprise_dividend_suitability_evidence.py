@@ -1,7 +1,7 @@
 """Read-only market refresh for Dividend suitability evidence."""
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from math import isfinite
 from statistics import mean
 from typing import Any, Mapping
@@ -61,11 +61,25 @@ def build_vehicle_evidence(symbol: str, mapping_type: str, profile: Mapping[str,
             "fund_age_days": max(0, (as_of - inception).days),
         })
     else:
-        raw_yield = _number(quote.get("dividend_yield") or quote.get("trailing_annual_dividend_yield"))
+        dividend_rate = _number(quote.get("dividend_rate"))
+        price = _number(quote.get("price"))
+        raw_yield = _number(quote.get("trailing_annual_dividend_yield"))
+        if raw_yield is None:
+            raw_yield = _number(quote.get("dividend_yield"))
+        if dividend_rate is not None and price is not None and dividend_rate >= 0 and price > 0:
+            yield_percent = dividend_rate / price * 100
+        elif raw_yield is not None:
+            # Yahoo has returned this field as both a decimal ratio and a
+            # percentage across provider versions. Values above 0.20 are
+            # already percentage points; smaller values are decimal ratios.
+            yield_percent = raw_yield if raw_yield > 0.20 else raw_yield * 100
+        else:
+            yield_percent = None
+        if yield_percent is not None and not 0 <= yield_percent <= 25:
+            yield_percent = None
         output.update({
             "forward_dividend_yield_percent": (
-                round(raw_yield * 100, 6) if raw_yield is not None and raw_yield <= 1
-                else round(raw_yield, 6) if raw_yield is not None else None
+                round(yield_percent, 6) if yield_percent is not None else None
             ),
             "dividend_cut_last_12m": profile.get("dividend_cut_last_12m"),
         })
@@ -82,9 +96,12 @@ def collect_suitability_evidence(mapping_report: Mapping[str, Any], profiles: Ma
     vehicles, warnings = [], []
     for mapping in mapping_report.get("candidates", []):
         symbol = str(mapping.get("income_symbol") or "").upper()
+        if not symbol:
+            # RESEARCH_REQUIRED mappings intentionally have no approved vehicle.
+            continue
         profile = indexed.get(symbol)
-        if not symbol or not profile or profile.get("reviewed") is not True:
-            warnings.append(f"Reviewed suitability profile unavailable for {symbol or 'UNKNOWN'}")
+        if not profile or profile.get("reviewed") is not True:
+            warnings.append(f"Reviewed suitability profile unavailable for {symbol}")
             continue
         try:
             history = service.get_history(symbol, period="1y", interval="1d")
@@ -97,6 +114,7 @@ def collect_suitability_evidence(mapping_report: Mapping[str, Any], profiles: Ma
     return {
         "schema_version": "1.0",
         "strategy_id": "DIVIDEND-001",
+        "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "vehicles": vehicles,
         "warnings": warnings,
         "read_only_market_data": True,
