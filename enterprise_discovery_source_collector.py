@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterable, Mapping
 from enterprise_weekly_market_discovery import _symbol
 
 SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
-SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
+SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 SEC_FORMS = {"8-K", "10-K", "10-Q", "20-F", "40-F", "6-K", "S-1", "S-3", "DEF 14A"}
 SEC_BROAD_DISCOVERY_FORMS = {"8-K", "6-K", "S-1"}
 
@@ -106,19 +106,35 @@ def _recent_feed_evidence(xml_bytes: bytes, source: Mapping[str, Any], cutoff: d
 
 
 def _ticker_map(payload: Any) -> dict[str, dict[str, str]]:
-    values = payload.values() if isinstance(payload, Mapping) else payload if isinstance(payload, list) else []
+    if isinstance(payload, Mapping) and isinstance(payload.get("fields"), list) and isinstance(payload.get("data"), list):
+        fields = [str(value) for value in payload["fields"]]
+        values = [dict(zip(fields, row)) for row in payload["data"] if isinstance(row, list)]
+    else:
+        values = payload.values() if isinstance(payload, Mapping) else payload if isinstance(payload, list) else []
     result = {}
     excluded = (" ETF", " ETN", " 2X", " 3X", " ULTRA", " LEVERAGED", " INVERSE", " BULL ", " BEAR ")
+    allowed_exchanges = {"NASDAQ", "NYSE", "NYSE AMERICAN"}
     for row in values:
         if not isinstance(row, Mapping):
             continue
         cik = str(row.get("cik_str") or row.get("cik") or "").strip().lstrip("0")
         ticker = str(row.get("ticker") or "").strip().upper()
         title = str(row.get("title") or row.get("name") or "").strip()
-        if not cik or not ticker or any(token in f" {title.upper()} " for token in excluded):
+        exchange = str(row.get("exchange") or "").strip().upper()
+        non_common_suffix = (len(ticker) >= 5 and ticker.endswith(("U", "W", "WS"))) or "-P" in ticker or "^" in ticker
+        if (
+            not cik or not ticker or exchange not in allowed_exchanges or non_common_suffix
+            or any(token in f" {title.upper()} " for token in excluded)
+        ):
             continue
         try:
-            result[cik] = {"underlying_symbol": _symbol(ticker), "company_name": title}
+            candidate = {"underlying_symbol": _symbol(ticker), "company_name": title, "exchange": exchange}
+            current = result.get(cik)
+            candidate_score = ("-" not in ticker, len(ticker) <= 4, -len(ticker), ticker)
+            current_ticker = current.get("underlying_symbol", "") if current else ""
+            current_score = ("-" not in current_ticker, len(current_ticker) <= 4, -len(current_ticker), current_ticker)
+            if current is None or candidate_score > current_score:
+                result[cik] = candidate
         except ValueError:
             continue
     return result
@@ -143,6 +159,7 @@ def _parse_master_index(payload: bytes, tickers: Mapping[str, Mapping[str, str]]
         rows.append({
             "underlying_symbol": identity["underlying_symbol"],
             "company_name": identity.get("company_name") or company,
+            "exchange": identity.get("exchange"),
             "evidence": {
                 "source": "SEC EDGAR Daily Index",
                 "source_class": "PRIMARY_COMPANY",
