@@ -117,6 +117,14 @@ Continuation:
   to attach the official handle, creation date, country, subscriber count, and
   video count. Metadata improves human identity review but never changes the
   `UNVERIFIED` gate or production configuration.
+- Human review approved five unique initial sources: Joseph Hogue
+  (`@josephhogue`), Earn Your Leisure (`@earnyourleisure`), Business With
+  Brian (`@businesswithbrian`), CBS News (`@cbsnews`), and Ticker Symbol: YOU
+  (`@tickersymbolyou`). “Bow Tie Nation” is Joseph Hogue's community name and
+  is not configured as the unrelated nine-subscriber look-alike channel.
+- The five searches consume the full configured 500-unit weekly search budget.
+  Short one- and two-letter symbols require explicit cashtags, preventing
+  ordinary prose such as “be” from being interpreted as ticker `BE`.
 
 ### Direct script execution correction
 
