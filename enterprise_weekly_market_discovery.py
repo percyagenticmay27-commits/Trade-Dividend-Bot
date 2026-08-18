@@ -56,7 +56,7 @@ def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, An
         mentioned = str(raw.get("mentioned_on") or raw.get("published_at") or "")[:10]
         if not source or not mentioned:
             continue
-        date.fromisoformat(mentioned)
+        mentioned = date.fromisoformat(mentioned).isoformat()
         story = _story_key(raw) or f"{source.lower()}:{mentioned}"
         producer = str(raw.get("producer") or raw.get("originating_source") or source).strip().lower()
         key = (story.lower(), producer, mentioned)
