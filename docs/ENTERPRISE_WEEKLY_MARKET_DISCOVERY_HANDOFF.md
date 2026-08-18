@@ -125,6 +125,12 @@ Continuation:
 - The five searches consume the full configured 500-unit weekly search budget.
   Short one- and two-letter symbols require explicit cashtags, preventing
   ordinary prose such as “be” from being interpreted as ticker `BE`.
+- The first controlled live collection exposed ordinary-word collisions for
+  `HELP`, `MFG`, and `MINE`. YouTube symbols now require explicit market syntax:
+  a cashtag, a parenthesized ticker, or adjacency to stock/share/earnings/ticker
+  wording. `SMCI` remained valid through “Super Micro Computer (SMCI) Stock.”
+- SEC basic dates such as `20260811` are normalized to `2026-08-11` before the
+  strict Swing projection is written.
 
 ### Direct script execution correction
 
