@@ -110,6 +110,12 @@ def test_youtube_search_is_bounded_and_only_matches_known_underlyings():
     assert "maxResults=25" in requested[0]
 
 
+def test_short_ticker_requires_cashtag_in_youtube_prose():
+    from enterprise_discovery_source_collector import _youtube_symbols
+    assert _youtube_symbols("This could be important", ["BE"]) == []
+    assert _youtube_symbols("Why $BE moved this week", ["BE"]) == ["BE"]
+
+
 def test_missing_youtube_key_degrades_without_fabricating_evidence():
     rows, warnings = collect_youtube_evidence(
         [{"source_type": "YOUTUBE_SEARCH", "query": "stocks"}],
