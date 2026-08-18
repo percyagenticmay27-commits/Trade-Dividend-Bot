@@ -289,3 +289,35 @@ The first curl-backed review then exposed intermittent Nasdaq CDN error 92
 HTTP/1.1 and permits two bounded retries with a 120-second retry budget. This is
 a transport reliability correction only; HTTP errors, invalid XML, and retry
 exhaustion still reject the feed.
+
+
+## 2026-08-18 — Supported professional-news API
+
+- Repeated live tests established that Nasdaq's legacy RSS endpoint is
+  intermittently reachable but not reliable enough for the unattended Saturday
+  cycle: both Python retrieval and bounded curl/HTTP1.1 retries exhausted
+  60-second request windows. The endpoint remains unapproved and absent from
+  production configuration. Longer blocking retries were rejected because they
+  would make the weekly cycle slow and unpredictable.
+- The owner configured `ALPHA_VANTAGE_API_KEY` only in the protected server
+  environment file. The key is never stored in Git, configuration, artifacts,
+  warnings, logs, test fixtures, or handoff documentation.
+- `ALPHA_VANTAGE_NEWS` performs exactly one bounded `NEWS_SENTIMENT` request
+  per weekly collection, preserving the free service's daily request allowance.
+  It requests at most 200 records from the completed seven-day evidence window.
+- Returned ticker evidence is accepted only when the ticker already exists in
+  the SEC-established, exchange-listed underlying universe. Unknown symbols and
+  leveraged products cannot be introduced by the news provider.
+- Article publisher, URL, publication date, title, provider relevance score,
+  provider sentiment score, and exact provider sentiment label are retained.
+  Provider labels are normalized only into the existing evidence stance enum;
+  they remain provider-owned evidence and are not AI CIO conclusions.
+- A reviewed professional article may independently confirm an existing SEC
+  lead. It cannot map a vehicle, promote a strategy lifecycle, place an order,
+  contact a broker, move capital, or alter the $5,000 Dividend / $4,500 Swing
+  allocation locks.
+- Missing credentials, provider quota notices, malformed payloads, unavailable
+  feeds, and request failures yield explicit warnings and no fabricated rows.
+  Request URLs are never included in warnings because they contain the key.
+- The Saturday timer remains uninstalled and disabled pending focused tests and
+  a successful manual server collection.
