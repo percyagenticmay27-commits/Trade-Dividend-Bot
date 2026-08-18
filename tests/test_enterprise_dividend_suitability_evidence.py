@@ -55,6 +55,28 @@ def test_direct_equity_normalizes_provider_dividend_yield():
     assert row["forward_dividend_yield_percent"] == 3.5
     assert row["dividend_cut_last_12m"] is False
 
+    current_provider = build_vehicle_evidence(
+        "AMAT", "DIRECT_DIVIDEND_EQUITY",
+        {
+            "reviewed_at": "2026-07-20",
+            "dividend_cut_last_12m": False,
+            "sources": [{"source_url": "https://example.test/amat"}],
+        },
+        _history(), {"dividend_yield": 0.40},
+    )
+    assert current_provider["forward_dividend_yield_percent"] == 0.4
+
+    rate_based = build_vehicle_evidence(
+        "AMAT", "DIRECT_DIVIDEND_EQUITY",
+        {
+            "reviewed_at": "2026-07-20",
+            "dividend_cut_last_12m": False,
+            "sources": [{"source_url": "https://example.test/amat"}],
+        },
+        _history(), {"price": 200.0, "dividend_rate": 1.60, "dividend_yield": 40.0},
+    )
+    assert rate_based["forward_dividend_yield_percent"] == 0.8
+
 
 class _Service:
     def get_history(self, symbol, period, interval):
@@ -79,8 +101,22 @@ def test_collector_refreshes_only_reviewed_profiled_mappings():
     )
     assert [row["income_symbol"] for row in report["vehicles"]] == ["DUK"]
     assert len(report["warnings"]) == 1
+    assert report["generated_at"].endswith("Z")
     assert report["read_only_market_data"] is True
     assert report["inference_allowed"] is False
+
+
+
+def test_research_required_mapping_without_vehicle_is_not_a_collection_warning():
+    report = collect_suitability_evidence(
+        {"candidates": [
+            {"underlying_symbol": "FSBW", "income_symbol": None, "mapping_status": "RESEARCH_REQUIRED"},
+        ]},
+        {"profiles": []},
+        _Service(),
+    )
+    assert report["vehicles"] == []
+    assert report["warnings"] == []
 
 
 def test_production_profiles_cover_current_mapping_catalog():
