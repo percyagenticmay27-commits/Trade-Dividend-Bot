@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import json
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from enterprise_weekly_market_discovery import write_weekly_discovery
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parents[1]
+    root = ROOT
     input_path = root / "inputs" / "enterprise_weekly_market_observations.json"
     previous_path = root / "results" / "enterprise_weekly_market_discovery.json"
     if not input_path.is_file():
