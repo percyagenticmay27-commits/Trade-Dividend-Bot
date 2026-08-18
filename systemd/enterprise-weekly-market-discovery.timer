@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Enterprise AI CIO discovery Saturdays at 8 PM Central
+
+[Timer]
+OnCalendar=Sat *-*-* 20:00:00 America/Chicago
+Persistent=true
+Unit=enterprise-weekly-market-discovery.service
+
+[Install]
+WantedBy=timers.target
