@@ -2,6 +2,10 @@
   "schema_version": "1.0",
   "sources": [
     {
+      "source_type": "SEC_DAILY_INDEX",
+      "source_name": "SEC EDGAR Broad Material Filings"
+    },
+    {
       "source_type": "SEC_SUBMISSIONS",
       "source_name": "SEC EDGAR",
       "underlying_symbol": "EXAMPLE",
