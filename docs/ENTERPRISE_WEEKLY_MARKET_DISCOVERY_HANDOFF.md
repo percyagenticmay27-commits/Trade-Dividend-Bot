@@ -664,3 +664,20 @@ income mappings, collect suitability evidence, then generate suitability
 decisions. Suitability remains manual-review only. No eligible classification
 automatically activates a vehicle, places an order, contacts a broker, or moves
 capital.
+### Live suitability audit corrections
+
+The first scheduled five-stage run exposed two audit defects. Research-required
+underlyings without an approved income symbol were incorrectly emitted as
+UNKNOWN profile warnings, and Yahoo provider versions represented dividend
+yield in inconsistent ratio/percentage units. Unmapped rows are now skipped by
+the market refresher without a warning because their EVIDENCE_REQUIRED state is
+already explicit. Evidence artifacts now include a UTC generation timestamp.
+
+Direct-equity yield normalization now prefers annual dividend rate divided by
+price, then uses bounded compatibility handling for provider yield fields. Any
+result outside zero through 25 percent becomes unavailable rather than accepted.
+The suitability gate also applies an income-specific penalty: yield below 1.00
+percent subtracts 35 points and yield below 2.00 percent subtracts 15. This
+prevents AMAT's approximately 0.4 percent yield from receiving a perfect income
+suitability score. These changes remain advisory and cannot activate or trade a
+vehicle.
