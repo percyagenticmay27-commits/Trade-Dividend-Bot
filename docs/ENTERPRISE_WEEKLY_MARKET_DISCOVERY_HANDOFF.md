@@ -247,3 +247,14 @@ repairs the baseline, week count, and prior state automatically.
   newsroom and the exact endpoint still requires live server validation.
   Reuters/Bloomberg/paywalled pages are not scraped and no access controls are
   bypassed.
+
+
+### Professional endpoint review workflow
+
+The scripts/review_professional_discovery_feeds.py tool validates one
+operator-supplied official HTTPS RSS/Atom endpoint, records XML validity, entry
+counts, recent entry counts, and up to five sample headlines in a review
+artifact. It never edits production source configuration and never approves a
+feed. The first candidate endpoint to test manually is Nasdaq's official-domain
+legacy Stocks feed URL. It remains untrusted until the server confirms valid
+current XML and the owner reviews the output.
