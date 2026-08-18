@@ -1,6 +1,6 @@
 import json
 
-from enterprise_discovery_source_collector import collect_broad_sec_filing_evidence, collect_credential_free_observations, collect_youtube_evidence
+from enterprise_discovery_source_collector import collect_broad_sec_filing_evidence, collect_credential_free_observations, collect_professional_feed_evidence, collect_youtube_evidence
 from enterprise_weekly_market_discovery import build_swing_projection, build_weekly_discovery
 
 
@@ -91,6 +91,50 @@ def test_exchange_directory_filters_otc_units_preferred_and_leveraged_products()
     assert warnings == []
     assert [row["underlying_symbol"] for row in evidence] == ["GOOD"]
     assert evidence[0]["exchange"] == "NYSE"
+
+
+def test_reviewed_professional_feed_matches_only_known_explicit_underlyings():
+    rss = b"""<rss><channel>
+      <item><title>SMCI stock rises after earnings</title><link>https://media.example/smci</link><pubDate>Sun, 16 Aug 2026 10:00:00 GMT</pubDate></item>
+      <item><title>UNKNOWN stock is discussed</title><link>https://media.example/unknown</link><pubDate>Sun, 16 Aug 2026 11:00:00 GMT</pubDate></item>
+    </channel></rss>"""
+    rows, warnings = collect_professional_feed_evidence(
+        [{
+            "source_type": "PROFESSIONAL_RSS",
+            "source_name": "Reviewed Financial News",
+            "producer": "Reviewed Financial News",
+            "url": "https://media.example/rss",
+            "authority": "PROFESSIONAL_MEDIA",
+            "credibility_reviewed": True,
+        }],
+        as_of="2026-08-17T01:00:00Z",
+        allowed_symbols=["SMCI"],
+        user_agent="AI-CIO operator@example.com",
+        get_bytes=lambda *_: rss,
+    )
+    assert warnings == []
+    assert [row["underlying_symbol"] for row in rows] == ["SMCI"]
+    assert rows[0]["evidence"]["source_class"] == "PROFESSIONAL_MEDIA"
+    assert rows[0]["evidence"]["platform"] == "PROFESSIONAL_RSS"
+    assert rows[0]["confirmation_eligible"] is True
+
+
+def test_unreviewed_professional_feed_fails_closed():
+    rows, warnings = collect_professional_feed_evidence(
+        [{
+            "source_type": "PROFESSIONAL_RSS",
+            "source_name": "Unreviewed Feed",
+            "url": "https://media.example/rss",
+            "authority": "PROFESSIONAL_MEDIA",
+            "credibility_reviewed": False,
+        }],
+        as_of="2026-08-17T01:00:00Z",
+        allowed_symbols=["SMCI"],
+        user_agent="AI-CIO operator@example.com",
+        get_bytes=lambda *_: b"<rss/>",
+    )
+    assert rows == []
+    assert "not credibility-reviewed" in warnings[0]
 
 
 def test_youtube_search_is_bounded_and_only_matches_known_underlyings():
