@@ -681,3 +681,19 @@ percent subtracts 35 points and yield below 2.00 percent subtracts 15. This
 prevents AMAT's approximately 0.4 percent yield from receiving a perfect income
 suitability score. These changes remain advisory and cannot activate or trade a
 vehicle.
+### Same-week live-source stability
+
+Repeated manual service starts exposed that a previously confirmed nomination
+could disappear when the symbol remained in the SEC research universe but a
+later professional-news response no longer returned its confirming story. The
+lifecycle previously treated any current observation as “seen,” including a
+research-only row, and therefore bypassed normal candidate retention.
+
+Confirmed and merely observed symbols are now tracked separately. A same-week
+research-only refresh is retained in the research evidence pool but cannot erase
+a still-unexpired confirmed nomination. When a candidate is confirmed again in
+the same ISO week, prior and current normalized evidence are merged and
+independent stories are deduplicated rather than replaced. Missing confirmation
+does not update last-confirmed time or extend expiration. Normal retention and
+STALE expiration rules remain authoritative, and no retained nomination gains
+strategy promotion or execution authority.
