@@ -486,3 +486,27 @@ service remains advisory and paper-only; it cannot execute through a broker,
 place orders, move capital, approve Swing mappings, or perform Dividend income
 mapping. Reddit remains disabled following denial. Discovery scheduler
 deployment is complete.
+
+## 2026-08-18 — Dividend-owned income mapping phase begins
+
+The discovery scheduler is complete, so development moved to the strategy-owned
+Dividend mapping boundary. The existing asset registry is not reused for this
+purpose because its frozen initial mappings primarily select leveraged vehicles;
+that is a different strategy concern. A new fail-closed Dividend income mapping
+engine now reads `results/enterprise_dividend_discovery_bucket.json` and a
+reviewed catalog at `configs/dividend_discovery_income_mappings.json`.
+
+The first increment intentionally ships with an empty production mapping catalog.
+Every discovered underlying therefore reports `RESEARCH_REQUIRED` until the
+operator reviews evidence for either a direct dividend-paying equity or an
+income ETF. A mapping requires explicit review, an approved mapping type, HTTPS
+evidence, and `automatic_activation_allowed=false`. The generated advisory
+report is `results/enterprise_dividend_income_mapping.json`. It cannot activate
+a candidate, change the $5,000 Dividend allocation, place an order, execute
+through a broker, or move capital. Swing remains read only and owns its own
+vehicle mappings.
+
+The next gate is server compile/test and an empty-catalog live artifact check.
+Only after that gate will the current eight underlyings be researched against
+issuer/fund holdings and distribution evidence; no mapping will be inferred
+from sector similarity or media attention alone.
