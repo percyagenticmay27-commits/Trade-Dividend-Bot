@@ -41,3 +41,31 @@ def test_professional_feed_review_requires_https_and_operator_identity():
             user_agent="",
             get_bytes=lambda *_: RSS,
         )
+
+def test_professional_feed_timeout_becomes_structured_failed_review():
+    def timeout(*_):
+        raise TimeoutError("read operation timed out")
+    result = review_feed(
+        "Slow Feed",
+        "https://media.example/rss",
+        user_agent="AI-CIO operator@example.com",
+        get_bytes=timeout,
+    )
+    assert result["review_status"] == "REQUEST_FAILED"
+    assert result["xml_feed_valid"] is False
+    assert "TimeoutError" in result["review_error"]
+    assert result["automatically_approved"] is False
+
+
+def test_professional_feed_invalid_xml_becomes_structured_failed_review():
+    result = review_feed(
+        "HTML Endpoint",
+        "https://media.example/rss",
+        user_agent="AI-CIO operator@example.com",
+        get_bytes=lambda *_: b"<html><broken>",
+    )
+    assert result["review_status"] == "INVALID_XML"
+    assert result["xml_feed_valid"] is False
+    assert "ParseError" in result["review_error"]
+    assert result["production_configuration_modified"] is False
+
