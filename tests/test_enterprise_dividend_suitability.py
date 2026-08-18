@@ -62,6 +62,7 @@ def test_missing_reviewed_evidence_fails_closed():
     assert row["suitability_status"] == "EVIDENCE_REQUIRED"
     assert row["paper_review_allowed"] is False
     assert report["evidence_required_count"] == 1
+    assert row["suitability_evidence"] is None
 
 
 def test_reviewed_income_etf_can_become_paper_review_eligible():
@@ -73,6 +74,9 @@ def test_reviewed_income_etf_can_become_paper_review_eligible():
     assert row["suitability_score"] == 100
     assert row["paper_review_allowed"] is True
     assert row["automatic_activation_allowed"] is False
+    assert row["suitability_evidence"]["latest_dollar_volume"] == 5_000_000
+    assert row["suitability_evidence"]["total_return_1y_percent"] == 8.0
+    assert row["suitability_evidence"]["latest_distribution_roc_percent"] == 20.0
 
 
 def test_high_roc_and_negative_return_remain_watch_only():
