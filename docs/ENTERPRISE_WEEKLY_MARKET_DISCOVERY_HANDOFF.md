@@ -71,3 +71,19 @@ Continuation:
 - `configs/enterprise_discovery_sources.example.json` is documentation only.
   Production source entries require real CIKs and official HTTPS feed URLs and
   must be reviewed before use.
+
+## 2026-08-17 — Broad SEC material-filing discovery
+
+- The collector uses the SEC company-ticker association file and recent EDGAR
+  daily master indexes to locate underlying companies with new 8-K, 6-K, or
+  S-1 evidence. It does not crawl every company's submission history.
+- SEC states that its ticker association file is periodically updated and not
+  guaranteed complete. Unmapped CIKs are omitted, never guessed.
+- Obvious ETF/ETN, inverse, leveraged, daily bull/bear, 2x, and 3x product names
+  are excluded from the broad underlying-company association map.
+- A filing is factual, neutral activity evidence. It is not a bullish catalyst
+  and is marked `nomination_eligible=false` until another independent producer
+  confirms the candidate.
+- Evidence-only rows remain in the rich neutral report for research but are
+  excluded from the strict Swing projection. AI CIO cannot create or promote a
+  Swing lifecycle record from a filing alone.
