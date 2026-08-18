@@ -27,6 +27,36 @@
       ]
     },
     {
+      "underlying_symbol": "AMD",
+      "income_symbol": "AMDY",
+      "mapping_type": "INCOME_ETF",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Official fund materials identify AMDY as an options-based weekly-income strategy tied specifically to AMD.",
+      "income_mechanism": "OPTIONS_PREMIUM",
+      "distribution_frequency": "WEEKLY",
+      "risk_disclosures": [
+        "Distributions are not guaranteed and may vary significantly.",
+        "Recent distributions have included substantial estimated return of capital.",
+        "The strategy may cap upside while retaining substantial AMD downside exposure.",
+        "The fund does not invest directly in AMD and is not equivalent to owning AMD."
+      ],
+      "mapping_evidence": [
+        {
+          "evidence_type": "FUND_PROSPECTUS",
+          "source_url": "https://www.yieldmaxetfs.com/amdy/summary-prospectus",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "DISTRIBUTION_HISTORY",
+          "source_url": "https://yieldmaxetfs.com/our-etfs/amdy/",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
       "underlying_symbol": "CAH",
       "income_symbol": "CAH",
       "mapping_type": "DIRECT_DIVIDEND_EQUITY",
@@ -127,6 +157,36 @@
       ]
     },
     {
+      "underlying_symbol": "INTC",
+      "income_symbol": "INYY",
+      "mapping_type": "INCOME_ETF",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Official fund materials identify INYY as an options-based weekly-income strategy tied specifically to INTC.",
+      "income_mechanism": "OPTIONS_PREMIUM",
+      "distribution_frequency": "WEEKLY",
+      "risk_disclosures": [
+        "Distributions are not guaranteed and may vary significantly.",
+        "The latest reported distribution was predominantly estimated return of capital.",
+        "The strategy may cap upside while retaining substantial INTC downside exposure.",
+        "The fund is newly launched and has limited operating history."
+      ],
+      "mapping_evidence": [
+        {
+          "evidence_type": "FUND_STRATEGY",
+          "source_url": "https://yieldmaxetfs.com/our-etfs/inyy/",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "DISTRIBUTION_HISTORY",
+          "source_url": "https://yieldmaxetfs.com/our-etfs/inyy/",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
       "underlying_symbol": "KDP",
       "income_symbol": "KDP",
       "mapping_type": "DIRECT_DIVIDEND_EQUITY",
@@ -178,6 +238,36 @@
         {
           "evidence_type": "ISSUER_DIVIDEND_HISTORY",
           "source_url": "https://investors.parker.com/stock-information/dividend-history",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "underlying_symbol": "SMCI",
+      "income_symbol": "SMCY",
+      "mapping_type": "INCOME_ETF",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Official fund materials identify SMCY as an options-based weekly-income strategy tied specifically to SMCI.",
+      "income_mechanism": "OPTIONS_PREMIUM",
+      "distribution_frequency": "WEEKLY",
+      "risk_disclosures": [
+        "Distributions are not guaranteed and may vary significantly.",
+        "Recent distributions have frequently included substantial estimated return of capital.",
+        "The strategy may cap upside while retaining substantial SMCI downside exposure.",
+        "Issuer concentration, NAV erosion, and significant loss risk require separate entry review."
+      ],
+      "mapping_evidence": [
+        {
+          "evidence_type": "FUND_PROSPECTUS",
+          "source_url": "https://yieldmaxetfs.com/smcy/summary-prospectus",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "DISTRIBUTION_HISTORY",
+          "source_url": "https://yieldmaxetfs.com/our-etfs/smcy/",
           "as_of": "2026-08-18"
         }
       ]
