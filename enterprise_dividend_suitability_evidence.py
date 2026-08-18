@@ -37,7 +37,7 @@ def build_vehicle_evidence(symbol: str, mapping_type: str, profile: Mapping[str,
     first, latest = (rows[0], rows[-1]) if rows else (None, None)
     total_return = (
         round(((latest["close"] / first["close"]) - 1) * 100, 6)
-        if first and latest and len(rows) >= 20 else None
+        if first and latest and len(rows) >= 20 and (latest["date"] - first["date"]).days >= 300 else None
     )
     recent = [row["close"] * row["volume"] for row in rows[-20:]
               if row.get("volume") is not None and row["volume"] > 0]
