@@ -713,3 +713,23 @@ Form 10-Q state that the company does not currently pay a regular dividend. No
 single-stock income ETF or unrelated fund was substituted. This negative review
 preserves the strategy boundary: absence of an evidence-backed income vehicle
 cannot be converted into a mapping, activation, or trade.
+## 2026-08-18 — Dividend manual paper-review queue
+
+- `enterprise_dividend_manual_review_queue.py` consumes only the locked
+  Dividend suitability report. It rejects any input that relaxes paper,
+  advisory, broker, order, capital-movement, or automatic-activation controls.
+- Only a candidate explicitly classified ELIGIBLE_FOR_PAPER_REVIEW with
+  `paper_review_allowed=true` and a reviewed income symbol enters the queue.
+  It is labeled PENDING_MANUAL_REVIEW, not approved.
+- WATCH_ONLY, REJECTED, EVIDENCE_REQUIRED, inconsistent, and unmapped rows are
+  retained separately for audit and cannot enter the actionable review queue.
+- Queue rows preserve the full suitability evidence, score, and reasons. Every
+  row has `operator_decision=null`, `approved_for_paper_entry=false`, and
+  `automatic_activation_allowed=false`.
+- The queue contains a human checklist but no share quantity, allocation,
+  purchase recommendation, broker call, approval mutation, or execution path.
+  A separate future operator-approved workflow would be required to authorize
+  even a paper entry under DIVIDEND-001.
+- The Saturday oneshot now generates the manual queue as its sixth and final
+  stage after suitability. This does not modify the Swing repository or either
+  strategy allocation.
