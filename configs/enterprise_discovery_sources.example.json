@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "sources": [
+    {
+      "source_type": "SEC_SUBMISSIONS",
+      "source_name": "SEC EDGAR",
+      "underlying_symbol": "EXAMPLE",
+      "cik": "0000000000",
+      "sector": "Example Sector",
+      "themes": ["Example Theme"]
+    },
+    {
+      "source_type": "COMPANY_FEED",
+      "source_name": "Example Company Investor Relations",
+      "underlying_symbol": "EXAMPLE",
+      "url": "https://example.com/investor-relations/feed.xml",
+      "sector": "Example Sector",
+      "themes": ["Example Theme"]
+    }
+  ]
+}
