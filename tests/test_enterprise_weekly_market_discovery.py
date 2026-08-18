@@ -95,6 +95,27 @@ def test_same_week_regeneration_preserves_baseline_and_week_count():
     assert row["previous_status"] == "ABSENT"
 
 
+def test_same_week_regeneration_repairs_polluted_first_cycle_baseline():
+    first = build_weekly_discovery([_observation(status="NEW")], generated_at="2026-08-16T01:00:00Z")
+    polluted = dict(first["candidates"][0])
+    polluted["consecutive_weeks_detected"] = 4
+    polluted["previous_status"] = "NEW"
+    polluted["attention_acceleration"] = {
+        "status": "STABLE",
+        "previous_independent_evidence_count": 2,
+    }
+    repaired = build_weekly_discovery(
+        [_observation(status="NEW")],
+        [polluted],
+        generated_at="2026-08-16T05:00:00Z",
+    )
+    row = repaired["candidates"][0]
+    assert row["attention_acceleration"]["status"] == "NEW_BASELINE"
+    assert row["attention_acceleration"]["previous_independent_evidence_count"] is None
+    assert row["consecutive_weeks_detected"] == 1
+    assert row["previous_status"] == "ABSENT"
+
+
 def test_attention_acceleration_compares_independent_weekly_evidence():
     first = build_weekly_discovery([_observation()], generated_at="2026-08-09T01:00:00Z")
     observation = _observation()
