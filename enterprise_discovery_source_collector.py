@@ -6,8 +6,10 @@ CIK or company/IR feed. The collector never guesses a ticker from prose.
 from __future__ import annotations
 
 import json
+import re
 import time
 import urllib.request
+import urllib.parse
 import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -20,6 +22,8 @@ SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
 SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers_exchange.json"
 SEC_FORMS = {"8-K", "10-K", "10-Q", "20-F", "40-F", "6-K", "S-1", "S-3", "DEF 14A"}
 SEC_BROAD_DISCOVERY_FORMS = {"8-K", "6-K", "S-1"}
+YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+YOUTUBE_MAX_RESULTS = 25
 
 
 def _as_date(value: Any) -> date | None:
@@ -40,6 +44,115 @@ def _default_get(url: str, user_agent: str) -> bytes:
     request = urllib.request.Request(url, headers={"User-Agent": user_agent, "Accept": "application/json, application/atom+xml, application/rss+xml, application/xml, text/xml"})
     with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310: URLs are owner-configured HTTPS sources
         return response.read()
+
+
+def _youtube_symbols(text: str, allowed_symbols: Iterable[str]) -> list[str]:
+    """Return only explicit cashtags/tickers from a pre-approved underlying universe."""
+    upper = str(text or "").upper()
+    matches = set()
+    for raw_symbol in allowed_symbols:
+        try:
+            symbol = _symbol(raw_symbol)
+        except ValueError:
+            continue
+        escaped = re.escape(symbol)
+        if re.search(rf"(?<![A-Z0-9])(?:\${escaped}|{escaped})(?![A-Z0-9])", upper):
+            matches.add(symbol)
+    return sorted(matches)
+
+
+def collect_youtube_evidence(
+    sources: Iterable[Mapping[str, Any]],
+    *,
+    as_of: str | datetime,
+    api_key: str,
+    allowed_symbols: Iterable[str],
+    user_agent: str,
+    get_bytes: Callable[[str, str], bytes] = _default_get,
+    quota_budget_units: int = 500,
+) -> tuple[list[dict[str, Any]], list[str]]:
+    """Collect bounded YouTube search evidence without treating popularity as authority.
+
+    A search.list request costs quota, so this adapter has an explicit per-run budget.
+    Symbols are recognized only from the caller's underlying-company universe; the
+    adapter never promotes an unknown token or a leveraged product from video prose.
+    """
+    if not str(api_key).strip():
+        return [], ["YouTube Data API key is unavailable; YouTube evidence was not collected."]
+    now = datetime.fromisoformat(str(as_of).replace("Z", "+00:00")) if not isinstance(as_of, datetime) else as_of
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    published_after = now - timedelta(days=7)
+    remaining = max(0, int(quota_budget_units))
+    rows: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for source in sources:
+        if remaining < 100:
+            warnings.append("YouTube quota budget reached; remaining configured searches were skipped.")
+            break
+        query = str(source.get("query") or "").strip()
+        channel_id = str(source.get("channel_id") or "").strip()
+        if not query and not channel_id:
+            warnings.append(f"{source.get('source_name') or 'YouTube source'}: query or channel_id is required")
+            continue
+        params = {
+            "part": "snippet",
+            "type": "video",
+            "order": "date",
+            "maxResults": str(min(YOUTUBE_MAX_RESULTS, max(1, int(source.get("max_results", 10))))),
+            "publishedAfter": published_after.astimezone(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "key": api_key,
+        }
+        if query:
+            params["q"] = query
+        if channel_id:
+            params["channelId"] = channel_id
+        try:
+            payload = json.loads(get_bytes(f"{YOUTUBE_SEARCH_URL}?{urllib.parse.urlencode(params)}", user_agent).decode("utf-8"))
+            remaining -= 100
+            for item in payload.get("items", []) if isinstance(payload, Mapping) else []:
+                snippet = item.get("snippet") if isinstance(item, Mapping) else None
+                if not isinstance(snippet, Mapping):
+                    continue
+                video_id = ((item.get("id") or {}).get("videoId")) if isinstance(item.get("id"), Mapping) else None
+                published = _as_date(snippet.get("publishedAt"))
+                if not video_id or not published:
+                    continue
+                title = str(snippet.get("title") or "")
+                description = str(snippet.get("description") or "")
+                producer = str(snippet.get("channelTitle") or source.get("source_name") or "").strip()
+                actual_channel_id = str(snippet.get("channelId") or "").strip()
+                configured_channel_id = channel_id or None
+                if configured_channel_id and actual_channel_id != configured_channel_id:
+                    continue
+                authority = str(source.get("authority") or "DISCOVERY_ONLY").upper()
+                reviewed = bool(source.get("credibility_reviewed", False))
+                for symbol in _youtube_symbols(f"{title}\n{description}", allowed_symbols):
+                    rows.append({
+                        "underlying_symbol": symbol,
+                        "evidence": {
+                            "source": producer,
+                            "source_class": "PROFESSIONAL_MEDIA" if authority == "PROFESSIONAL_MEDIA" else "CREATOR_INTELLIGENCE",
+                            "producer": producer,
+                            "mentioned_on": published.isoformat(),
+                            "story_id": f"YOUTUBE:{video_id}",
+                            "source_url": f"https://www.youtube.com/watch?v={video_id}",
+                            "title": title,
+                            "stance": "NEUTRAL",
+                            "themes": list(source.get("themes") or []),
+                            "earnings_growth_related": bool(source.get("earnings_growth_related", False)),
+                            "analyst_upgrade_related": bool(source.get("analyst_upgrade_related", False)),
+                            "platform": "YOUTUBE",
+                            "channel_id": actual_channel_id or None,
+                            "credibility_reviewed": reviewed,
+                            "authority": authority,
+                        },
+                        "confirmation_eligible": reviewed and authority in {"REVIEWED_CREATOR", "PROFESSIONAL_MEDIA"},
+                    })
+        except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as exc:
+            # Never include the request URL because it contains the API key.
+            warnings.append(f"{source.get('source_name') or 'YouTube source'}: YouTube request failed: {exc}")
+    return rows, warnings
 
 
 def _recent_sec_evidence(payload: Mapping[str, Any], source: Mapping[str, Any], cutoff: date) -> list[dict[str, Any]]:
@@ -216,6 +329,7 @@ def collect_credential_free_observations(
     as_of: str | datetime,
     user_agent: str,
     market_snapshot: Mapping[str, Any] | None = None,
+    youtube_api_key: str = "",
     get_bytes: Callable[[str, str], bytes] = _default_get,
     minimum_request_interval: float = 0.11,
 ) -> dict[str, Any]:
@@ -229,7 +343,10 @@ def collect_credential_free_observations(
     by_symbol: dict[str, dict[str, Any]] = {}
     warnings: list[str] = []
     last_request = 0.0
-    for source in sources:
+    source_rows = list(sources)
+    youtube_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() == "YOUTUBE_SEARCH"]
+    non_youtube_sources = [row for row in source_rows if str(row.get("source_type") or "").upper() != "YOUTUBE_SEARCH"]
+    for source in non_youtube_sources:
         try:
             kind = str(source.get("source_type") or "").upper()
             if kind == "SEC_DAILY_INDEX":
@@ -288,6 +405,31 @@ def collect_credential_free_observations(
         except (OSError, UnicodeError, ValueError, json.JSONDecodeError, ET.ParseError) as exc:
             warnings.append(f"{source.get('source_name') or source.get('underlying_symbol') or 'SOURCE'}: {exc}")
 
+    youtube_rows, youtube_warnings = collect_youtube_evidence(
+        youtube_sources,
+        as_of=now,
+        api_key=youtube_api_key,
+        allowed_symbols=by_symbol,
+        user_agent=user_agent,
+        get_bytes=get_bytes,
+    ) if youtube_sources else ([], [])
+    warnings.extend(youtube_warnings)
+    for item in youtube_rows:
+        symbol = item["underlying_symbol"]
+        row = by_symbol.setdefault(symbol, {
+            "underlying_symbol": symbol,
+            "discovery_status": "NEW",
+            "themes": set(),
+            "sector": None,
+            "source_evidence": [],
+            "nomination_eligible": False,
+            "evidence_only_reason": "YouTube attention alone is discovery evidence, not a strategy nomination.",
+        })
+        row["source_evidence"].append(item["evidence"])
+        row["themes"].update(str(value).strip() for value in item["evidence"].get("themes", []) if str(value).strip())
+        if item.get("confirmation_eligible"):
+            row.setdefault("confirmation_producers", set()).add(str(item["evidence"].get("producer") or "").lower())
+
     market_records = {}
     if isinstance(market_snapshot, Mapping):
         for record in market_snapshot.get("records", []):
@@ -299,7 +441,12 @@ def collect_credential_free_observations(
         market = market_records.get(symbol)
         row["market_evidence"] = market if market is not None else None
         producers = {str(item.get("producer") or item.get("source") or "").lower() for item in row["source_evidence"]}
-        if row.get("nomination_eligible") is False and len(producers) >= 2:
+        confirmation_producers = row.pop("confirmation_producers", set())
+        non_youtube_producers = {
+            str(item.get("producer") or item.get("source") or "").lower()
+            for item in row["source_evidence"] if item.get("platform") != "YOUTUBE"
+        }
+        if row.get("nomination_eligible") is False and non_youtube_producers and confirmation_producers:
             row["nomination_eligible"] = True
             row.pop("evidence_only_reason", None)
         if market is None:
