@@ -1,6 +1,6 @@
 import json
 
-from enterprise_discovery_source_collector import collect_broad_sec_filing_evidence, collect_credential_free_observations, collect_professional_feed_evidence, collect_youtube_evidence
+from enterprise_discovery_source_collector import collect_broad_sec_filing_evidence, collect_credential_free_observations, collect_professional_feed_evidence, collect_youtube_evidence, fetch_professional_url
 from enterprise_weekly_market_discovery import build_swing_projection, build_weekly_discovery
 
 
@@ -117,6 +117,30 @@ def test_reviewed_professional_feed_matches_only_known_explicit_underlyings():
     assert rows[0]["evidence"]["source_class"] == "PROFESSIONAL_MEDIA"
     assert rows[0]["evidence"]["platform"] == "PROFESSIONAL_RSS"
     assert rows[0]["confirmation_eligible"] is True
+
+
+def test_professional_feed_uses_argument_safe_curl_fallback(monkeypatch):
+    calls = []
+    class Completed:
+        returncode = 0
+        stdout = b"<rss><channel/></rss>"
+        stderr = b""
+    def fake_run(arguments, **kwargs):
+        calls.append((arguments, kwargs))
+        return Completed()
+    monkeypatch.setattr("enterprise_discovery_source_collector.subprocess.run", fake_run)
+    payload = fetch_professional_url(
+        "https://www.nasdaq.com/feed/rssoutbound?category=Stock-Market-News",
+        "AI-CIO operator@example.com",
+        get_bytes=lambda *_: (_ for _ in ()).throw(TimeoutError("urllib stalled")),
+        attempts=1,
+    )
+    assert payload == b"<rss><channel/></rss>"
+    arguments, kwargs = calls[0]
+    assert arguments[0] == "curl"
+    assert "--max-time" in arguments
+    assert kwargs["check"] is False
+    assert isinstance(arguments, list)
 
 
 def test_professional_feed_retries_one_transient_timeout(monkeypatch):
