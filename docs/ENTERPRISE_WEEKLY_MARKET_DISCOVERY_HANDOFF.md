@@ -612,3 +612,29 @@ The first gate is server compile/test followed by generation against the empty
 catalog. Expected output is zero eligible, zero watch-only, zero rejected, and
 all current candidates EVIDENCE_REQUIRED. Only after that validation will current
 vehicle metrics be populated from authoritative issuer, fund, and market records.
+
+
+### Suitability evidence refresh boundary
+
+Suitability evidence is split into reviewed static profiles and changing market
+observations. `configs/dividend_suitability_profiles.json` contains reviewed
+issuer/fund facts and HTTPS sources for all cataloged income vehicles. The live
+collector reads the generated mapping report, retrieves one year of read-only
+price history and quotes through the existing cached MarketDataService, and
+writes `inputs/dividend_suitability_evidence.json`.
+
+The refresh calculates adjusted one-year return when sufficient history exists
+and recent average dollar volume from recorded sessions. Direct equities also
+receive the provider dividend yield plus the reviewed issuer dividend-cut flag.
+Income ETFs receive reviewed expense ratio, latest distribution ROC estimate,
+and fund age calculated from the official inception date. Provider failures,
+insufficient history, absent yield, or missing profiles remain unavailable and
+subsequently produce EVIDENCE_REQUIRED; no missing metric becomes zero.
+
+Initial reviewed ETF facts are AMDY: 1.00% expense and 91.79% latest estimated
+ROC, INYY: 0.99% expense and 97.49% latest estimated ROC with a 2026-06-02
+inception, and SMCY: 1.01% expense and 97.12% latest estimated ROC. These values
+are evidence inputs, not endorsements. They are expected to trigger conservative
+penalties, especially for short history and return of capital. Scheduler
+integration remains deferred until a controlled server refresh and classification
+inspection pass.
