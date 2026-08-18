@@ -259,3 +259,10 @@ def test_basic_sec_date_is_normalized_for_strategy_consumer_contract():
     }], generated_at="2026-08-18T01:00:00Z")
     assert report["candidates"][0]["source_evidence"][0]["mentioned_on"] == "2026-08-11"
     assert build_swing_projection(report)["candidates"][0]["evidence_sources"][0]["mentioned_on"] == "2026-08-11"
+
+
+def test_company_name_is_preserved_in_rich_weekly_report():
+    observation = _observation("AMD", status="NEW")
+    observation["company_name"] = "Advanced Micro Devices, Inc."
+    report = build_weekly_discovery([observation], generated_at="2026-08-18T16:00:00Z")
+    assert report["candidates"][0]["company_name"] == "Advanced Micro Devices, Inc."
