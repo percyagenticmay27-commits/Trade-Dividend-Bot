@@ -44,6 +44,50 @@ def test_story_syndication_is_one_independent_confirmation():
     assert report["candidates"][0]["independent_source_count"] == 2
 
 
+def test_same_headline_routed_through_multiple_urls_counts_once():
+    observation = {
+        "underlying_symbol": "KDP",
+        "discovery_status": "NEW",
+        "source_evidence": [
+            {
+                "source": "SEC EDGAR Daily Index",
+                "source_class": "PRIMARY_COMPANY",
+                "mentioned_on": "2026-08-12",
+                "story_id": "SEC:kdp-8k",
+                "title": "8-K",
+            },
+            {
+                "source": "The Globe and Mail",
+                "source_class": "PROFESSIONAL_MEDIA",
+                "producer": "The Globe and Mail",
+                "mentioned_on": "2026-08-18",
+                "story_id": "https://example.test/stocks/KO/pressreleases/3907758",
+                "source_url": "https://example.test/stocks/KO/pressreleases/3907758",
+                "title": "The Zacks Analyst Blog Highlights PepsiCo, Keurig Dr Pepper and Coca-Cola",
+            },
+            {
+                "source": "The Globe and Mail",
+                "source_class": "PROFESSIONAL_MEDIA",
+                "producer": "The Globe and Mail",
+                "mentioned_on": "2026-08-18",
+                "story_id": "https://example.test/stocks/PEP/pressreleases/3907758",
+                "source_url": "https://example.test/stocks/PEP/pressreleases/3907758",
+                "title": "The Zacks Analyst Blog Highlights PepsiCo, Keurig Dr Pepper and Coca-Cola",
+            },
+        ],
+    }
+    report = build_weekly_discovery([observation], generated_at="2026-08-18T15:00:00Z")
+    row = report["candidates"][0]
+    assert row["independent_source_count"] == 2
+    assert row["source_confluence"]["level"] == "CONFIRMED"
+    assert len(row["source_evidence"]) == 2
+    professional = next(
+        item for item in row["source_evidence"] if item["source_class"] == "PROFESSIONAL_MEDIA"
+    )
+    assert professional["title"].startswith("The Zacks Analyst Blog")
+    assert professional["source_url"].startswith("https://example.test/")
+
+
 def test_source_confluence_counts_independent_stories_not_syndicated_repeats():
     report = build_weekly_discovery([_observation()], generated_at="2026-08-16T01:00:00Z")
     row = report["candidates"][0]
