@@ -265,3 +265,11 @@ It remains unapproved and absent from production configuration. Network
 timeouts are now recorded as REQUEST_FAILED review artifacts, and malformed
 responses as INVALID_XML, without a traceback or any automatic fallback to page
 scraping.
+
+
+A direct curl diagnostic subsequently confirmed HTTP 200,
+application/rss+xml, and a complete Nasdaq response in approximately three
+seconds. The earlier failure was transient. Professional feed review and
+collection now use at most three attempts with bounded linear backoff and a
+45-second per-attempt timeout. Exhaustion remains a structured REQUEST_FAILED
+result; no scraping fallback or silent evidence fabrication is permitted.
