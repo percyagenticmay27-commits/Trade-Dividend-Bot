@@ -393,3 +393,20 @@ it cannot independently confirm fundamentals, nominate a symbol, train a model,
 profile users, create trades, or mutate either strategy. The owner must retain
 the approval response, and credentials must be stored only in the protected
 server environment file after the approved authentication method is known.
+
+
+## 2026-08-18 — Scheduler production-readiness gate
+
+The source collectors, corrected professional-news identity gate, manual weekly
+generation, strict Swing consumer, Dividend projection, and paper-safety locks
+have passed controlled validation. Before installation, dedicated regression
+tests now lock the Saturday 8:00 PM America/Chicago schedule, persistent missed
+run behavior, collector-before-generator execution order, protected environment
+file, tradebot service identity, and absence of any Trade-Swing-Bot path.
+
+The oneshot service now explicitly wants network-online, uses a restrictive
+0027 file-creation mask, and has a 15-minute total start timeout so a stalled
+external source cannot hang indefinitely. These changes do not install or enable
+the unit. Deployment remains staged: run the focused scheduler/discovery suite,
+copy units, run systemd-analyze verification, manually start the oneshot service,
+inspect artifacts and journal output, and only then enable the timer.
