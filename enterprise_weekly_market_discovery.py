@@ -200,6 +200,7 @@ def build_weekly_discovery(
     candidates: list[dict[str, Any]] = []
     research_evidence_pool: list[dict[str, Any]] = []
     seen: set[str] = set()
+    confirmed_seen: set[str] = set()
     for raw in observations:
         symbol = _symbol(raw.get("underlying_symbol"))
         if symbol in seen:
@@ -218,7 +219,11 @@ def build_weekly_discovery(
             else int(prior.get("consecutive_weeks_detected", 1))
             if same_cycle else int(prior.get("consecutive_weeks_detected", 0)) + 1
         ) if prior else 1
-        evidence = _normalize_evidence(raw.get("source_evidence") or raw.get("evidence_sources") or [])
+        current_evidence = list(raw.get("source_evidence") or raw.get("evidence_sources") or [])
+        if prior and same_cycle:
+            evidence = _normalize_evidence([*list(prior.get("source_evidence") or []), *current_evidence])
+        else:
+            evidence = _normalize_evidence(current_evidence)
         evidence_analysis = _evidence_analysis(evidence)
         independent = evidence_analysis["independent_source_count"]
         attention_prior = None if same_cycle and first_seen_this_cycle else prior
@@ -254,12 +259,13 @@ def build_weekly_discovery(
         }
         if candidate["nomination_eligible"]:
             candidates.append(candidate)
+            confirmed_seen.add(symbol)
         else:
             candidate["record_type"] = "RESEARCH_EVIDENCE_ONLY"
             research_evidence_pool.append(candidate)
     expired_candidates: list[dict[str, Any]] = []
     for symbol, prior in previous.items():
-        if symbol in seen:
+        if symbol in confirmed_seen:
             continue
         expires_at = prior.get("expires_at")
         if expires_at and now <= _utc(expires_at):
