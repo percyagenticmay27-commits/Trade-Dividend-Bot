@@ -540,3 +540,23 @@ explicitly reinstalled and systemd reloaded after server tests. The timer must
 not be disabled or recreated. A manual oneshot validation must confirm the third
 stage reports four reviewed mappings and four research-required candidates
 before the updated installed unit is accepted.
+
+
+### Current-candidate Dividend mapping review and company identity preservation
+
+The next unattended run produced AMD, CAH, CTVA, DUK, EQR, INTC, LUV, PH,
+and SMCI. Primary issuer review added six advisory direct-dividend mappings:
+CAH, CTVA, DUK, EQR, LUV, and PH. Existing reviewed AMAT, HD, KDP, and WNC
+mappings remain in the catalog for future cycles. Every mapping remains manual-review
+only with automatic activation disabled.
+
+AMD remains RESEARCH_REQUIRED because AMD's issuer FAQ explicitly states that it
+does not currently pay a cash dividend. INTC and SMCI remain RESEARCH_REQUIRED
+because sufficient current issuer evidence for an active dividend was not established.
+No ETF substitute was inferred for any of these symbols; ETF mapping still requires
+separate official fund-holdings and distribution evidence.
+
+The live inspection also exposed a reporting-only identity gap: collected SEC company
+names were not copied into the rich weekly candidate. Weekly normalization now
+preserves company_name and a regression test locks that behavior. This does not alter
+nomination eligibility, confluence, lifecycle status, mappings, or any execution lock.
