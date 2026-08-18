@@ -113,6 +113,10 @@ Continuation:
   `UNVERIFIED` human-review artifact. It never edits the production catalog or
   automatically approves a search result, protecting against similarly named
   and impersonating channels.
+- The review tool's `--enrich-existing` mode uses one batched channels lookup
+  to attach the official handle, creation date, country, subscriber count, and
+  video count. Metadata improves human identity review but never changes the
+  `UNVERIFIED` gate or production configuration.
 
 ### Direct script execution correction
 
