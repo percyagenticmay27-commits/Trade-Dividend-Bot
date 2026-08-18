@@ -510,3 +510,19 @@ The next gate is server compile/test and an empty-catalog live artifact check.
 Only after that gate will the current eight underlyings be researched against
 issuer/fund holdings and distribution evidence; no mapping will be inferred
 from sector similarity or media attention alone.
+
+### First reviewed Dividend mappings
+
+The empty-catalog server gate passed 23 tests and generated eight fail-closed
+`RESEARCH_REQUIRED` rows with every execution control locked. Primary issuer
+research then supported four direct dividend-equity mappings: AMAT, HD, KDP,
+and WNC. The catalog records issuer dividend-history or dividend-declaration
+URLs and keeps `automatic_activation_allowed=false` for every row.
+
+INTC, SMCI, XXII, and ZBAO remain `RESEARCH_REQUIRED`; absence of sufficient
+reviewed income evidence is not converted into a mapping. These first mappings
+do not claim that a dividend-focused ETF has been validated. Any later
+underlying-to-income-ETF substitution requires separate official fund-holdings
+and fund-distribution evidence and must remain Dividend-owned and manually
+reviewed. Direct mapping likewise remains advisory and does not authorize a
+watchlist promotion, paper purchase, allocation change, or live action.
