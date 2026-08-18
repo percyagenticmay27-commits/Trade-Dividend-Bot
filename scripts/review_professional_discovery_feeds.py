@@ -40,8 +40,36 @@ def review_feed(
         raise ValueError("AI_CIO_DISCOVERY_USER_AGENT is required")
     if not str(url).lower().startswith("https://"):
         raise ValueError("professional feed review URL must use HTTPS")
-    payload = get_bytes(url, user_agent)
-    root = ET.fromstring(payload)
+    try:
+        payload = get_bytes(url, user_agent)
+    except OSError as exc:
+        return {
+            "source_name": source_name,
+            "url": url,
+            "review_status": "REQUEST_FAILED",
+            "xml_feed_valid": False,
+            "entry_count": 0,
+            "recent_entry_count": 0,
+            "sample_recent_entries": [],
+            "review_error": f"{type(exc).__name__}: {exc}",
+            "automatically_approved": False,
+            "production_configuration_modified": False,
+        }
+    try:
+        root = ET.fromstring(payload)
+    except ET.ParseError as exc:
+        return {
+            "source_name": source_name,
+            "url": url,
+            "review_status": "INVALID_XML",
+            "xml_feed_valid": False,
+            "entry_count": 0,
+            "recent_entry_count": 0,
+            "sample_recent_entries": [],
+            "review_error": f"ParseError: {exc}",
+            "automatically_approved": False,
+            "production_configuration_modified": False,
+        }
     entries = list(root.findall(".//item")) + list(root.findall(".//{*}entry"))
     cutoff = (today or date.today()) - timedelta(days=7)
     recent = _recent_feed_evidence(payload, {
