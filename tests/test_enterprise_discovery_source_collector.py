@@ -1,6 +1,6 @@
 import json
 
-from enterprise_discovery_source_collector import collect_broad_sec_filing_evidence, collect_credential_free_observations
+from enterprise_discovery_source_collector import collect_broad_sec_filing_evidence, collect_credential_free_observations, collect_youtube_evidence
 from enterprise_weekly_market_discovery import build_swing_projection, build_weekly_discovery
 
 
@@ -91,3 +91,59 @@ def test_exchange_directory_filters_otc_units_preferred_and_leveraged_products()
     assert warnings == []
     assert [row["underlying_symbol"] for row in evidence] == ["GOOD"]
     assert evidence[0]["exchange"] == "NYSE"
+
+
+def test_youtube_search_is_bounded_and_only_matches_known_underlyings():
+    payload = {"items": [
+        {"id": {"videoId": "v1"}, "snippet": {"publishedAt": "2026-08-16T12:00:00Z", "channelId": "channel-1", "channelTitle": "Reviewed Analyst", "title": "$NVDA earnings and NVDX trading", "description": "NVDA demand review"}},
+        {"id": {"videoId": "v2"}, "snippet": {"publishedAt": "2026-08-16T13:00:00Z", "channelId": "wrong-channel", "channelTitle": "Imposter", "title": "AMD", "description": ""}},
+    ]}
+    requested = []
+    rows, warnings = collect_youtube_evidence(
+        [{"source_type": "YOUTUBE_SEARCH", "source_name": "Reviewed Analyst", "channel_id": "channel-1", "query": "weekly stocks", "max_results": 50, "authority": "REVIEWED_CREATOR", "credibility_reviewed": True}],
+        as_of="2026-08-17T01:00:00Z", api_key="secret-key", allowed_symbols=["NVDA", "AMD"],
+        user_agent="AI-CIO operator@example.com", get_bytes=lambda url, _: requested.append(url) or json.dumps(payload).encode(),
+    )
+    assert warnings == []
+    assert [row["underlying_symbol"] for row in rows] == ["NVDA"]
+    assert rows[0]["confirmation_eligible"] is True
+    assert "maxResults=25" in requested[0]
+
+
+def test_missing_youtube_key_degrades_without_fabricating_evidence():
+    rows, warnings = collect_youtube_evidence(
+        [{"source_type": "YOUTUBE_SEARCH", "query": "stocks"}],
+        as_of="2026-08-17T01:00:00Z", api_key="", allowed_symbols=["NVDA"],
+        user_agent="AI-CIO operator@example.com",
+    )
+    assert rows == []
+    assert "unavailable" in warnings[0]
+
+
+def test_reviewed_youtube_can_confirm_sec_lead_but_unreviewed_source_cannot():
+    tickers = {"fields": ["cik", "name", "ticker", "exchange"], "data": [[1045810, "NVIDIA CORP", "NVDA", "Nasdaq"]]}
+    index = b"Description\n-----\n1045810|NVIDIA CORP|8-K|2026-08-14|edgar/data/1045810/a.txt\n"
+    youtube = {"items": [{"id": {"videoId": "v1"}, "snippet": {"publishedAt": "2026-08-16T12:00:00Z", "channelId": "channel-1", "channelTitle": "Reviewed Analyst", "title": "NVDA weekly review", "description": ""}}]}
+    def get_bytes(url, _user_agent):
+        if "company_tickers" in url:
+            return json.dumps(tickers).encode()
+        if "youtube" in url:
+            return json.dumps(youtube).encode()
+        return index
+    sources = [
+        {"source_type": "SEC_DAILY_INDEX", "source_name": "SEC Broad", "index_dates": ["2026-08-14"]},
+        {"source_type": "YOUTUBE_SEARCH", "source_name": "Reviewed Analyst", "channel_id": "channel-1", "authority": "REVIEWED_CREATOR", "credibility_reviewed": True},
+    ]
+    result = collect_credential_free_observations(
+        sources, as_of="2026-08-17T01:00:00Z", user_agent="AI-CIO operator@example.com",
+        youtube_api_key="secret-key", get_bytes=get_bytes, minimum_request_interval=0,
+    )
+    assert result["observations"][0]["nomination_eligible"] is True
+    assert {item["source_class"] for item in result["observations"][0]["source_evidence"]} == {"PRIMARY_COMPANY", "CREATOR_INTELLIGENCE"}
+
+    sources[1]["credibility_reviewed"] = False
+    unreviewed = collect_credential_free_observations(
+        sources, as_of="2026-08-17T01:00:00Z", user_agent="AI-CIO operator@example.com",
+        youtube_api_key="secret-key", get_bytes=get_bytes, minimum_request_interval=0,
+    )
+    assert unreviewed["observations"][0]["nomination_eligible"] is False
