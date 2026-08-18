@@ -526,3 +526,17 @@ underlying-to-income-ETF substitution requires separate official fund-holdings
 and fund-distribution evidence and must remain Dividend-owned and manually
 reviewed. Direct mapping likewise remains advisory and does not authorize a
 watchlist promotion, paper purchase, allocation change, or live action.
+
+### Weekly mapping orchestration
+
+The installed weekly workflow is extended in repository source to run the
+Dividend income mapping generator only after source collection and weekly
+candidate generation succeed. The enforced oneshot order is collector, shared
+discovery generator, then Dividend-owned income mapping. A regression test
+locks all three paths and confirms the unit contains no Trade-Swing-Bot write.
+
+Because the production timer is already enabled, the updated unit file must be
+explicitly reinstalled and systemd reloaded after server tests. The timer must
+not be disabled or recreated. A manual oneshot validation must confirm the third
+stage reports four reviewed mappings and four research-required candidates
+before the updated installed unit is accepted.
