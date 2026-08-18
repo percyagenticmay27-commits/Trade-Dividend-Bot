@@ -4,6 +4,51 @@
     {
       "source_type": "SEC_DAILY_INDEX",
       "source_name": "SEC EDGAR Broad Material Filings"
+    },
+    {
+      "source_type": "YOUTUBE_SEARCH",
+      "source_name": "Let's Talk Money! with Joseph Hogue, CFA",
+      "channel_id": "UCbKdotYtcY9SxoU8CYAXdvg",
+      "query": "stocks market earnings",
+      "max_results": 10,
+      "authority": "REVIEWED_CREATOR",
+      "credibility_reviewed": true
+    },
+    {
+      "source_type": "YOUTUBE_SEARCH",
+      "source_name": "Earn Your Leisure",
+      "channel_id": "UCRVsqvXIdgyPVS-a6fGa1lA",
+      "query": "stocks market earnings",
+      "max_results": 10,
+      "authority": "REVIEWED_CREATOR",
+      "credibility_reviewed": true
+    },
+    {
+      "source_type": "YOUTUBE_SEARCH",
+      "source_name": "BWB - Business With Brian",
+      "channel_id": "UCyqlbzLoYtpqDXwRI9Yh5LA",
+      "query": "stocks market earnings",
+      "max_results": 10,
+      "authority": "REVIEWED_CREATOR",
+      "credibility_reviewed": true
+    },
+    {
+      "source_type": "YOUTUBE_SEARCH",
+      "source_name": "CBS News",
+      "channel_id": "UC8p1vwvWtl6T73JiExfWs1g",
+      "query": "stocks market earnings business",
+      "max_results": 10,
+      "authority": "PROFESSIONAL_MEDIA",
+      "credibility_reviewed": true
+    },
+    {
+      "source_type": "YOUTUBE_SEARCH",
+      "source_name": "Ticker Symbol: YOU",
+      "channel_id": "UC7kCeZ53sli_9XwuQeFxLqw",
+      "query": "stocks market earnings",
+      "max_results": 10,
+      "authority": "REVIEWED_CREATOR",
+      "credibility_reviewed": true
     }
   ]
 }
