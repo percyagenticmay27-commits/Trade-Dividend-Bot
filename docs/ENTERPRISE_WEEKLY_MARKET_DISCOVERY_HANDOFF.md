@@ -108,3 +108,13 @@ exchange association file, accepts only Nasdaq, NYSE, and NYSE American rows,
 rejects obvious units/warrants/preferred products, and deterministically chooses
 one common underlying ticker per CIK. This is discovery-pool hygiene only; all
 broad SEC observations remain ineligible until independently confirmed.
+
+### Research pool versus active nominations
+
+The live filtered run produced 1,528 valid exchange-listed company leads. These
+are still too broad to be strategy nominations. The rich weekly artifact now
+stores `nomination_eligible=false` rows under `research_evidence_pool`, not
+`candidates`. Both Swing and Dividend projections consume only active confirmed
+`candidates`. Research-only rows remain append-only historical evidence and may
+become eligible in a later cycle only when an independent producer supplies
+confirming evidence; counts never promote rows.
