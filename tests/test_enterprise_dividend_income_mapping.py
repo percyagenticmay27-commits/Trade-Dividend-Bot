@@ -141,9 +141,14 @@ def test_production_catalog_contains_only_reviewed_direct_dividend_mappings():
     catalog_path = Path("configs/dividend_discovery_income_mappings.json")
     payload = json.loads(catalog_path.read_text(encoding="utf-8"))
     mappings = validate_mapping_catalog(payload)
-    assert set(mappings) == {"AMAT", "CAH", "CTVA", "DUK", "EQR", "HD", "KDP", "LUV", "PH", "WNC"}
-    assert all(row["income_symbol"] == symbol for symbol, row in mappings.items())
-    assert all(row["mapping_type"] == "DIRECT_DIVIDEND_EQUITY" for row in mappings.values())
+    direct = {"AMAT", "CAH", "CTVA", "DUK", "EQR", "HD", "KDP", "LUV", "PH", "WNC"}
+    income_etfs = {"AMD": "AMDY", "INTC": "INYY", "SMCI": "SMCY"}
+    assert set(mappings) == direct | set(income_etfs)
+    assert all(mappings[symbol]["income_symbol"] == symbol for symbol in direct)
+    assert all(mappings[symbol]["mapping_type"] == "DIRECT_DIVIDEND_EQUITY" for symbol in direct)
+    assert all(mappings[symbol]["income_symbol"] == income for symbol, income in income_etfs.items())
+    assert all(mappings[symbol]["mapping_type"] == "INCOME_ETF" for symbol in income_etfs)
+    assert all(mappings[symbol]["risk_disclosures"] for symbol in income_etfs)
     assert all(row["automatic_activation_allowed"] is False for row in mappings.values())
     assert all(row["mapping_evidence"] for row in mappings.values())
 
