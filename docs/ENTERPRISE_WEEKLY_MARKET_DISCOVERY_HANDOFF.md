@@ -258,3 +258,10 @@ artifact. It never edits production source configuration and never approves a
 feed. The first candidate endpoint to test manually is Nasdaq's official-domain
 legacy Stocks feed URL. It remains untrusted until the server confirms valid
 current XML and the owner reviews the output.
+
+
+The first DigitalOcean review of the legacy Nasdaq Stocks endpoint timed out.
+It remains unapproved and absent from production configuration. Network
+timeouts are now recorded as REQUEST_FAILED review artifacts, and malformed
+responses as INVALID_XML, without a traceback or any automatic fallback to page
+scraping.
