@@ -49,6 +49,13 @@
       "max_results": 10,
       "authority": "REVIEWED_CREATOR",
       "credibility_reviewed": true
+    },
+    {
+      "source_type": "ALPHA_VANTAGE_NEWS",
+      "source_name": "Alpha Vantage News & Sentiment",
+      "authority": "PROFESSIONAL_MEDIA",
+      "credibility_reviewed": true,
+      "max_results": 200
     }
   ]
 }
