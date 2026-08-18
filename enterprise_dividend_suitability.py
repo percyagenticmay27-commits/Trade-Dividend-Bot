@@ -147,6 +147,13 @@ def _assess(mapping: Mapping[str, Any], evidence: Mapping[str, Any] | None, gene
             score -= 10
             reasons.append("Fund has less than one year of operating history.")
     else:
+        dividend_yield = _number(evidence, "forward_dividend_yield_percent")
+        if dividend_yield is not None and dividend_yield < 1.0:
+            score -= 35
+            reasons.append("Forward dividend yield is below 1.00%.")
+        elif dividend_yield is not None and dividend_yield < 2.0:
+            score -= 15
+            reasons.append("Forward dividend yield is below 2.00%.")
         if bool(evidence.get("dividend_cut_last_12m")):
             score -= 50
             reasons.append("A dividend cut occurred within the last 12 months.")
