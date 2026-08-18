@@ -340,3 +340,21 @@ Therapeutics while rejecting loose family, fund, portfolio, and peer-company
 associations. Nonmatching provider associations are omitted rather than allowed
 to inflate source confluence. No strategy bucket is published until the
 corrected focused suite and a second controlled live collection pass.
+
+
+### Corrected professional-news live validation
+
+The corrected focused suite passed 47 tests. A second controlled live collection
+completed with 1,528 observations, zero warnings, seven active nominations, and
+1,521 research-only observations. The identity gate retained CSCO, DRMA, GM,
+KT, LHX, SMCI, and T. Each professional headline explicitly names its ticker or
+SEC company identity. Previously loose HD, NEE, NVDA, and STT associations were
+excluded and cannot inflate confluence or enter either strategy bucket.
+
+The retained evidence includes neutral, somewhat-bullish, and
+somewhat-bearish provider classifications. In particular, LHX bearish evidence
+and DRMA warrant-listing evidence remain visible rather than being discarded to
+create a bullish-only bucket. The AI CIO does not reinterpret those facts or
+manufacture a thesis. The input is now approved for manual bucket generation,
+but the production Saturday timer remains uninstalled and disabled until final
+strategy-contract inspection succeeds.
