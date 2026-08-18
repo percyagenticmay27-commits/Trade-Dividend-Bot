@@ -282,3 +282,10 @@ use an argument-list curl fallback with explicit connect/total timeouts and
 content Accept headers. No shell is invoked, the URL must remain HTTPS, and a
 nonzero response still fails closed. This transport exception applies only to
 professional feed retrieval, not arbitrary discovery sources.
+
+
+The first curl-backed review then exposed intermittent Nasdaq CDN error 92
+(HTTP/2 stream not closed cleanly). The professional curl fallback now forces
+HTTP/1.1 and permits two bounded retries with a 120-second retry budget. This is
+a transport reliability correction only; HTTP errors, invalid XML, and retry
+exhaustion still reject the feed.
