@@ -91,9 +91,26 @@ def validate_mapping_catalog(payload: Mapping[str, Any]) -> dict[str, dict[str, 
         evidence = raw.get("mapping_evidence")
         if not isinstance(evidence, list) or not evidence:
             raise ValueError(f"{underlying} mapping requires evidence")
+        evidence_types = set()
         for item in evidence:
             if not isinstance(item, Mapping) or not str(item.get("source_url") or "").startswith("https://"):
                 raise ValueError(f"{underlying} mapping evidence requires HTTPS source URLs")
+            evidence_types.add(str(item.get("evidence_type") or "").upper())
+        if mapping_type == "DIRECT_DIVIDEND_EQUITY":
+            if income_symbol != underlying:
+                raise ValueError(f"{underlying} direct dividend mapping must use the underlying symbol")
+            if not any(kind.startswith("ISSUER_DIVIDEND") for kind in evidence_types):
+                raise ValueError(f"{underlying} direct dividend mapping requires issuer dividend evidence")
+        if mapping_type == "INCOME_ETF":
+            if income_symbol == underlying:
+                raise ValueError(f"{underlying} income ETF mapping must use a distinct fund symbol")
+            if not evidence_types.intersection({"FUND_STRATEGY", "FUND_HOLDINGS", "FUND_PROSPECTUS"}):
+                raise ValueError(f"{underlying} income ETF mapping requires official fund strategy evidence")
+            if "DISTRIBUTION_HISTORY" not in evidence_types:
+                raise ValueError(f"{underlying} income ETF mapping requires distribution history")
+            risks = raw.get("risk_disclosures")
+            if not isinstance(risks, list) or not any(str(value).strip() for value in risks):
+                raise ValueError(f"{underlying} income ETF mapping requires risk disclosures")
         if underlying in result:
             raise ValueError(f"duplicate reviewed Dividend mapping: {underlying}")
         result[underlying] = {
@@ -126,6 +143,10 @@ def build_income_mapping_report(
             "income_symbol": mapping["income_symbol"] if approved else None,
             "mapping_type": mapping["mapping_type"] if approved else None,
             "mapping_evidence": list(mapping["mapping_evidence"]) if approved else [],
+            "mapping_rationale": mapping.get("mapping_rationale") if approved else None,
+            "income_mechanism": mapping.get("income_mechanism") if approved else None,
+            "distribution_frequency": mapping.get("distribution_frequency") if approved else None,
+            "risk_disclosures": list(mapping.get("risk_disclosures") or []) if approved else [],
             "requires_manual_review": True,
             "automatic_activation_allowed": False,
             "promotion_authority": STRATEGY_ID,
