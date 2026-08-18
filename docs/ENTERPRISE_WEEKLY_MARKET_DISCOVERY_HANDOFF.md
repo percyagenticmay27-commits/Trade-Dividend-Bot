@@ -584,3 +584,31 @@ distinct symbol, include official fund strategy/holdings/prospectus evidence,
 include distribution history, and carry nonempty risk disclosures. All mappings
 remain advisory, manually reviewed, and automatically inactive. No allocation,
 watchlist, position, order, broker, or capital state is changed.
+
+
+## 2026-08-18 — Dividend suitability gate begins
+
+Mapping availability is now separated from vehicle suitability. A new fail-closed
+Dividend suitability engine consumes the generated income-mapping report and a
+separately reviewed evidence catalog. The initial production suitability catalog
+is intentionally empty, so every current mapping reports EVIDENCE_REQUIRED until
+its market, return, distribution, cost, age, and liquidity metrics are reviewed.
+
+The gate supports four advisory states: ELIGIBLE_FOR_PAPER_REVIEW, WATCH_ONLY,
+REJECTED, and EVIDENCE_REQUIRED. It never makes a purchase. Conservative initial
+rules reject severe one-year loss or very low dollar volume, penalize negative
+total return, high estimated return of capital, high expense ratios, short fund
+history, and recent dividend cuts. Evidence older than 45 days or missing a
+required metric fails closed to EVIDENCE_REQUIRED.
+
+Income ETFs require reviewed dollar volume, one-year total return, expense ratio,
+latest distribution return-of-capital estimate, fund age, and HTTPS sources.
+Direct dividend equities require reviewed dollar volume, one-year total return,
+forward dividend yield, recent dividend-cut status, and HTTPS sources. The report
+retains decision reasons and evidence URLs. All execution locks remain false,
+automatic activation remains prohibited, and Swing is not read or modified.
+
+The first gate is server compile/test followed by generation against the empty
+catalog. Expected output is zero eligible, zero watch-only, zero rejected, and
+all current candidates EVIDENCE_REQUIRED. Only after that validation will current
+vehicle metrics be populated from authoritative issuer, fund, and market records.
