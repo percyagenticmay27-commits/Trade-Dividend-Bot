@@ -108,6 +108,11 @@ Continuation:
 - The production catalog is intentionally unchanged until each seed channel's
   canonical channel ID and credibility profile are manually validated. The
   Saturday timer remains uninstalled and disabled.
+- `scripts/review_youtube_discovery_channels.py` performs a one-time bounded
+  channel search for the six initial seed examples and writes only an
+  `UNVERIFIED` human-review artifact. It never edits the production catalog or
+  automatically approves a search result, protecting against similarly named
+  and impersonating channels.
 
 ### Direct script execution correction
 
