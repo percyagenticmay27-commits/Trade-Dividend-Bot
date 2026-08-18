@@ -13,7 +13,7 @@ from enterprise_dividend_suitability import write_suitability_report
 def main() -> int:
     report = write_suitability_report(
         ROOT / "results" / "enterprise_dividend_income_mapping.json",
-        ROOT / "configs" / "dividend_suitability_evidence.json",
+        ROOT / "inputs" / "dividend_suitability_evidence.json",
         ROOT / "results" / "enterprise_dividend_suitability.json",
     )
     print(
