@@ -109,3 +109,13 @@ def test_research_only_evidence_is_historically_retained_without_entering_active
     assert "RESEARCH_EVIDENCE_ONLY" in history
     dividend = json.loads((tmp_path / "results/enterprise_dividend_discovery_bucket.json").read_text())
     assert dividend["candidates"] == []
+
+
+def test_basic_sec_date_is_normalized_for_strategy_consumer_contract():
+    report = build_weekly_discovery([{
+        "underlying_symbol": "SMCI",
+        "discovery_status": "NEW",
+        "source_evidence": [{"source": "SEC EDGAR", "mentioned_on": "20260811", "story_id": "SEC:1"}],
+    }], generated_at="2026-08-18T01:00:00Z")
+    assert report["candidates"][0]["source_evidence"][0]["mentioned_on"] == "2026-08-11"
+    assert build_swing_projection(report)["candidates"][0]["evidence_sources"][0]["mentioned_on"] == "2026-08-11"
