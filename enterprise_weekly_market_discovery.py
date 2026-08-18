@@ -194,20 +194,24 @@ def build_weekly_discovery(
         prior_confirmed = _utc(prior.get("last_confirmed_at")) if prior and prior.get("last_confirmed_at") else None
         same_cycle = bool(prior_confirmed and prior_confirmed.isocalendar()[:2] == now.isocalendar()[:2])
         first = _utc(prior.get("first_discovered_at")) if prior and prior.get("first_discovered_at") else now
+        first_seen_this_cycle = first.isocalendar()[:2] == now.isocalendar()[:2]
         weeks = (
-            int(prior.get("consecutive_weeks_detected", 1))
+            1 if same_cycle and first_seen_this_cycle
+            else int(prior.get("consecutive_weeks_detected", 1))
             if same_cycle else int(prior.get("consecutive_weeks_detected", 0)) + 1
         ) if prior else 1
         evidence = _normalize_evidence(raw.get("source_evidence") or raw.get("evidence_sources") or [])
         evidence_analysis = _evidence_analysis(evidence)
         independent = evidence_analysis["independent_source_count"]
-        attention = _attention_analysis(independent, prior, same_cycle=same_cycle)
+        attention_prior = None if same_cycle and first_seen_this_cycle else prior
+        attention = _attention_analysis(independent, attention_prior, same_cycle=same_cycle)
         expires = now + timedelta(days=_retention_days(requested))
         candidate = {
             "underlying_symbol": symbol,
             "discovery_status": requested,
             "previous_status": (
-                str(prior.get("previous_status") or "ABSENT")
+                "ABSENT" if same_cycle and first_seen_this_cycle
+                else str(prior.get("previous_status") or "ABSENT")
                 if same_cycle else str(prior.get("discovery_status") or "ABSENT")
             ) if prior else "ABSENT",
             "first_discovered_at": _iso(first),
