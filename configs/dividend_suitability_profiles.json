@@ -4,6 +4,20 @@
   "catalog_status": "REVIEWED",
   "profiles": [
     {
+      "income_symbol": "AMAT",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://ir.appliedmaterials.com/stock-information/dividend-history/",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
       "income_symbol": "AMDY",
       "mapping_type": "INCOME_ETF",
       "reviewed": true,
@@ -81,6 +95,20 @@
       ]
     },
     {
+      "income_symbol": "HD",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://ir.homedepot.com/stock-information/dividend-history",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
       "income_symbol": "INYY",
       "mapping_type": "INCOME_ETF",
       "reviewed": true,
@@ -92,6 +120,20 @@
         {
           "evidence_type": "OFFICIAL_FUND_DATA",
           "source_url": "https://yieldmaxetfs.com/our-etfs/inyy/",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "KDP",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://www.keurigdrpepper.com/keurig-dr-pepper-declares-quarterly-dividend-17/",
           "as_of": "2026-08-18"
         }
       ]
@@ -141,6 +183,20 @@
         {
           "evidence_type": "OFFICIAL_FUND_DATA",
           "source_url": "https://yieldmaxetfs.com/smcy/summary-prospectus",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "WNC",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://ir.onewabash.com/news/news-details/2026/Wabash-Announces-Quarterly-Dividend/default.aspx",
           "as_of": "2026-08-18"
         }
       ]
