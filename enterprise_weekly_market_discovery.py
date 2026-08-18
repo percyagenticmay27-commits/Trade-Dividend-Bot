@@ -48,6 +48,17 @@ def _story_key(item: Mapping[str, Any]) -> str:
     return str(item.get("story_id") or item.get("canonical_story_id") or item.get("source_url") or "").strip()
 
 
+def _independent_story_key(item: Mapping[str, Any], story: str, producer: str) -> str:
+    canonical = str(item.get("canonical_story_id") or "").strip()
+    if canonical:
+        return canonical.lower()
+    source_class = str(item.get("source_class") or "UNCLASSIFIED").upper()
+    title = " ".join(str(item.get("title") or "").lower().split())
+    if source_class != "PRIMARY_COMPANY" and title:
+        return f"title:{producer}:{title}"
+    return story.lower()
+
+
 def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
@@ -59,7 +70,8 @@ def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, An
         mentioned = date.fromisoformat(mentioned).isoformat()
         story = _story_key(raw) or f"{source.lower()}:{mentioned}"
         producer = str(raw.get("producer") or raw.get("originating_source") or source).strip().lower()
-        key = (story.lower(), producer, mentioned)
+        independent_story = _independent_story_key(raw, story, producer)
+        key = (independent_story, producer, mentioned)
         if key in seen:
             continue
         seen.add(key)
@@ -69,6 +81,9 @@ def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, An
             "source_class": str(raw.get("source_class") or "UNCLASSIFIED").upper(),
             "producer": str(raw.get("producer") or raw.get("originating_source") or source).strip(),
             "story_id": story,
+            "independent_story_id": independent_story,
+            "title": str(raw.get("title") or "").strip() or None,
+            "source_url": str(raw.get("source_url") or raw.get("url") or "").strip() or None,
             "themes": sorted({str(v).strip() for v in raw.get("themes", []) if str(v).strip()}),
             "stance": str(raw.get("stance") or "NEUTRAL").upper(),
             "earnings_growth_related": bool(raw.get("earnings_growth_related", False)),
@@ -80,7 +95,10 @@ def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, An
 def _evidence_analysis(evidence: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     rows = list(evidence)
     independent_stories = {
-        (str(row.get("story_id") or "").lower(), str(row.get("producer") or "").lower())
+        (
+            str(row.get("independent_story_id") or row.get("story_id") or "").lower(),
+            str(row.get("producer") or "").lower(),
+        )
         for row in rows
     }
     producers = {str(row.get("producer") or "").strip().lower() for row in rows if str(row.get("producer") or "").strip()}
