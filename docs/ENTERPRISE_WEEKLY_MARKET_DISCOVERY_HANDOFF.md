@@ -358,3 +358,21 @@ create a bullish-only bucket. The AI CIO does not reinterpret those facts or
 manufacture a thesis. The input is now approved for manual bucket generation,
 but the production Saturday timer remains uninstalled and disabled until final
 strategy-contract inspection succeeds.
+
+
+### Strategy bucket and Swing read-only validation
+
+Manual generation produced seven active candidates and 1,521 research-only
+observations with all rich-report safety controls locked: paper/advisory only,
+live trading false, broker execution false, order placement false, and capital
+movement false. The strict Swing projection contains schema 1.0, strategy
+SWING-001, seven unique underlying symbols, and 15 deduplicated evidence
+mentions. Swing's authoritative consumer loaded the artifact successfully.
+
+Swing reported no approved leveraged/growth mapping for CSCO, DRMA, GM, KT,
+LHX, SMCI, or T. This is the required boundary: the AI CIO artifact remains
+read-only upstream intelligence, and no new Swing DISCOVERY or WATCHLIST state
+can be created until Swing independently approves a vehicle mapping. The Swing
+repository was read only and was not modified. Dividend received the same seven
+underlying nominations with `requires_dividend_income_mapping=true`; Dividend
+mapping remains a later strategy-owned phase after discovery is complete.
