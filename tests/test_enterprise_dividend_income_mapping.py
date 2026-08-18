@@ -38,6 +38,9 @@ def _mapping(underlying: str = "HD", income: str = "SCHD"):
         "status": "REVIEWED",
         "reviewed": True,
         "automatic_activation_allowed": False,
+        "income_mechanism": "OPTIONS_PREMIUM",
+        "distribution_frequency": "WEEKLY",
+        "risk_disclosures": ["Distributions are not guaranteed.", "Distributions may include return of capital."],
         "mapping_evidence": [
             {
                 "evidence_type": "FUND_HOLDINGS",
@@ -144,3 +147,37 @@ def test_production_catalog_contains_only_reviewed_direct_dividend_mappings():
     assert all(row["automatic_activation_allowed"] is False for row in mappings.values())
     assert all(row["mapping_evidence"] for row in mappings.values())
 
+
+
+def test_income_etf_requires_strategy_distribution_and_risk_evidence():
+    valid = _mapping("AMD", "AMDY")
+    mappings = validate_mapping_catalog(
+        {"schema_version": "1.0", "strategy_id": "DIVIDEND-001", "mappings": [valid]}
+    )
+    assert mappings["AMD"]["income_symbol"] == "AMDY"
+
+    missing_distribution = _mapping("AMD", "AMDY")
+    missing_distribution["mapping_evidence"] = missing_distribution["mapping_evidence"][:1]
+    with pytest.raises(ValueError, match="distribution history"):
+        validate_mapping_catalog(
+            {"schema_version": "1.0", "strategy_id": "DIVIDEND-001", "mappings": [missing_distribution]}
+        )
+
+    missing_risks = _mapping("AMD", "AMDY")
+    missing_risks["risk_disclosures"] = []
+    with pytest.raises(ValueError, match="risk disclosures"):
+        validate_mapping_catalog(
+            {"schema_version": "1.0", "strategy_id": "DIVIDEND-001", "mappings": [missing_risks]}
+        )
+
+
+def test_income_etf_report_preserves_mechanism_frequency_and_risks():
+    report = build_income_mapping_report(
+        _bucket("AMD"),
+        {"schema_version": "1.0", "strategy_id": "DIVIDEND-001", "mappings": [_mapping("AMD", "AMDY")]},
+        generated_at="2026-08-18T18:00:00Z",
+    )
+    row = report["candidates"][0]
+    assert row["income_mechanism"] == "OPTIONS_PREMIUM"
+    assert row["distribution_frequency"] == "WEEKLY"
+    assert row["risk_disclosures"]
