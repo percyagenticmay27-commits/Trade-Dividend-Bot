@@ -226,6 +226,7 @@ def build_weekly_discovery(
         expires = now + timedelta(days=_retention_days(requested))
         candidate = {
             "underlying_symbol": symbol,
+            "company_name": str(raw.get("company_name") or "").strip() or None,
             "discovery_status": requested,
             "previous_status": (
                 "ABSENT" if same_cycle and first_seen_this_cycle
