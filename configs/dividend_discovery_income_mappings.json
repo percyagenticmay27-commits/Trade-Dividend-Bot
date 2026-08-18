@@ -27,6 +27,84 @@
       ]
     },
     {
+      "underlying_symbol": "CAH",
+      "income_symbol": "CAH",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Issuer dividend history confirms active 2026 quarterly common-stock dividends.",
+      "mapping_evidence": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_HISTORY",
+          "source_url": "https://ir.cardinalhealth.com/stock-info/dividend-history/default.aspx",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "underlying_symbol": "CTVA",
+      "income_symbol": "CTVA",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Issuer records confirm an active 2026 quarterly common-stock dividend.",
+      "mapping_evidence": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_DECLARATION",
+          "source_url": "https://investors.corteva.com/news-events/news-releases",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "underlying_symbol": "DUK",
+      "income_symbol": "DUK",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Issuer records confirm active quarterly dividends and a century of consecutive cash dividends.",
+      "mapping_evidence": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_HISTORY",
+          "source_url": "https://investors.duke-energy.com/stock-info/dividend-history/default.aspx",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "ISSUER_DIVIDEND_DECLARATION",
+          "source_url": "https://investors.duke-energy.com/news/news-details/2026/Duke-Energy-announces-dividend-payments-to-shareholders-5ddb8ba5f/default.aspx",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "underlying_symbol": "EQR",
+      "income_symbol": "EQR",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Issuer dividend history and declaration records confirm active 2026 quarterly common-stock dividends.",
+      "mapping_evidence": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_HISTORY",
+          "source_url": "https://investors.equityapartments.com/stock/dividends/default.aspx",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "ISSUER_DIVIDEND_DECLARATION",
+          "source_url": "https://investors.equityapartments.com/news-events/press-releases-news/news-details/2026/Equity-Residential-Declares-First-Quarter-Dividends/default.aspx",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
       "underlying_symbol": "HD",
       "income_symbol": "HD",
       "mapping_type": "DIRECT_DIVIDEND_EQUITY",
@@ -61,6 +139,45 @@
         {
           "evidence_type": "ISSUER_DIVIDEND_DECLARATION",
           "source_url": "https://www.keurigdrpepper.com/keurig-dr-pepper-declares-quarterly-dividend-17/",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "underlying_symbol": "LUV",
+      "income_symbol": "LUV",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Issuer material confirms the company announced its 188th quarterly dividend in 2026.",
+      "mapping_evidence": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://www.swamedia.com/vforcesite/cms/delivery/media/MC5SHG3HNX2FFRVLRCQTZRDPWU7E?channelId=0apHu000000IWrs&version=11.1",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "underlying_symbol": "PH",
+      "income_symbol": "PH",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "status": "REVIEWED",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "automatic_activation_allowed": false,
+      "mapping_rationale": "Issuer declarations confirm active 2026 quarterly common-stock dividends and a continuing consecutive-payment record.",
+      "mapping_evidence": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_DECLARATION",
+          "source_url": "https://investors.parker.com/news-events/press-releases/detail/505/parker-increases-quarterly-cash-dividend-11-to-2-00-per",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "ISSUER_DIVIDEND_HISTORY",
+          "source_url": "https://investors.parker.com/stock-information/dividend-history",
           "as_of": "2026-08-18"
         }
       ]
