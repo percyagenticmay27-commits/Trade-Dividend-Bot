@@ -14,6 +14,7 @@ ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trad
 ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/scripts/generate_enterprise_dividend_income_mapping.py
 ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/scripts/collect_enterprise_dividend_suitability_evidence.py
 ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/scripts/generate_enterprise_dividend_suitability.py
+ExecStart=/home/tradebot/Trade-Dividend-Bot/.venv/bin/python /home/tradebot/Trade-Dividend-Bot/scripts/generate_enterprise_dividend_manual_review_queue.py
 NoNewPrivileges=true
 PrivateTmp=true
 UMask=0027
