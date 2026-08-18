@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0",
+  "strategy_id": "DIVIDEND-001",
+  "catalog_status": "REVIEWED",
+  "profiles": [
+    {
+      "income_symbol": "AMDY",
+      "mapping_type": "INCOME_ETF",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "fund_inception_date": "2023-09-18",
+      "expense_ratio_percent": 1,
+      "latest_distribution_roc_percent": 91.79,
+      "sources": [
+        {
+          "evidence_type": "OFFICIAL_FUND_DATA",
+          "source_url": "https://yieldmaxetfs.com/our-etfs/amdy/",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "OFFICIAL_FUND_DATA",
+          "source_url": "https://www.yieldmaxetfs.com/amdy/summary-prospectus",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "CAH",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://ir.cardinalhealth.com/stock-info/dividend-history/default.aspx",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "CTVA",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://investors.corteva.com/news-events/news-releases",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "DUK",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://investors.duke-energy.com/stock-info/dividend-history/default.aspx",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "EQR",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://investors.equityapartments.com/stock/dividends/default.aspx",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "INYY",
+      "mapping_type": "INCOME_ETF",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "fund_inception_date": "2026-06-02",
+      "expense_ratio_percent": 0.99,
+      "latest_distribution_roc_percent": 97.49,
+      "sources": [
+        {
+          "evidence_type": "OFFICIAL_FUND_DATA",
+          "source_url": "https://yieldmaxetfs.com/our-etfs/inyy/",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "LUV",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://www.swamedia.com/vforcesite/cms/delivery/media/MC5SHG3HNX2FFRVLRCQTZRDPWU7E?channelId=0apHu000000IWrs&version=11.1",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "PH",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://investors.parker.com/news-events/press-releases/detail/505/parker-increases-quarterly-cash-dividend-11-to-2-00-per",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "SMCY",
+      "mapping_type": "INCOME_ETF",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "fund_inception_date": "2024-09-11",
+      "expense_ratio_percent": 1.01,
+      "latest_distribution_roc_percent": 97.12,
+      "sources": [
+        {
+          "evidence_type": "OFFICIAL_FUND_DATA",
+          "source_url": "https://yieldmaxetfs.com/our-etfs/smcy/",
+          "as_of": "2026-08-18"
+        },
+        {
+          "evidence_type": "OFFICIAL_FUND_DATA",
+          "source_url": "https://yieldmaxetfs.com/smcy/summary-prospectus",
+          "as_of": "2026-08-18"
+        }
+      ]
+    }
+  ]
+}
