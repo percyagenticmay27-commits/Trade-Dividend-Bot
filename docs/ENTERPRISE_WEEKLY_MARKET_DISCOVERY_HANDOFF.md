@@ -175,3 +175,13 @@ confirming evidence; counts never promote rows.
   a candidate. Policy is `AUTHORITATIVE_HISTORY_ONLY`; inference is false.
 - This adapter reads market data only. It cannot place orders, contact a broker,
   mutate strategy lifecycle state, or change either allocation.
+
+### Non-finite live-session normalization
+
+The first controlled live market-evidence run exposed a Yahoo session containing
+volume and a date but a non-finite closing value. Python had treated the value as
+present, causing JSON consumers such as jq to display null while completeness
+was reported as AVAILABLE. Numeric normalization now rejects NaN and infinity.
+The adapter uses the latest complete recorded session, recalculates return and
+dollar-volume evidence from finite observations only, and never converts an
+unavailable price into zero.
