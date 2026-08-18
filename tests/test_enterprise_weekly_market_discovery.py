@@ -87,3 +87,11 @@ def test_outputs_preserve_paper_safety_and_do_not_trade(tmp_path):
     assert report["capital_movement_enabled"] is False
     swing = json.loads((tmp_path / "results/enterprise_swing_discovery_bucket.json").read_text())
     assert swing["candidates"][0]["underlying_symbol"] == "NVDA"
+
+
+def test_evidence_only_candidate_is_not_sent_to_swing():
+    observation = _observation(status="NEW")
+    observation["nomination_eligible"] = False
+    report = build_weekly_discovery([observation], generated_at="2026-08-16T01:00:00Z")
+    assert report["candidates"][0]["underlying_symbol"] == "NVDA"
+    assert build_swing_projection(report)["candidates"] == []
