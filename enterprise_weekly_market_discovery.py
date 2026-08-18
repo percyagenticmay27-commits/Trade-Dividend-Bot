@@ -94,6 +94,7 @@ def build_weekly_discovery(
     now = _utc(generated_at)
     previous = {_symbol(row.get("underlying_symbol")): dict(row) for row in previous_candidates}
     candidates: list[dict[str, Any]] = []
+    research_evidence_pool: list[dict[str, Any]] = []
     seen: set[str] = set()
     for raw in observations:
         symbol = _symbol(raw.get("underlying_symbol"))
@@ -109,7 +110,7 @@ def build_weekly_discovery(
         evidence = _normalize_evidence(raw.get("source_evidence") or raw.get("evidence_sources") or [])
         independent = len({(row["story_id"].lower(), row["producer"].lower()) for row in evidence})
         expires = now + timedelta(days=_retention_days(requested))
-        candidates.append({
+        candidate = {
             "underlying_symbol": symbol,
             "discovery_status": requested,
             "previous_status": str(prior.get("discovery_status") or "ABSENT") if prior else "ABSENT",
@@ -130,7 +131,12 @@ def build_weekly_discovery(
             "market_evidence": raw.get("market_evidence"),
             "discovery_confidence": raw.get("discovery_confidence"),
             "nomination_eligible": bool(raw.get("nomination_eligible", True)),
-        })
+        }
+        if candidate["nomination_eligible"]:
+            candidates.append(candidate)
+        else:
+            candidate["record_type"] = "RESEARCH_EVIDENCE_ONLY"
+            research_evidence_pool.append(candidate)
     expired_candidates: list[dict[str, Any]] = []
     for symbol, prior in previous.items():
         if symbol in seen:
@@ -155,6 +161,7 @@ def build_weekly_discovery(
         "order_placement_enabled": False,
         "capital_movement_enabled": False,
         "candidates": sorted(candidates, key=lambda row: row["underlying_symbol"]),
+        "research_evidence_pool": sorted(research_evidence_pool, key=lambda row: row["underlying_symbol"]),
         "expired_candidates": sorted(expired_candidates, key=lambda row: row["underlying_symbol"]),
     }
 
@@ -233,6 +240,6 @@ def write_weekly_discovery(
     for path, payload in outputs.items():
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with (state / "enterprise_market_discovery_history.jsonl").open("a", encoding="utf-8") as handle:
-        for candidate in [*report["candidates"], *report["expired_candidates"]]:
+        for candidate in [*report["candidates"], *report["research_evidence_pool"], *report["expired_candidates"]]:
             handle.write(json.dumps({"observed_at": report["generated_at"], **candidate}, sort_keys=True) + "\n")
     return report
