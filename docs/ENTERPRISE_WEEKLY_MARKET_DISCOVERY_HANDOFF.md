@@ -648,3 +648,19 @@ were added for all four. Suitability profile coverage now matches the complete
 Dividend income-mapping catalog rather than only the current discovery bucket.
 This correction does not mark a vehicle eligible, activate a mapping, or relax
 manual-review and paper-only execution locks.
+### Auditable suitability decisions and scheduled completion
+
+The first live suitability run produced six vehicles eligible for manual paper
+review, AMDY and SMCY as WATCH_ONLY, and INYY as EVIDENCE_REQUIRED because its
+short operating history cannot support a one-year return. The suitability
+report now preserves the complete reviewed evidence object used for each score,
+including return, dollar-volume, yield or fund-cost, return-of-capital, fund-age,
+source, and freshness fields. A decision can therefore be independently audited
+without reopening the collector input.
+
+The weekly oneshot now completes the entire Dividend-owned advisory pipeline in
+strict order: collect discovery evidence, generate neutral discovery, generate
+income mappings, collect suitability evidence, then generate suitability
+decisions. Suitability remains manual-review only. No eligible classification
+automatically activates a vehicle, places an order, contacts a broker, or moves
+capital.
