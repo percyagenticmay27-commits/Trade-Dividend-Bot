@@ -29,12 +29,13 @@ def main() -> int:
         sources,
         as_of=datetime.now(timezone.utc),
         user_agent=user_agent,
+        youtube_api_key=os.environ.get("YOUTUBE_API_KEY", "").strip(),
         market_snapshot=market,
     )
     output = root / "inputs" / "enterprise_weekly_market_observations.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"Credential-free discovery: {len(report['observations'])} observation(s); {len(report['warnings'])} warning(s)")
+    print(f"Enterprise discovery: {len(report['observations'])} observation(s); {len(report['warnings'])} warning(s)")
     return 0
 
 
