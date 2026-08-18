@@ -44,6 +44,31 @@ def test_story_syndication_is_one_independent_confirmation():
     assert report["candidates"][0]["independent_source_count"] == 2
 
 
+def test_source_confluence_counts_independent_stories_not_syndicated_repeats():
+    report = build_weekly_discovery([_observation()], generated_at="2026-08-16T01:00:00Z")
+    row = report["candidates"][0]
+    confluence = row["source_confluence"]
+    assert confluence["independent_source_count"] == 2
+    assert confluence["independent_producer_count"] == 2
+    assert confluence["level"] == "CONFIRMED"
+    assert confluence["syndicated_repeats_counted_separately"] is False
+    assert confluence["inference_allowed"] is False
+
+
+def test_bullish_and_bearish_evidence_remain_separate_without_inventing_theses():
+    observation = _observation()
+    observation["source_evidence"][0]["stance"] = "BULLISH"
+    observation["source_evidence"][2]["stance"] = "BEARISH"
+    report = build_weekly_discovery([observation], generated_at="2026-08-16T01:00:00Z")
+    row = report["candidates"][0]
+    summary = row["evidence_stance_summary"]
+    assert summary["BULLISH"] == 1
+    assert summary["BEARISH"] == 1
+    assert summary["disagreement_present"] is True
+    assert row["bullish_thesis"] is None
+    assert row["bearish_thesis"] is None
+
+
 def test_lifecycle_retention_and_history_are_preserved(tmp_path):
     first = build_weekly_discovery([_observation(status="EMERGING")], generated_at="2026-08-09T01:00:00Z")
     second = write_weekly_discovery(tmp_path, [_observation(status="RISING")], first["candidates"], generated_at="2026-08-16T01:00:00Z")
