@@ -50,3 +50,24 @@ Continuation:
    attention acceleration while preserving provenance.
 4. Run a manual Saturday-equivalent validation before installing/enabling the
    supplied systemd timer.
+
+## 2026-08-17 — Credential-free authoritative collection
+
+- `enterprise_discovery_source_collector.py` collects only owner-configured
+  SEC submissions and HTTPS company/IR RSS or Atom feeds. A configured source
+  explicitly binds evidence to an underlying symbol; ticker extraction from
+  prose is prohibited.
+- SEC requests use the public submissions endpoint, a descriptive operator
+  User-Agent, and a minimum interval between requests. The User-Agent is not a
+  secret, but the collector fails closed if it is absent.
+- `scripts/collect_enterprise_discovery_sources.py` writes the normalized input
+  consumed by the deterministic generator. It does not write either strategy's
+  lifecycle or watchlist.
+- Existing `market_data_snapshot.json` evidence is attached when present. No
+  price, volume, momentum, dividend, or freshness value is inferred when the
+  host snapshot lacks a matching symbol.
+- Malformed, unavailable, insecure, and unsupported sources become warnings;
+  they never create candidate rows.
+- `configs/enterprise_discovery_sources.example.json` is documentation only.
+  Production source entries require real CIKs and official HTTPS feed URLs and
+  must be reviewed before use.
