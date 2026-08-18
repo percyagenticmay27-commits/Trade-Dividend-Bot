@@ -472,3 +472,17 @@ identity, deduplication, systemd execution, safety controls, and the current
 consumer contract validated, the Saturday 8:00 PM America/Chicago timer is
 approved for operator enablement.
 
+### Production timer enabled
+
+The operator enabled `enterprise-weekly-market-discovery.timer` on the
+DigitalOcean host after every deployment gate passed. Systemd reports the timer
+loaded and enabled, active (waiting), and linked to the paper-only oneshot
+service. Its first scheduled trigger is Saturday 2026-08-22 at 20:00:00 CDT,
+matching the approved Saturday 8:00 PM America/Chicago schedule. Persistent
+missed-run behavior remains configured.
+
+This enablement schedules only evidence collection and artifact generation. The
+service remains advisory and paper-only; it cannot execute through a broker,
+place orders, move capital, approve Swing mappings, or perform Dividend income
+mapping. Reddit remains disabled following denial. Discovery scheduler
+deployment is complete.
