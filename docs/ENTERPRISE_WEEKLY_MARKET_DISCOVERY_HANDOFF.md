@@ -91,6 +91,24 @@ Continuation:
   evidence. Company-specific IR feeds will be added only after their official
   HTTPS endpoints are verified; example placeholder URLs are never executed.
 
+## 2026-08-18 — Bounded YouTube evidence adapter
+
+- The owner configured `YOUTUBE_API_KEY` only in the protected server
+  environment file. The key is never written to configuration, artifacts,
+  warnings, logs, tests, or handoff documentation.
+- `YOUTUBE_SEARCH` sources use a seven-day window, at most 25 results per
+  request, and a 500-unit per-run search budget. Exhaustion degrades with an
+  explicit warning rather than issuing unbounded requests.
+- Video popularity is not authority. Only a source with a verified channel ID,
+  `credibility_reviewed=true`, and authority `REVIEWED_CREATOR` or
+  `PROFESSIONAL_MEDIA` may independently confirm an existing company lead.
+- Symbols are matched only against the existing underlying-company research
+  universe. Unknown prose tokens and leveraged/inverse products cannot become
+  nominations. A YouTube result alone remains research-only.
+- The production catalog is intentionally unchanged until each seed channel's
+  canonical channel ID and credibility profile are manually validated. The
+  Saturday timer remains uninstalled and disabled.
+
 ### Direct script execution correction
 
 The first controlled server run exposed that executing a Python file beneath
