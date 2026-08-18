@@ -6,8 +6,6 @@ import argparse
 import json
 import os
 import sys
-import time
-import urllib.request
 import xml.etree.ElementTree as ET
 from datetime import date, timedelta
 from pathlib import Path
@@ -17,24 +15,11 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from enterprise_discovery_source_collector import _recent_feed_evidence
+from enterprise_discovery_source_collector import _recent_feed_evidence, fetch_professional_url
 
 
-def _get(url: str, user_agent: str, attempts: int = 3) -> bytes:
-    request = urllib.request.Request(
-        url,
-        headers={"User-Agent": user_agent, "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml"},
-    )
-    last_error: OSError | None = None
-    for attempt in range(max(1, attempts)):
-        try:
-            with urllib.request.urlopen(request, timeout=45) as response:  # nosec B310: operator-supplied HTTPS review target
-                return response.read()
-        except OSError as exc:
-            last_error = exc
-            if attempt + 1 < max(1, attempts):
-                time.sleep(1.0 * (attempt + 1))
-    raise last_error or OSError("professional feed request failed")
+def _get(url: str, user_agent: str) -> bytes:
+    return fetch_professional_url(url, user_agent)
 
 
 def review_feed(
