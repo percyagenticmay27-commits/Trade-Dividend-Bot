@@ -638,3 +638,13 @@ are evidence inputs, not endorsements. They are expected to trigger conservative
 penalties, especially for short history and return of capital. Scheduler
 integration remains deferred until a controlled server refresh and classification
 inspection pass.
+### Suitability profile catalog coverage correction
+
+The first focused suitability-evidence run correctly failed its production
+catalog coverage test because the live profile file covered the nine current
+weekly candidates but omitted four previously reviewed mappings retained for
+future cycles: AMAT, HD, KDP, and WNC. Reviewed issuer dividend-record profiles
+were added for all four. Suitability profile coverage now matches the complete
+Dividend income-mapping catalog rather than only the current discovery bucket.
+This correction does not mark a vehicle eligible, activate a mapping, or relax
+manual-review and paper-only execution locks.
