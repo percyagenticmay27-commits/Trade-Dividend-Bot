@@ -1,0 +1,37 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+from enterprise_discovery_source_collector import collect_credential_free_observations, load_json_if_present
+
+
+def main() -> int:
+    root = Path(__file__).resolve().parents[1]
+    config_path = root / "configs" / "enterprise_discovery_sources.json"
+    if not config_path.is_file():
+        raise SystemExit(f"Discovery source configuration is unavailable: {config_path}")
+    user_agent = os.environ.get("AI_CIO_DISCOVERY_USER_AGENT", "").strip()
+    if not user_agent:
+        raise SystemExit("AI_CIO_DISCOVERY_USER_AGENT is required (application name and operator contact; it is not a secret)")
+    config = json.loads(config_path.read_text(encoding="utf-8"))
+    sources = config.get("sources", []) if isinstance(config, dict) else []
+    market = load_json_if_present(root / "market_data_snapshot.json") or load_json_if_present(root / "results/market_data_snapshot.json")
+    report = collect_credential_free_observations(
+        sources,
+        as_of=datetime.now(timezone.utc),
+        user_agent=user_agent,
+        market_snapshot=market,
+    )
+    output = root / "inputs" / "enterprise_weekly_market_observations.json"
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(f"Credential-free discovery: {len(report['observations'])} observation(s); {len(report['warnings'])} warning(s)")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
