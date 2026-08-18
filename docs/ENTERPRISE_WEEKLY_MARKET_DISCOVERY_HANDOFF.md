@@ -224,4 +224,6 @@ current artifact could be mistaken for a prior-week baseline. Same-week reruns
 now retain the original previous-week comparison, previous lifecycle state, and
 consecutive-week count. A first-week candidate therefore remains NEW_BASELINE
 across repeated validation runs. Only a genuinely later weekly cycle can create
-a STABLE, ACCELERATING, or DECELERATING comparison.
+a STABLE, ACCELERATING, or DECELERATING comparison. If an intermediate
+same-week artifact was already polluted, first-discovered-this-week evidence
+repairs the baseline, week count, and prior state automatically.
