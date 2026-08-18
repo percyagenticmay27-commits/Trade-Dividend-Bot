@@ -117,6 +117,45 @@ def _evidence_analysis(evidence: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _attention_analysis(current_count: int, prior: Mapping[str, Any] | None) -> dict[str, Any]:
+    previous_count = None
+    if prior:
+        previous_confluence = prior.get("source_confluence")
+        if isinstance(previous_confluence, Mapping):
+            previous_count = previous_confluence.get("independent_source_count")
+        if previous_count is None:
+            previous_count = prior.get("independent_source_count")
+        try:
+            previous_count = int(previous_count) if previous_count is not None else None
+        except (TypeError, ValueError):
+            previous_count = None
+    if previous_count is None:
+        state = "NEW_BASELINE"
+        change = None
+        ratio = None
+    else:
+        change = current_count - previous_count
+        ratio = round(current_count / previous_count, 6) if previous_count > 0 else None
+        if previous_count == 0 and current_count > 0:
+            state = "ACCELERATING_FROM_ZERO"
+        elif change > 0:
+            state = "ACCELERATING"
+        elif change < 0:
+            state = "DECELERATING"
+        else:
+            state = "STABLE"
+    return {
+        "status": state,
+        "current_independent_evidence_count": current_count,
+        "previous_independent_evidence_count": previous_count,
+        "absolute_change": change,
+        "ratio": ratio,
+        "measurement": "WEEK_OVER_WEEK_INDEPENDENT_EVIDENCE",
+        "raw_mentions_used": False,
+        "inference_allowed": False,
+    }
+
+
 def _retention_days(status: str) -> int:
     if status == "EMERGING":
         return 21
@@ -150,6 +189,7 @@ def build_weekly_discovery(
         evidence = _normalize_evidence(raw.get("source_evidence") or raw.get("evidence_sources") or [])
         evidence_analysis = _evidence_analysis(evidence)
         independent = evidence_analysis["independent_source_count"]
+        attention = _attention_analysis(independent, prior)
         expires = now + timedelta(days=_retention_days(requested))
         candidate = {
             "underlying_symbol": symbol,
@@ -169,7 +209,7 @@ def build_weekly_discovery(
             "independent_source_count": independent,
             "source_confluence": evidence_analysis,
             "evidence_stance_summary": evidence_analysis["stance_summary"],
-            "attention_acceleration": raw.get("attention_acceleration"),
+            "attention_acceleration": attention,
             "market_evidence": raw.get("market_evidence"),
             "discovery_confidence": raw.get("discovery_confidence"),
             "nomination_eligible": bool(raw.get("nomination_eligible", True)),
