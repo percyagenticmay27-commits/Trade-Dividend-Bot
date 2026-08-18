@@ -201,3 +201,17 @@ unavailable price into zero.
 - Evidence stance is never converted into an invented bullish or bearish thesis.
   Explicit theses, catalysts, and risks remain source-owned fields. Confluence
   is informational and cannot promote a Swing or Dividend lifecycle record.
+
+
+## 2026-08-18 — Weekly attention acceleration
+
+- Attention acceleration compares this cycle's independent story/producer count
+  with the prior retained weekly candidate observation. It does not use raw
+  mentions, views, likes, subscriber counts, or repeated syndicated coverage.
+- The first detected cycle is recorded as NEW_BASELINE with no previous count,
+  change, or ratio. It is not mislabeled as accelerating.
+- Later cycles deterministically report ACCELERATING, DECELERATING, STABLE, or
+  ACCELERATING_FROM_ZERO with current/previous counts, absolute change, and a
+  ratio when mathematically supported.
+- Attention is evidence context only. It cannot create a bullish thesis,
+  promote either strategy's lifecycle, map a vehicle, or authorize a trade.
