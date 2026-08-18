@@ -7,6 +7,7 @@ untrusted candidates until an operator verifies the channel identity.
 from __future__ import annotations
 
 import json
+import argparse
 import os
 import sys
 import urllib.parse
@@ -16,6 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
+YOUTUBE_CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels"
 SEED_QUERIES = (
     "Bow Tie Nation",
     "Earn Your Leisure",
@@ -70,9 +72,61 @@ def search_channel_candidates(api_key: str, queries=SEED_QUERIES, *, get_json=No
     }
 
 
+def enrich_channel_candidates(report: dict, api_key: str, *, get_json=None) -> dict:
+    """Attach authoritative channel metadata without changing review status."""
+    if not str(api_key).strip():
+        raise ValueError("YOUTUBE_API_KEY is required")
+
+    def default_get(url: str) -> dict:
+        request = urllib.request.Request(url, headers={"Accept": "application/json"})
+        with urllib.request.urlopen(request, timeout=30) as response:  # nosec B310: fixed Google API endpoint
+            return json.loads(response.read().decode("utf-8"))
+
+    getter = get_json or default_get
+    candidates = [candidate for search in report.get("searches", []) for candidate in search.get("candidates", [])]
+    ids = sorted({str(candidate.get("channel_id") or "") for candidate in candidates if candidate.get("channel_id")})
+    metadata = {}
+    if ids:
+        params = urllib.parse.urlencode({
+            "part": "snippet,statistics",
+            "id": ",".join(ids[:50]),
+            "key": api_key,
+        })
+        payload = getter(f"{YOUTUBE_CHANNELS_URL}?{params}")
+        for item in payload.get("items", []) if isinstance(payload, dict) else []:
+            snippet = item.get("snippet") if isinstance(item, dict) else None
+            statistics = item.get("statistics") if isinstance(item, dict) else None
+            if not item.get("id") or not isinstance(snippet, dict):
+                continue
+            metadata[item["id"]] = {
+                "official_title": str(snippet.get("title") or ""),
+                "custom_url": str(snippet.get("customUrl") or "") or None,
+                "country": str(snippet.get("country") or "") or None,
+                "published_at": snippet.get("publishedAt"),
+                "subscriber_count": (statistics or {}).get("subscriberCount") if isinstance(statistics, dict) else None,
+                "video_count": (statistics or {}).get("videoCount") if isinstance(statistics, dict) else None,
+                "hidden_subscriber_count": (statistics or {}).get("hiddenSubscriberCount") if isinstance(statistics, dict) else None,
+            }
+    for candidate in candidates:
+        candidate["channel_metadata"] = metadata.get(candidate.get("channel_id"))
+        candidate["review_status"] = "UNVERIFIED"
+    report["metadata_enriched"] = True
+    report["automatically_approved"] = False
+    return report
+
+
 def main() -> int:
-    report = search_channel_candidates(os.environ.get("YOUTUBE_API_KEY", ""))
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--enrich-existing", action="store_true")
+    args = parser.parse_args()
+    api_key = os.environ.get("YOUTUBE_API_KEY", "")
     output = ROOT / "artifacts" / "discovery" / "youtube_channel_review.json"
+    if args.enrich_existing:
+        if not output.is_file():
+            raise SystemExit(f"Existing channel review is unavailable: {output}")
+        report = enrich_channel_candidates(json.loads(output.read_text(encoding="utf-8")), api_key)
+    else:
+        report = search_channel_candidates(api_key)
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(f"YouTube channel review written: {output}")
@@ -80,6 +134,9 @@ def main() -> int:
         print(f"\n{search['seed_query']}")
         for index, candidate in enumerate(search["candidates"], 1):
             print(f"  {index}. {candidate['channel_title']} | {candidate['channel_id']} | {candidate['channel_url']}")
+            metadata = candidate.get("channel_metadata")
+            if metadata:
+                print(f"     handle={metadata.get('custom_url') or 'Not reported'} | subscribers={metadata.get('subscriber_count') or 'Not reported'} | videos={metadata.get('video_count') or 'Not reported'} | country={metadata.get('country') or 'Not reported'}")
     print("\nNo channel was automatically approved or added to production configuration.")
     return 0
 
