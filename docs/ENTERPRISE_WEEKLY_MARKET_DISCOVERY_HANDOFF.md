@@ -98,3 +98,13 @@ The first controlled server run exposed that executing a Python file beneath
 import location. Both scheduled commands now insert their resolved repository
 root before importing host modules. Dedicated tests load each script exactly by
 path so compilation-only validation cannot miss this deployment behavior again.
+
+### SEC exchange and security-type noise reduction
+
+The first controlled live collection returned 1,676 evidence-only symbols and
+showed that the simpler ticker association file includes OTC securities, units,
+preferred shares, and multiple classes. The broad collector now uses SEC's
+exchange association file, accepts only Nasdaq, NYSE, and NYSE American rows,
+rejects obvious units/warrants/preferred products, and deterministically chooses
+one common underlying ticker per CIK. This is discovery-pool hygiene only; all
+broad SEC observations remain ineligible until independently confirmed.
