@@ -95,6 +95,20 @@
       ]
     },
     {
+      "income_symbol": "FSBW",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://investorrelations.fsbwa.com/stock-information/dividends-splits/",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
       "income_symbol": "HD",
       "mapping_type": "DIRECT_DIVIDEND_EQUITY",
       "reviewed": true,
@@ -162,6 +176,20 @@
         {
           "evidence_type": "ISSUER_DIVIDEND_RECORD",
           "source_url": "https://investors.parker.com/news-events/press-releases/detail/505/parker-increases-quarterly-cash-dividend-11-to-2-00-per",
+          "as_of": "2026-08-18"
+        }
+      ]
+    },
+    {
+      "income_symbol": "SJM",
+      "mapping_type": "DIRECT_DIVIDEND_EQUITY",
+      "reviewed": true,
+      "reviewed_at": "2026-08-18",
+      "dividend_cut_last_12m": false,
+      "sources": [
+        {
+          "evidence_type": "ISSUER_DIVIDEND_RECORD",
+          "source_url": "https://investors.jmsmucker.com/stock-info/dividend-history/default.aspx",
           "as_of": "2026-08-18"
         }
       ]
