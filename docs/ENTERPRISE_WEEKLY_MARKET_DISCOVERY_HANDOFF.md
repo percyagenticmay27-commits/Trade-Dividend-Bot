@@ -159,3 +159,19 @@ stores `nomination_eligible=false` rows under `research_evidence_pool`, not
 `candidates`. Research-only rows remain append-only historical evidence and may
 become eligible in a later cycle only when an independent producer supplies
 confirming evidence; counts never promote rows.
+
+## 2026-08-18 — Confirmed-nominee market evidence
+
+- `enterprise_discovery_market_evidence.py` reuses the host's read-only
+  `MarketDataService` and its live-provider/fresh-cache/stale-cache behavior.
+- Only `nomination_eligible=true` underlyings are refreshed. The 1,527 broad
+  SEC research-only leads do not trigger provider calls.
+- Recorded daily history produces completed five-session return, SPY-relative
+  strength, prior-volume comparison, volume expansion, and latest dollar
+  volume. Sector, industry, and quote type are copied from the authoritative
+  quote when reported.
+- Missing or insufficient history yields `null` and an explicit PARTIAL or
+  UNAVAILABLE disclosure. It never becomes zero and never removes or promotes
+  a candidate. Policy is `AUTHORITATIVE_HISTORY_ONLY`; inference is false.
+- This adapter reads market data only. It cannot place orders, contact a broker,
+  mutate strategy lifecycle state, or change either allocation.
