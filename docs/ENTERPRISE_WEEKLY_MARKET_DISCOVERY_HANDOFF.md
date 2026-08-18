@@ -19,6 +19,9 @@ Architecture:
 - `results/enterprise_dividend_discovery_bucket.json` nominates the same
   underlyings for Dividend-owned dividend/income ecosystem research.
 - `state/enterprise_market_discovery_history.jsonl` is append-only history.
+- Unconfirmed candidates remain active only through their recorded retention
+  deadline. After expiration they are omitted from both strategy projections
+  and an explicit `STALE` transition is appended to historical observations.
 
 Strategy boundary:
 
