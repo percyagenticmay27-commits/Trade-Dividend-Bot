@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import date, timedelta
 from pathlib import Path
 
 from enterprise_dividend_suitability_evidence import (
@@ -13,8 +14,12 @@ def _history():
     return {
         "provider": "TEST",
         "rows": [
-            {"date": f"2026-07-{day:02d}", "adj_close": 100 + day, "volume": 100_000}
-            for day in range(1, 21)
+            {
+                "date": (date(2025, 8, 1) + timedelta(days=index * 20)).isoformat(),
+                "adj_close": 101 + index,
+                "volume": 100_000,
+            }
+            for index in range(20)
         ],
     }
 
