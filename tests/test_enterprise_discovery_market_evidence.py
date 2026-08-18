@@ -30,6 +30,23 @@ def test_market_evidence_uses_recorded_history_and_benchmark():
     assert evidence["inference_allowed"] is False
 
 
+def test_non_finite_latest_close_uses_last_complete_recorded_session():
+    history = _history(
+        "SMCI",
+        [100.0, 101.0, 102.0, 103.0, 104.0, 105.0, float("nan")],
+        [1000.0] * 6 + [2000.0],
+    )
+    benchmark = _history("SPY", [100.0, 100.0, 101.0, 101.0, 102.0, 103.0], [1000.0] * 6)
+
+    evidence = build_candidate_market_evidence("SMCI", history, benchmark)
+
+    assert evidence["latest_session"] == "2026-07-06"
+    assert evidence["latest_close"] == 105.0
+    assert evidence["weekly_return_percent"] == 5.0
+    assert evidence["latest_volume"] == 1000.0
+    assert evidence["latest_dollar_volume"] == 105000.0
+
+
 def test_missing_history_is_unavailable_without_zero_fabrication():
     evidence = build_candidate_market_evidence("SMCI", {"rows": []}, None)
     assert evidence["status"] == "UNAVAILABLE"
