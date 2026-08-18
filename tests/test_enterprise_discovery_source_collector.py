@@ -291,7 +291,7 @@ def test_reviewed_youtube_can_confirm_sec_lead_but_unreviewed_source_cannot():
 def test_alpha_vantage_news_is_bounded_to_known_underlyings_and_preserves_provider_classification():
     payload = {
         "feed": [{
-            "title": "Semiconductor weekly review",
+            "title": "SMCI semiconductor weekly review",
             "url": "https://news.example/story-1",
             "time_published": "20260816T120000",
             "source": "Reuters",
@@ -348,7 +348,7 @@ def test_alpha_vantage_professional_news_can_confirm_sec_lead_but_cannot_introdu
     tickers = {"fields": ["cik", "name", "ticker", "exchange"], "data": [[1375365, "SUPER MICRO COMPUTER", "SMCI", "Nasdaq"]]}
     index = b"Description\n-----\n1375365|SUPER MICRO COMPUTER|8-K|2026-08-14|edgar/data/1375365/a.txt\n"
     news = {"feed": [{
-        "title": "Company developments",
+        "title": "SMCI company developments",
         "url": "https://news.example/smci",
         "time_published": "20260816T120000",
         "source": "Market Publisher",
@@ -378,3 +378,39 @@ def test_alpha_vantage_professional_news_can_confirm_sec_lead_but_cannot_introdu
     assert {item["source_class"] for item in result["observations"][0]["source_evidence"]} == {
         "PRIMARY_COMPANY", "PROFESSIONAL_MEDIA"
     }
+
+
+def test_alpha_vantage_relevance_score_cannot_override_missing_headline_identity():
+    payload = {"feed": [
+        {
+            "title": "Rep. McCormick sells shares of Cisco Systems (NASDAQ:CSCO)",
+            "url": "https://news.example/csco",
+            "time_published": "20260816T120000",
+            "source": "MarketBeat",
+            "ticker_sentiment": [
+                {"ticker": "CSCO", "relevance_score": "0.20", "ticker_sentiment_label": "Neutral"},
+                {"ticker": "NEE", "relevance_score": "0.90", "ticker_sentiment_label": "Bullish"},
+            ],
+        },
+        {
+            "title": "Q3 estimate for Acrivon Therapeutics raised by analyst",
+            "url": "https://news.example/acrv",
+            "time_published": "20260816T130000",
+            "source": "MarketBeat",
+            "ticker_sentiment": [
+                {"ticker": "ACRV", "relevance_score": "1.0", "ticker_sentiment_label": "Somewhat-Bullish"},
+            ],
+        },
+    ]}
+    rows, warnings = collect_alpha_vantage_news_evidence(
+        [{"source_type": "ALPHA_VANTAGE_NEWS", "source_name": "Professional News",
+          "authority": "PROFESSIONAL_MEDIA", "credibility_reviewed": True}],
+        as_of="2026-08-17T20:00:00Z", api_key="private-key",
+        allowed_symbols={"CSCO": "CISCO SYSTEMS INC", "NEE": "NEXTERA ENERGY INC",
+                         "ACRV": "ACRIVON THERAPEUTICS INC"},
+        user_agent="AI-CIO operator@example.com",
+        get_bytes=lambda *_: json.dumps(payload).encode(),
+    )
+    assert warnings == []
+    assert [row["underlying_symbol"] for row in rows] == ["CSCO", "ACRV"]
+    assert all(row["underlying_symbol"] != "NEE" for row in rows)
