@@ -130,6 +130,19 @@ def build_weekly_discovery(
             "market_evidence": raw.get("market_evidence"),
             "discovery_confidence": raw.get("discovery_confidence"),
         })
+    expired_candidates: list[dict[str, Any]] = []
+    for symbol, prior in previous.items():
+        if symbol in seen:
+            continue
+        expires_at = prior.get("expires_at")
+        if expires_at and now <= _utc(expires_at):
+            candidates.append(dict(prior))
+            continue
+        stale = dict(prior)
+        stale["previous_status"] = prior.get("discovery_status") or prior.get("previous_status") or "NOT_REPORTED"
+        stale["discovery_status"] = "STALE"
+        stale["expired_at"] = _iso(now)
+        expired_candidates.append(stale)
     return {
         "schema_version": SCHEMA_VERSION,
         "generated_at": _iso(now),
@@ -141,6 +154,7 @@ def build_weekly_discovery(
         "order_placement_enabled": False,
         "capital_movement_enabled": False,
         "candidates": sorted(candidates, key=lambda row: row["underlying_symbol"]),
+        "expired_candidates": sorted(expired_candidates, key=lambda row: row["underlying_symbol"]),
     }
 
 
@@ -215,6 +229,6 @@ def write_weekly_discovery(
     for path, payload in outputs.items():
         path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with (state / "enterprise_market_discovery_history.jsonl").open("a", encoding="utf-8") as handle:
-        for candidate in report["candidates"]:
+        for candidate in [*report["candidates"], *report["expired_candidates"]]:
             handle.write(json.dumps({"observed_at": report["generated_at"], **candidate}, sort_keys=True) + "\n")
     return report
