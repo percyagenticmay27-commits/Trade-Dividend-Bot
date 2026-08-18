@@ -137,6 +137,33 @@ def test_unreviewed_professional_feed_fails_closed():
     assert "not credibility-reviewed" in warnings[0]
 
 
+def test_reviewed_professional_feed_can_confirm_existing_sec_lead():
+    tickers = {"fields": ["cik", "name", "ticker", "exchange"], "data": [[1375365, "SUPER MICRO COMPUTER", "SMCI", "Nasdaq"]]}
+    index = b"Description\n-----\n1375365|SUPER MICRO COMPUTER|8-K|2026-08-14|edgar/data/1375365/a.txt\n"
+    rss = b"<rss><channel><item><title>SMCI stock gains after earnings</title><link>https://media.example/smci</link><pubDate>Sun, 16 Aug 2026 10:00:00 GMT</pubDate></item></channel></rss>"
+    def get_bytes(url, _user_agent):
+        if "company_tickers" in url:
+            return json.dumps(tickers).encode()
+        if "media.example" in url:
+            return rss
+        return index
+    result = collect_credential_free_observations([
+        {"source_type": "SEC_DAILY_INDEX", "source_name": "SEC Broad", "index_dates": ["2026-08-14"]},
+        {
+            "source_type": "PROFESSIONAL_RSS",
+            "source_name": "Reviewed Financial News",
+            "producer": "Reviewed Financial News",
+            "url": "https://media.example/rss",
+            "authority": "PROFESSIONAL_MEDIA",
+            "credibility_reviewed": True,
+        },
+    ], as_of="2026-08-17T01:00:00Z", user_agent="AI-CIO operator@example.com", get_bytes=get_bytes, minimum_request_interval=0)
+    row = result["observations"][0]
+    assert row["underlying_symbol"] == "SMCI"
+    assert row["nomination_eligible"] is True
+    assert {item["source_class"] for item in row["source_evidence"]} == {"PRIMARY_COMPANY", "PROFESSIONAL_MEDIA"}
+
+
 def test_youtube_search_is_bounded_and_only_matches_known_underlyings():
     payload = {"items": [
         {"id": {"videoId": "v1"}, "snippet": {"publishedAt": "2026-08-16T12:00:00Z", "channelId": "channel-1", "channelTitle": "Reviewed Analyst", "title": "$NVDA earnings and NVDX trading", "description": "NVDA demand review"}},
