@@ -69,6 +69,42 @@ def test_bullish_and_bearish_evidence_remain_separate_without_inventing_theses()
     assert row["bearish_thesis"] is None
 
 
+def test_first_detection_records_new_attention_baseline_without_fabricating_acceleration():
+    report = build_weekly_discovery([_observation()], generated_at="2026-08-16T01:00:00Z")
+    attention = report["candidates"][0]["attention_acceleration"]
+    assert attention["status"] == "NEW_BASELINE"
+    assert attention["current_independent_evidence_count"] == 2
+    assert attention["previous_independent_evidence_count"] is None
+    assert attention["absolute_change"] is None
+    assert attention["ratio"] is None
+    assert attention["raw_mentions_used"] is False
+    assert attention["inference_allowed"] is False
+
+
+def test_attention_acceleration_compares_independent_weekly_evidence():
+    first = build_weekly_discovery([_observation()], generated_at="2026-08-09T01:00:00Z")
+    observation = _observation()
+    observation["source_evidence"].append({
+        "source": "Company IR",
+        "producer": "NVIDIA",
+        "source_class": "PRIMARY_COMPANY",
+        "mentioned_on": "2026-08-16",
+        "story_id": "story-3",
+        "stance": "NEUTRAL",
+    })
+    second = build_weekly_discovery(
+        [observation],
+        first["candidates"],
+        generated_at="2026-08-16T01:00:00Z",
+    )
+    attention = second["candidates"][0]["attention_acceleration"]
+    assert attention["status"] == "ACCELERATING"
+    assert attention["current_independent_evidence_count"] == 3
+    assert attention["previous_independent_evidence_count"] == 2
+    assert attention["absolute_change"] == 1
+    assert attention["ratio"] == 1.5
+
+
 def test_lifecycle_retention_and_history_are_preserved(tmp_path):
     first = build_weekly_discovery([_observation(status="EMERGING")], generated_at="2026-08-09T01:00:00Z")
     second = write_weekly_discovery(tmp_path, [_observation(status="RISING")], first["candidates"], generated_at="2026-08-16T01:00:00Z")
