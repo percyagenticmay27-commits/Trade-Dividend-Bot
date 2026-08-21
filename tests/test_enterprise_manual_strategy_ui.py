@@ -22,7 +22,7 @@ def _contract(path: Path, *, status: str = "INTAKE_HANDLER_PENDING") -> None:
                     {"name": "rule_logic", "choices": ["ALL", "ANY"]},
                     {"name": "rules", "operator_choices": [">", "<", "between"]},
                     {"name": "regime_logic", "choices": ["ALL", "ANY"]},
-                    {"name": "regime_filters", "operator_choices": [">", "<"]},
+                    {"name": "regime_filters", "operator_choices": [">", "<", "between"]},
                 ],
                 "current_registry": {
                     "strategies": [
@@ -79,6 +79,23 @@ def test_manual_strategy_panel_reads_swing_declared_contract(tmp_path: Path) -> 
     assert "Test Strategy" in output
     assert "structured rules" in output
     assert "Save unavailable" in output
+
+
+def test_manual_strategy_form_posts_named_structured_rule_arrays(tmp_path: Path) -> None:
+    _contract(tmp_path / "results/manual_entry_strategy_form_contract.json", status="AVAILABLE")
+    output = render_manual_strategy_panel(_swing_row(tmp_path))
+
+    assert "action='/strategy/manual-entry'" in output
+    assert "name='entry_rule_left'" in output
+    assert "name='entry_rule_operator'" in output
+    assert "name='entry_rule_right'" in output
+    assert "name='entry_rule_period'" in output
+    assert "name='regime_rule_left'" in output
+    assert "name='regime_rule_operator'" in output
+    assert "name='regime_rule_right'" in output
+    assert "name='regime_rule_period'" in output
+    assert "data-add-manual-rule='entry'" in output
+    assert "data-add-manual-rule='regime'" in output
 
 
 def test_swing_workspace_receives_manual_strategy_tab_only_when_capability_declared(tmp_path: Path) -> None:
