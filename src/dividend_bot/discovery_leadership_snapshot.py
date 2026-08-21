@@ -15,7 +15,6 @@ from src.dividend_bot.discovery_leadership import (
     BENCHMARK_SYMBOL,
     CLASS_SCORES,
     HORIZON_SESSIONS,
-    MIN_OUTPERFORMANCE_FOR_2X_EVIDENCE_PCT,
     _as_date,
     _composite,
     _float,
@@ -259,12 +258,7 @@ def enrich_swing_discovery_bucket_from_snapshot(
         ]
         if any((_float(item.get("relative_outperformance_pct")) or 0.0) > 0 for item in available_horizons):
             reasons.add("OUTPERFORMING_SPY")
-        if any(
-            (_float(item.get("relative_multiple")) or 0.0) >= 2.0
-            and (_float(item.get("relative_outperformance_pct")) or 0.0)
-            >= MIN_OUTPERFORMANCE_FOR_2X_EVIDENCE_PCT
-            for item in available_horizons
-        ):
+        if any(bool(item.get("trapper_2x_spy_evidence")) for item in available_horizons):
             reasons.add("TRAPPER_2X_SPY_EVIDENCE")
         if (_float(relative.get("leadership_persistence")) or 0.0) >= 0.5:
             reasons.add("MULTI_HORIZON_LEADER")
