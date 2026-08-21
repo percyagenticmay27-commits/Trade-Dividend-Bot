@@ -102,6 +102,36 @@ Top level remains:
 
 Existing required candidate fields remain preserved. Leadership fields are additive.
 
+## Source-class propagation hardening
+
+AI CIO remains the source-class authority. The final SWING projection propagates canonical `source_class` metadata into `evidence_sources` without requiring Swing to infer trust from display names.
+
+Accepted cross-service classes are limited to:
+
+- PRIMARY_REGULATORY
+- COMPANY_PRIMARY
+- INSTITUTIONAL_NEWS
+- PROFESSIONAL_RESEARCH
+- PROFESSIONAL_CREATOR
+- MARKET_ANALYTICS
+- SOCIAL_COMMUNITY
+
+Legacy producer classes are normalized inside AI CIO. Unclassified or conflicting evidence remains null/fail-closed.
+
+Real server propagation validated the current bucket examples:
+
+- SEC EDGAR Daily Index -> PRIMARY_REGULATORY
+- 24/7 Wall St. -> INSTITUTIONAL_NEWS
+- TIKR.com -> INSTITUTIONAL_NEWS
+- AD HOC NEWS -> INSTITUTIONAL_NEWS
+- Simply Wall Street -> INSTITUTIONAL_NEWS
+- GuruFocus -> INSTITUTIONAL_NEWS
+- Stock Titan -> INSTITUTIONAL_NEWS
+
+Source-class hardening passed **30/30 focused discovery/source tests** and the existing weekly producer regression passed **21/21 tests** on the AI CIO server.
+
+This projection metadata must not modify Discovery Leadership scoring, candidate selection, relative-leadership calculations, Trapper evidence, or execution behavior.
+
 ## Safety / failure behavior
 
 - Paper-only architecture remains unchanged.
