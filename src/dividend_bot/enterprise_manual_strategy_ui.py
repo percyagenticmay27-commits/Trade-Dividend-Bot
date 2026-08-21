@@ -64,7 +64,23 @@ def _field(contract: Mapping[str, Any], name: str) -> Mapping[str, Any]:
 def _options(values: Any) -> str:
     if not isinstance(values, list):
         return ""
-    return "".join(f"<option value='{html.escape(str(value), quote=True)}'>{html.escape(str(value))}</option>" for value in values)
+    return "".join(
+        f"<option value='{html.escape(str(value), quote=True)}'>{html.escape(str(value))}</option>"
+        for value in values
+    )
+
+
+def _rule_row(prefix: str, operators: Any, disabled: str, *, regime: bool = False) -> str:
+    source_placeholder = "Regime source" if regime else "Indicator / source"
+    value_placeholder = "Value" if regime else "Value / indicator"
+    return (
+        "<div class='manual-rule-row'>"
+        f"<input name='{prefix}_left' placeholder='{source_placeholder}' aria-label='{source_placeholder}'{disabled}>"
+        f"<select name='{prefix}_operator' aria-label='Rule operator'{disabled}>{_options(operators)}</select>"
+        f"<input name='{prefix}_right' placeholder='{value_placeholder}' aria-label='Rule value'{disabled}>"
+        f"<input name='{prefix}_period' type='number' min='1' placeholder='Period (optional)' aria-label='Rule period'{disabled}>"
+        "</div>"
+    )
 
 
 def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
@@ -86,6 +102,8 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
     direction = _field(contract, "direction")
     entry_logic = _field(contract, "rule_logic")
     regime_logic = _field(contract, "regime_logic")
+    entry_rule = _field(contract, "rules")
+    regime_rule = _field(contract, "regime_filters")
     submission = contract.get("submission_contract") if isinstance(contract.get("submission_contract"), Mapping) else {}
     intake_ready = submission.get("status") == "AVAILABLE"
     disabled = "" if intake_ready else " disabled"
@@ -107,6 +125,9 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
         "</li>"
         for item in assignments if isinstance(item, Mapping)
     ) or "<li>No explicit underlying assignments yet.</li>"
+
+    entry_row = _rule_row("entry_rule", entry_rule.get("operator_choices"), disabled)
+    regime_row = _rule_row("regime_rule", regime_rule.get("operator_choices"), disabled, regime=True)
 
     return f"""
 <section class='manual-strategy-panel' data-manual-strategy-form>
@@ -132,15 +153,16 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
     </div>
     <fieldset><legend>Entry Rules</legend>
       <div class='manual-inline-choice'><label>Combine rules with <select name='rule_logic'{disabled}>{_options(entry_logic.get('choices'))}</select></label></div>
-      <div class='manual-rule-list' data-entry-rule-list><div class='manual-rule-row'><input placeholder='Indicator / source' aria-label='Entry rule source'{disabled}><select aria-label='Entry operator'{disabled}>{_options(_field(contract, 'rules').get('operator_choices'))}</select><input placeholder='Value / indicator' aria-label='Entry rule value'{disabled}></div></div>
-      <button type='button' class='secondary-action'{disabled}>+ Add Entry Rule</button>
+      <div class='manual-rule-list' data-entry-rule-list>{entry_row}</div>
+      <button type='button' class='secondary-action' data-add-manual-rule='entry'{disabled}>+ Add Entry Rule</button>
+      <p class='form-help'>For a BETWEEN rule, enter the value as minimum,maximum (example: 45,65).</p>
     </fieldset>
     <fieldset><legend>Confirmation</legend><input name='confirmation' placeholder='Example: 2 consecutive qualifying Daily closes'{disabled}></fieldset>
     <fieldset><legend>Regime Filters</legend>
       <div class='manual-inline-choice'><label>Combine filters with <select name='regime_logic'{disabled}>{_options(regime_logic.get('choices'))}</select></label></div>
-      <div class='manual-rule-list' data-regime-rule-list><div class='manual-rule-row'><input placeholder='Indicator / source' aria-label='Regime source'{disabled}><select aria-label='Regime operator'{disabled}>{_options(_field(contract, 'regime_filters').get('operator_choices'))}</select><input placeholder='Value' aria-label='Regime value'{disabled}></div></div>
-      <button type='button' class='secondary-action'{disabled}>+ Add Regime Filter</button>
-      <p class='form-help'>Multiple filters are stored as structured rules, not as one comma-delimited string.</p>
+      <div class='manual-rule-list' data-regime-rule-list>{regime_row}</div>
+      <button type='button' class='secondary-action' data-add-manual-rule='regime'{disabled}>+ Add Regime Filter</button>
+      <p class='form-help'>Multiple filters are submitted and stored as structured rules, not as one comma-delimited string.</p>
     </fieldset>
     <div class='manual-form-grid'>
       <label><span>Exit Policy</span><input name='exit_policy_id' placeholder='Existing Swing exit policy'{disabled}></label>
@@ -154,6 +176,23 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
     <table><thead><tr><th>ID</th><th>Name</th><th>Timeframe</th><th>Entries</th></tr></thead><tbody>{current_rows}</tbody></table>
     <h4>Underlying assignments</h4><ul>{assignment_rows}</ul>
   </details>
+  <script>
+  (() => {{
+    const root = document.currentScript && document.currentScript.closest('[data-manual-strategy-form]');
+    if (!root) return;
+    root.querySelectorAll('[data-add-manual-rule]').forEach((button) => {{
+      button.addEventListener('click', () => {{
+        const kind = button.getAttribute('data-add-manual-rule');
+        const list = root.querySelector(kind === 'entry' ? '[data-entry-rule-list]' : '[data-regime-rule-list]');
+        if (!list || !list.firstElementChild) return;
+        const clone = list.firstElementChild.cloneNode(true);
+        clone.querySelectorAll('input').forEach((input) => input.value = '');
+        clone.querySelectorAll('select').forEach((select) => select.selectedIndex = 0);
+        list.appendChild(clone);
+      }});
+    }});
+  }})();
+  </script>
 </section>
 """
 
@@ -161,6 +200,6 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
 def manual_strategy_ui_css() -> str:
     return """
 <style>
-.manual-strategy-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.manual-strategy-heading h3{margin-bottom:4px}.paper-only-badge{padding:6px 10px;border-radius:999px;background:#ede9fe;color:#5b21b6;font-weight:900;font-size:12px;white-space:nowrap}.manual-strategy-authority{margin:14px 0;padding:12px 14px;border-radius:10px;background:#eef6ff;border:1px solid #bfdbfe;color:#1e3a8a}.manual-strategy-form{display:grid;gap:16px}.manual-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.manual-strategy-form label{display:grid;gap:6px}.manual-strategy-form label>span,.manual-strategy-form legend{font-weight:800;color:#344054}.manual-strategy-form input,.manual-strategy-form select{width:100%;box-sizing:border-box;padding:10px 11px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}.manual-strategy-form input[readonly]{background:#f1f5f9;color:#475569}.manual-strategy-form fieldset{border:1px solid #dbe3ef;border-radius:12px;padding:14px}.manual-rule-list{display:grid;gap:8px;margin:10px 0}.manual-rule-row{display:grid;grid-template-columns:1.2fr .7fr 1.2fr;gap:8px}.secondary-action,.primary-action{padding:9px 13px;border-radius:9px;font-weight:800}.secondary-action{border:1px solid #8b5cf6;background:#fff;color:#5d18d6}.primary-action{border:0;background:#5d18d6;color:#fff}.primary-action:disabled,.secondary-action:disabled{opacity:.55;cursor:not-allowed}.form-help{font-size:12px;color:#64748b}.manual-current-strategies{margin-top:18px}.manual-current-strategies table{width:100%;border-collapse:collapse}.manual-current-strategies th,.manual-current-strategies td{padding:9px;border-bottom:1px solid #e5e7eb;text-align:left}.workspace-tab[data-workspace-tab-target='manual-strategy'].active{background:#0f766e}
+.manual-strategy-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.manual-strategy-heading h3{margin-bottom:4px}.paper-only-badge{padding:6px 10px;border-radius:999px;background:#ede9fe;color:#5b21b6;font-weight:900;font-size:12px;white-space:nowrap}.manual-strategy-authority{margin:14px 0;padding:12px 14px;border-radius:10px;background:#eef6ff;border:1px solid #bfdbfe;color:#1e3a8a}.manual-strategy-form{display:grid;gap:16px}.manual-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.manual-strategy-form label{display:grid;gap:6px}.manual-strategy-form label>span,.manual-strategy-form legend{font-weight:800;color:#344054}.manual-strategy-form input,.manual-strategy-form select{width:100%;box-sizing:border-box;padding:10px 11px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}.manual-strategy-form input[readonly]{background:#f1f5f9;color:#475569}.manual-strategy-form fieldset{border:1px solid #dbe3ef;border-radius:12px;padding:14px}.manual-rule-list{display:grid;gap:8px;margin:10px 0}.manual-rule-row{display:grid;grid-template-columns:1.15fr .65fr 1.15fr .8fr;gap:8px}.secondary-action,.primary-action{padding:9px 13px;border-radius:9px;font-weight:800}.secondary-action{border:1px solid #8b5cf6;background:#fff;color:#5d18d6}.primary-action{border:0;background:#5d18d6;color:#fff}.primary-action:disabled,.secondary-action:disabled{opacity:.55;cursor:not-allowed}.form-help{font-size:12px;color:#64748b}.manual-current-strategies{margin-top:18px}.manual-current-strategies table{width:100%;border-collapse:collapse}.manual-current-strategies th,.manual-current-strategies td{padding:9px;border-bottom:1px solid #e5e7eb;text-align:left}.workspace-tab[data-workspace-tab-target='manual-strategy'].active{background:#0f766e}
 @media(max-width:700px){.manual-form-grid,.manual-rule-row{grid-template-columns:1fr}.manual-strategy-heading{display:block}.paper-only-badge{display:inline-block;margin-top:8px}}
 </style>"""
