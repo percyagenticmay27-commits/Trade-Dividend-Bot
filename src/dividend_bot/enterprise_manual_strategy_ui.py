@@ -70,6 +70,18 @@ def _options(values: Any) -> str:
     )
 
 
+def _help(contract: Mapping[str, Any], name: str) -> str:
+    field = _field(contract, name)
+    help_text = str(field.get("help") or "").strip()
+    example = str(field.get("example") or "").strip()
+    parts: list[str] = []
+    if help_text:
+        parts.append(html.escape(help_text))
+    if example:
+        parts.append(f"<strong>Example:</strong> {html.escape(example)}")
+    return f"<small class='field-help'>{' '.join(parts)}</small>" if parts else ""
+
+
 def _rule_row(prefix: str, operators: Any, disabled: str, *, regime: bool = False) -> str:
     source_placeholder = "Regime source" if regime else "Indicator / source"
     value_placeholder = "Value" if regime else "Value / indicator"
@@ -140,35 +152,40 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
     &nbsp;·&nbsp; <strong>Assignment:</strong> UNDERLYING SYMBOL
     &nbsp;·&nbsp; <strong>Execution vehicle:</strong> VERIFIED SWING MAPPING
   </div>
+  <div class='manual-strategy-guide'><strong>How to use this form:</strong> Enter the strategy identity and underlying first, then define the entry rules. Optional confirmation and regime filters further restrict when an entry is allowed. Swing decides allocation dollars automatically.</div>
   <form class='manual-strategy-form' method='post' action='/strategy/manual-entry'{disabled}>
     <div class='manual-form-grid'>
-      <label><span>Strategy Name</span><input name='name' required{disabled}></label>
-      <label><span>Strategy ID</span><input name='strategy_id' required placeholder='NFLX_DAILY_ENTRY_V1'{disabled}></label>
-      <label><span>Underlying Symbol</span><input name='underlying_symbol' required placeholder='NFLX'{disabled}></label>
-      <label><span>Execution Vehicle</span><input value='Resolved from verified mapping' readonly></label>
-      <label><span>Direction</span><select name='direction'{disabled}>{_options(direction.get('choices'))}</select></label>
-      <label><span>Timeframe</span><select name='timeframe'{disabled}>{_options(timeframe.get('choices'))}</select></label>
-      <label><span>Session</span><input name='session' value='REGULAR_SESSION'{disabled}></label>
-      <label><span>Number of Entries</span><input name='number_of_entries' type='number' min='1' value='1' required{disabled}></label>
+      <label><span>Strategy Name</span><input name='name' required{disabled}>{_help(contract, 'name')}</label>
+      <label><span>Strategy ID</span><input name='strategy_id' required placeholder='NFLX_DAILY_ENTRY_V1'{disabled}>{_help(contract, 'strategy_id')}</label>
+      <label><span>Underlying Symbol</span><input name='underlying_symbol' required placeholder='NFLX'{disabled}>{_help(contract, 'underlying_symbol')}</label>
+      <label><span>Execution Vehicle</span><input value='Resolved from verified mapping' readonly>{_help(contract, 'execution_symbol')}</label>
+      <label><span>Direction</span><select name='direction'{disabled}>{_options(direction.get('choices'))}</select>{_help(contract, 'direction')}</label>
+      <label><span>Timeframe</span><select name='timeframe'{disabled}>{_options(timeframe.get('choices'))}</select>{_help(contract, 'timeframe')}</label>
+      <label><span>Session</span><input name='session' value='REGULAR_SESSION'{disabled}>{_help(contract, 'session')}</label>
+      <label><span>Number of Entries</span><input name='number_of_entries' type='number' min='1' value='1' required{disabled}>{_help(contract, 'number_of_entries')}</label>
     </div>
     <fieldset><legend>Entry Rules</legend>
-      <div class='manual-inline-choice'><label>Combine rules with <select name='rule_logic'{disabled}>{_options(entry_logic.get('choices'))}</select></label></div>
+      <div class='section-help'>{_help(contract, 'rules')}</div>
+      <div class='manual-inline-choice'><label>Combine rules with <select name='rule_logic'{disabled}>{_options(entry_logic.get('choices'))}</select>{_help(contract, 'rule_logic')}</label></div>
+      <div class='manual-rule-column-labels'><span>Source / Indicator</span><span>Operator</span><span>Value / Indicator</span><span>Period</span></div>
       <div class='manual-rule-list' data-entry-rule-list>{entry_row}</div>
       <button type='button' class='secondary-action' data-add-manual-rule='entry'{disabled}>+ Add Entry Rule</button>
       <p class='form-help'>For a BETWEEN rule, enter the value as minimum,maximum (example: 45,65).</p>
     </fieldset>
-    <fieldset><legend>Confirmation</legend><input name='confirmation' placeholder='Example: 2 consecutive qualifying Daily closes'{disabled}></fieldset>
+    <fieldset><legend>Confirmation</legend><input name='confirmation' placeholder='Example: 2 consecutive qualifying Daily closes'{disabled}>{_help(contract, 'confirmation')}</fieldset>
     <fieldset><legend>Regime Filters</legend>
-      <div class='manual-inline-choice'><label>Combine filters with <select name='regime_logic'{disabled}>{_options(regime_logic.get('choices'))}</select></label></div>
+      <div class='section-help'>{_help(contract, 'regime_filters')}</div>
+      <div class='manual-inline-choice'><label>Combine filters with <select name='regime_logic'{disabled}>{_options(regime_logic.get('choices'))}</select>{_help(contract, 'regime_logic')}</label></div>
+      <div class='manual-rule-column-labels'><span>Source / Indicator</span><span>Operator</span><span>Value / State</span><span>Period</span></div>
       <div class='manual-rule-list' data-regime-rule-list>{regime_row}</div>
       <button type='button' class='secondary-action' data-add-manual-rule='regime'{disabled}>+ Add Regime Filter</button>
       <p class='form-help'>Multiple filters are submitted and stored as structured rules, not as one comma-delimited string.</p>
     </fieldset>
     <div class='manual-form-grid'>
-      <label><span>Exit Policy</span><input name='exit_policy_id' placeholder='Existing Swing exit policy'{disabled}></label>
-      <label><span>Re-entry Cooldown / Reset</span><input name='reentry_cooldown' placeholder='Optional'{disabled}></label>
-      <label><span>Allocation Authority</span><input value='SWING_PORTFOLIO_ALLOCATOR' readonly></label>
-      <label><span>Paper Trade Mode</span><input value='TRUE' readonly></label>
+      <label><span>Exit Policy</span><input name='exit_policy_id' placeholder='Existing Swing exit policy'{disabled}>{_help(contract, 'exit_policy_id')}</label>
+      <label><span>Re-entry Cooldown / Reset</span><input name='reentry_cooldown' placeholder='Optional'{disabled}>{_help(contract, 'reentry_cooldown')}</label>
+      <label><span>Allocation Authority</span><input value='SWING_PORTFOLIO_ALLOCATOR' readonly>{_help(contract, 'allocation_authority')}</label>
+      <label><span>Paper Trade Mode</span><input value='TRUE' readonly>{_help(contract, 'paper_trade_mode')}</label>
     </div>
     <div class='manual-form-actions'><button type='submit' class='primary-action'{disabled}>{html.escape(save_label)}</button></div>
   </form>
@@ -200,6 +217,6 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
 def manual_strategy_ui_css() -> str:
     return """
 <style>
-.manual-strategy-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.manual-strategy-heading h3{margin-bottom:4px}.paper-only-badge{padding:6px 10px;border-radius:999px;background:#ede9fe;color:#5b21b6;font-weight:900;font-size:12px;white-space:nowrap}.manual-strategy-authority{margin:14px 0;padding:12px 14px;border-radius:10px;background:#eef6ff;border:1px solid #bfdbfe;color:#1e3a8a}.manual-strategy-form{display:grid;gap:16px}.manual-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.manual-strategy-form label{display:grid;gap:6px}.manual-strategy-form label>span,.manual-strategy-form legend{font-weight:800;color:#344054}.manual-strategy-form input,.manual-strategy-form select{width:100%;box-sizing:border-box;padding:10px 11px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}.manual-strategy-form input[readonly]{background:#f1f5f9;color:#475569}.manual-strategy-form fieldset{border:1px solid #dbe3ef;border-radius:12px;padding:14px}.manual-rule-list{display:grid;gap:8px;margin:10px 0}.manual-rule-row{display:grid;grid-template-columns:1.15fr .65fr 1.15fr .8fr;gap:8px}.secondary-action,.primary-action{padding:9px 13px;border-radius:9px;font-weight:800}.secondary-action{border:1px solid #8b5cf6;background:#fff;color:#5d18d6}.primary-action{border:0;background:#5d18d6;color:#fff}.primary-action:disabled,.secondary-action:disabled{opacity:.55;cursor:not-allowed}.form-help{font-size:12px;color:#64748b}.manual-current-strategies{margin-top:18px}.manual-current-strategies table{width:100%;border-collapse:collapse}.manual-current-strategies th,.manual-current-strategies td{padding:9px;border-bottom:1px solid #e5e7eb;text-align:left}.workspace-tab[data-workspace-tab-target='manual-strategy'].active{background:#0f766e}
-@media(max-width:700px){.manual-form-grid,.manual-rule-row{grid-template-columns:1fr}.manual-strategy-heading{display:block}.paper-only-badge{display:inline-block;margin-top:8px}}
+.manual-strategy-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.manual-strategy-heading h3{margin-bottom:4px}.paper-only-badge{padding:6px 10px;border-radius:999px;background:#ede9fe;color:#5b21b6;font-weight:900;font-size:12px;white-space:nowrap}.manual-strategy-authority{margin:14px 0;padding:12px 14px;border-radius:10px;background:#eef6ff;border:1px solid #bfdbfe;color:#1e3a8a}.manual-strategy-guide{margin:0 0 16px;padding:12px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569}.manual-strategy-form{display:grid;gap:16px}.manual-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.manual-strategy-form label{display:grid;gap:6px;align-content:start}.manual-strategy-form label>span,.manual-strategy-form legend{font-weight:800;color:#344054}.manual-strategy-form input,.manual-strategy-form select{width:100%;box-sizing:border-box;padding:10px 11px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}.manual-strategy-form input[readonly]{background:#f1f5f9;color:#475569}.manual-strategy-form fieldset{border:1px solid #dbe3ef;border-radius:12px;padding:14px}.field-help{font-size:12px;line-height:1.4;color:#64748b}.field-help strong{color:#475569}.section-help{margin:2px 0 12px}.manual-rule-list{display:grid;gap:8px;margin:8px 0 10px}.manual-rule-row,.manual-rule-column-labels{display:grid;grid-template-columns:1.15fr .65fr 1.15fr .8fr;gap:8px}.manual-rule-column-labels{font-size:11px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.03em}.secondary-action,.primary-action{padding:9px 13px;border-radius:9px;font-weight:800}.secondary-action{border:1px solid #8b5cf6;background:#fff;color:#5d18d6}.primary-action{border:0;background:#5d18d6;color:#fff}.primary-action:disabled,.secondary-action:disabled{opacity:.55;cursor:not-allowed}.form-help{font-size:12px;color:#64748b}.manual-current-strategies{margin-top:18px}.manual-current-strategies table{width:100%;border-collapse:collapse}.manual-current-strategies th,.manual-current-strategies td{padding:9px;border-bottom:1px solid #e5e7eb;text-align:left}.workspace-tab[data-workspace-tab-target='manual-strategy'].active{background:#0f766e}
+@media(max-width:700px){.manual-form-grid,.manual-rule-row,.manual-rule-column-labels{grid-template-columns:1fr}.manual-rule-column-labels{display:none}.manual-strategy-heading{display:block}.paper-only-badge{display:inline-block;margin-top:8px}}
 </style>"""
