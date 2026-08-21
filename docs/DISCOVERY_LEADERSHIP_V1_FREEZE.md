@@ -1,6 +1,6 @@
-# AI CIO Discovery Leadership v1 — Freeze Candidate
+# AI CIO Discovery Leadership v1 — Frozen
 
-Status: **FREEZE CANDIDATE — pending final server regression validation**
+Status: **FROZEN — validated on AI CIO server**
 
 Date: 2026-08-21
 
@@ -111,18 +111,26 @@ Existing required candidate fields remain preserved. Leadership fields are addit
 - Missing market snapshot preserves the base SWING-001 bucket.
 - No hard 20-stock AI CIO limit is introduced.
 
-## First real validation evidence
+## Final server validation evidence
 
-The first real server run produced five SWING-001 candidates and preserved the discovery/execution boundary:
+Final focused regression on the AI CIO server passed **25/25 tests** after Trapper explanation-consistency hardening.
 
-- AMAT: strongest persistent leader in the observed candidate set
-- SJM: multi-horizon leader
-- ULTA: recent strength but weak 6M/YTD persistence
-- INTS: weak longer-horizon leadership
-- FSBW: weak longer-horizon leadership
+The final real weekly discovery run produced five SWING-001 candidates and preserved the discovery/execution boundary:
 
-The real bucket retained `schema_version=1.0`, `strategy_id=SWING-001`, and contained no forbidden trade fields.
+- AMAT: discovery leadership score 67.692308; STRONG; Trapper evidence on 3M, 6M, and YTD
+- SJM: discovery leadership score 58.846154; STRONG; Trapper evidence on 3M and YTD
+- ULTA: discovery leadership score 32.307692; MARKET_PERFORMER; Trapper evidence on 1M only
+- INTS: discovery leadership score 21.923077; WEAK; no Trapper evidence horizons
+- FSBW: discovery leadership score 15.769231; WEAK; no Trapper evidence horizons
 
-## Freeze condition
+The real bucket retained `schema_version=1.0`, `strategy_id=SWING-001`, `candidate_count=5`, and contained no forbidden trade fields.
 
-This v1 freeze becomes authoritative after the final focused regression suite passes on the AI CIO server after the Trapper explanation-consistency hardening.
+For every candidate, the candidate-level `TRAPPER_2X_SPY_EVIDENCE` reason matched the horizon-level `trapper_2x_spy_evidence` flags exactly.
+
+## Freeze authority
+
+Discovery Leadership v1 is now frozen and authoritative for the AI CIO discovery layer.
+
+Changes to the frozen horizons, thresholds, Trapper evidence rule, persistence definition, composite weights, failure behavior, or SWING-001 compatibility contract require an explicit versioned reopen rather than silent retuning.
+
+Downstream SWING-001 may consume these fields as discovery context, but must not reinterpret them as BUY/SELL instructions or move Swing setup logic into AI CIO Discovery.
