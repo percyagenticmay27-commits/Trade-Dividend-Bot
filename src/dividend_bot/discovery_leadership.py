@@ -96,6 +96,29 @@ def load_daily_closes(history_dir: str | Path, symbol: str) -> list[tuple[date, 
     return sorted(rows.items())
 
 
+def has_trapper_2x_spy_evidence(
+    stock_return_pct: Any,
+    benchmark_return_pct: Any,
+    relative_outperformance_pct: Any,
+    relative_multiple: Any,
+) -> bool:
+    """Return whether a horizon satisfies the shared Trapper-style 2x-SPY evidence rule."""
+    stock_return = _float(stock_return_pct)
+    benchmark_return = _float(benchmark_return_pct)
+    outperformance = _float(relative_outperformance_pct)
+    multiple = _float(relative_multiple)
+    return bool(
+        stock_return is not None
+        and benchmark_return is not None
+        and outperformance is not None
+        and multiple is not None
+        and multiple >= 2.0
+        and stock_return > 0
+        and benchmark_return >= MIN_BENCHMARK_FOR_MULTIPLE_PCT
+        and outperformance >= MIN_OUTPERFORMANCE_FOR_2X_EVIDENCE_PCT
+    )
+
+
 def classify_relative_outperformance(
     stock_return_pct: float,
     benchmark_return_pct: float,
@@ -114,14 +137,12 @@ def classify_relative_outperformance(
     else:
         classification = "EXCEPTIONAL_LEADER"
 
-    two_x_evidence = (
-        relative_multiple is not None
-        and relative_multiple >= 2.0
-        and stock_return_pct > 0
-        and benchmark_return_pct >= MIN_BENCHMARK_FOR_MULTIPLE_PCT
-        and relative_outperformance_pct >= MIN_OUTPERFORMANCE_FOR_2X_EVIDENCE_PCT
-    )
-    if two_x_evidence and CLASS_SCORES[classification] < CLASS_SCORES["LEADER"]:
+    if has_trapper_2x_spy_evidence(
+        stock_return_pct,
+        benchmark_return_pct,
+        relative_outperformance_pct,
+        relative_multiple,
+    ) and CLASS_SCORES[classification] < CLASS_SCORES["LEADER"]:
         classification = "LEADER"
     return classification
 
@@ -171,6 +192,7 @@ def _period_result(
         "benchmark_return_pct": round(benchmark_return, 6),
         "relative_outperformance_pct": round(outperformance, 6),
         "relative_multiple": round(multiple, 6) if multiple is not None else None,
+        "trapper_2x_spy_evidence": has_trapper_2x_spy_evidence(stock_return, benchmark_return, outperformance, multiple),
         "leadership_classification": classification,
     }
     if observed_on is not None:
@@ -414,7 +436,7 @@ def enrich_swing_discovery_bucket(
         available_horizons = [value for value in relative.get("horizons", {}).values() if value.get("evidence_status") == "AVAILABLE"]
         if any((_float(item.get("relative_outperformance_pct")) or 0.0) > 0 for item in available_horizons):
             reasons.add("OUTPERFORMING_SPY")
-        if any((_float(item.get("relative_multiple")) or 0.0) >= 2.0 and (_float(item.get("relative_outperformance_pct")) or 0.0) >= MIN_OUTPERFORMANCE_FOR_2X_EVIDENCE_PCT for item in available_horizons):
+        if any(bool(item.get("trapper_2x_spy_evidence")) for item in available_horizons):
             reasons.add("TRAPPER_2X_SPY_EVIDENCE")
         if (_float(relative.get("leadership_persistence")) or 0.0) >= 0.5:
             reasons.add("MULTI_HORIZON_LEADER")
