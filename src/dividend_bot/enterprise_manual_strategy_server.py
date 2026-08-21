@@ -1,0 +1,125 @@
+"""WSGI extension that adds SWING-001 manual strategy submission to the portal.
+
+All existing cash, allocation, dashboard, and governance routes remain delegated
+to the established paper capital allocation server. Only the dedicated manual
+strategy POST path is intercepted here.
+"""
+from __future__ import annotations
+
+import html
+import os
+from typing import Any, Callable, Iterable, Mapping
+from wsgiref.simple_server import make_server
+
+from . import paper_capital_allocation_server as base
+from .enterprise_manual_strategy_post import submit_manual_strategy_form
+
+PAPER_TRADE_MODE = True
+LIVE_TRADING_ENABLED = False
+BROKER_EXECUTION_ENABLED = False
+ORDER_PLACEMENT_ENABLED = False
+CAPITAL_MOVEMENT_ENABLED = False
+MANUAL_STRATEGY_PATH = "/strategy/manual-entry"
+
+
+def _response_page(title: str, message: str, *, success: bool) -> bytes:
+    body = (
+        "<section class='panel'>"
+        f"<h2>{html.escape(title)}</h2>"
+        f"<div class='commentary'>{html.escape(message)}</div>"
+        "<p><a href='/executive-dashboard'>Return to Strategy Workspace →</a></p>"
+        "</section>"
+    )
+    return base._layout(title, body, "Executive Dashboard").encode("utf-8")
+
+
+def create_wsgi_app(**kwargs: Any) -> Callable:
+    """Wrap the existing portal with one Swing-owned manual strategy POST route."""
+    base_app = base.create_wsgi_app(**kwargs)
+
+    def app(environ: Mapping[str, Any], start_response: Callable) -> Iterable[bytes]:
+        path = str(environ.get("PATH_INFO") or "/")
+        method = str(environ.get("REQUEST_METHOD") or "GET").upper()
+        if method != "POST" or path != MANUAL_STRATEGY_PATH:
+            return base_app(environ, start_response)
+
+        try:
+            content_type = str(environ.get("CONTENT_TYPE") or "")
+            if content_type and not content_type.lower().startswith(
+                "application/x-www-form-urlencoded"
+            ):
+                raise ValueError("manual strategy form requires application/x-www-form-urlencoded")
+            length = int(environ.get("CONTENT_LENGTH") or 0)
+            if length <= 0 or length > 65536:
+                raise ValueError("manual strategy form body is missing or too large")
+            stream = environ.get("wsgi.input")
+            if stream is None:
+                raise ValueError("manual strategy request body is unavailable")
+            body = stream.read(length)
+            response = submit_manual_strategy_form(body)
+            result = response.get("result") if isinstance(response.get("result"), Mapping) else {}
+            strategy_id = str(result.get("strategy_id") or "manual strategy")
+            underlying = str(result.get("underlying_symbol") or "underlying")
+            payload = _response_page(
+                "Manual Strategy Saved",
+                f"{strategy_id} was validated and saved by SWING-001 for {underlying}. "
+                "The host did not write Swing storage directly. Paper-only mode remains enforced.",
+                success=True,
+            )
+            status = "200 OK"
+        except (ValueError, RuntimeError, TypeError) as exc:
+            payload = _response_page(
+                "Manual Strategy Not Saved",
+                f"Swing rejected the manual strategy submission: {exc}",
+                success=False,
+            )
+            status = "400 Bad Request"
+
+        start_response(
+            status,
+            [
+                ("Content-Type", "text/html; charset=utf-8"),
+                ("Content-Length", str(len(payload))),
+                ("Cache-Control", "no-store"),
+            ],
+        )
+        return [payload]
+
+    return app
+
+
+def main() -> int:
+    host = os.environ.get("DIVIDEND_ALLOCATION_HOST", "127.0.0.1")
+    port = int(os.environ.get("DIVIDEND_ALLOCATION_PORT", "8091"))
+    raw = os.environ.get("DIVIDEND_INITIAL_PAPER_CASH")
+    initial = float(raw) if raw and raw.strip() else None
+    app = create_wsgi_app(
+        registry_path=os.environ.get("DIVIDEND_STRATEGY_REGISTRY", str(base.DEFAULT_REGISTRY_PATH)),
+        cash_path=os.environ.get("DIVIDEND_PAPER_CASH_STATE", str(base.DEFAULT_CASH_PATH)),
+        request_log=os.environ.get("DIVIDEND_ALLOCATION_REQUEST_LOG", str(base.DEFAULT_REQUEST_LOG)),
+        transaction_log=os.environ.get("DIVIDEND_CASH_TRANSACTION_LOG", str(base.DEFAULT_CASH_TRANSACTION_PATH)),
+        approval_log=os.environ.get("DIVIDEND_ALLOCATION_APPROVAL_LOG", str(base.DEFAULT_APPROVAL_LOG)),
+        allocation_transaction_log=os.environ.get("DIVIDEND_ALLOCATION_TRANSACTION_LOG", str(base.DEFAULT_ALLOCATION_TRANSACTION_LOG)),
+        executive_dashboard_html=os.environ.get("DIVIDEND_EXECUTIVE_DASHBOARD_HTML", str(base.DEFAULT_EXECUTIVE_DASHBOARD_HTML)),
+        executive_dashboard_json=os.environ.get("DIVIDEND_EXECUTIVE_DASHBOARD_JSON", str(base.DEFAULT_EXECUTIVE_DASHBOARD_JSON)),
+        investor_dashboard_json=os.environ.get("DIVIDEND_INVESTOR_DASHBOARD_JSON", str(base.DEFAULT_INVESTOR_DASHBOARD_JSON)),
+        promotion_requests_path=os.environ.get("DIVIDEND_STRATEGY_PROMOTION_REQUESTS", str(base.DEFAULT_PROMOTION_REQUESTS_PATH)),
+        strategy_assignments_path=os.environ.get("DIVIDEND_PAIR_STRATEGY_ASSIGNMENTS", str(base.DEFAULT_ASSIGNMENTS_PATH)),
+        strategy_performance_path=os.environ.get("DIVIDEND_STRATEGY_SHADOW_PERFORMANCE", str(base.DEFAULT_STRATEGY_PERFORMANCE_PATH)),
+        paper_state_path=os.environ.get("DIVIDEND_PAPER_STATE", str(base.DEFAULT_PAPER_STATE_PATH)),
+        promotion_journal_path=os.environ.get("DIVIDEND_STRATEGY_PROMOTION_JOURNAL", str(base.DEFAULT_PROMOTION_JOURNAL_PATH)),
+        owner_review_csrf_secret=os.environ.get(base.DEFAULT_OWNER_REVIEW_CSRF_SECRET_ENV),
+        investor_id=os.environ.get("DIVIDEND_INVESTOR_ID", "default-investor"),
+        initial_paper_cash=initial,
+    )
+    print(
+        f"Investor-controlled paper capital portal listening on http://{host}:{port}/cash "
+        f"with SWING-001 manual strategy intake at {MANUAL_STRATEGY_PATH}"
+    )
+    with make_server(host, port, app) as server:
+        server.serve_forever()
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
