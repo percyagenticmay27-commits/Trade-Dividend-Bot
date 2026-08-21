@@ -1,8 +1,9 @@
-"""Compatibility wrapper upgrading strategy Holdings, Income, and Performance tabs.
+"""Compatibility wrapper upgrading strategy-specific Enterprise workspace tabs.
 
 The underlying strategy workspace remains owned by enterprise_portal_strategy_ui.
-This wrapper replaces Holdings and Income panel bodies, appends strategy-owned
-Position / Sales History to Performance, and includes their dedicated styles.
+This wrapper replaces/extends strategy-specific panels while preserving the base
+registry-driven dashboard. SWING-001 additionally receives a Manual Strategy tab
+rendered from its declared form contract.
 
 Panel mutation deliberately uses balanced <section> matching rather than a
 non-greedy regular expression. Renderers contain nested <section> elements, so
@@ -17,6 +18,7 @@ from typing import Any, Mapping
 from . import enterprise_portal_strategy_ui as _base
 from .enterprise_holdings_purchase_date_ui import holdings_ui_css, render_holdings_panel
 from .enterprise_income_ui import income_ui_css, render_income_panel
+from .enterprise_manual_strategy_ui import manual_strategy_ui_css, render_manual_strategy_panel
 from .enterprise_position_history_ui import position_history_ui_css, render_position_history_panel
 from .enterprise_trade_analytics_ui import trade_analytics_ui_css, render_trade_analytics_panel
 from .enterprise_swing_alerts_ui import render_swing_alerts_panel, swing_alerts_ui_css
@@ -79,6 +81,47 @@ def _append_panel(output: str, *, sid: str, tab: str, body: str) -> str:
     return output[:closing_start] + body + output[closing_start:]
 
 
+def _insert_manual_strategy_tab(output: str, *, sid: str, row: Mapping[str, Any]) -> str:
+    capabilities = row.get("capabilities")
+    if not isinstance(capabilities, list) or "manual_strategy" not in capabilities:
+        return output
+    tab_id = "manual-strategy"
+    if f"id='tab-{sid}-{tab_id}'" in output:
+        return output
+
+    strategy_start = output.find(f"<section id='strategy-{sid}'")
+    if strategy_start < 0:
+        return output
+    tab_nav_start = output.find("<nav class='workspace-tabs'", strategy_start)
+    if tab_nav_start < 0:
+        return output
+    tab_nav_end = output.find("</nav>", tab_nav_start)
+    if tab_nav_end < 0:
+        return output
+
+    button = (
+        f"<button type='button' class='workspace-tab' "
+        f"data-workspace-strategy='{sid}' data-workspace-tab-target='{tab_id}' "
+        f"id='tab-{sid}-{tab_id}' role='tab' "
+        f"aria-controls='panel-{sid}-{tab_id}' aria-selected='false' tabindex='-1'>"
+        "Manual Strategy</button>"
+    )
+    output = output[:tab_nav_end] + button + output[tab_nav_end:]
+
+    details_marker = "<details class='readable-evidence'>"
+    details_start = output.find(details_marker, tab_nav_end + len(button))
+    if details_start < 0:
+        return output
+    body = render_manual_strategy_panel(row)
+    panel = (
+        f"<section class='workspace-tab-panel' hidden "
+        f"data-workspace-strategy-panel='{sid}' data-workspace-tab-panel='{tab_id}' "
+        f"id='panel-{sid}-{tab_id}' role='tabpanel' "
+        f"aria-labelledby='tab-{sid}-{tab_id}'>{body}</section>"
+    )
+    return output[:details_start] + panel + output[details_start:]
+
+
 def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> str:
     output = _base.render_strategy_workspace(report, audience=audience)
     strategies = report.get("strategy_kpis")
@@ -126,11 +169,8 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
                 label_start = output.find(">", tab_start) + 1
                 label_end = output.find("</button>", label_start)
                 if label_start > 0 and label_end >= label_start:
-                    output = (
-                        output[:label_start]
-                        + "Trade Analytics"
-                        + output[label_end:]
-                    )
+                    output = output[:label_start] + "Trade Analytics" + output[label_end:]
+            output = _insert_manual_strategy_tab(output, sid=sid, row=row)
         else:
             output = _replace_panel(output, sid=sid, tab="income", body=render_income_panel(row))
         output = _append_panel(
@@ -151,4 +191,5 @@ def strategy_ui_css() -> str:
         + trade_analytics_ui_css()
         + swing_alerts_ui_css()
         + swing_decision_journal_ui_css()
+        + manual_strategy_ui_css()
     )
