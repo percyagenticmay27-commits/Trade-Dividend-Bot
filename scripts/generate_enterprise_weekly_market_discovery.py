@@ -12,9 +12,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from enterprise_weekly_market_discovery import write_weekly_discovery
+from market_data_integration_engine import write_market_data_snapshot
 from src.dividend_bot.discovery_leadership_snapshot import (
     enrich_swing_discovery_bucket_from_snapshot,
 )
+
+BENCHMARK_SYMBOL = "SPY"
 
 
 def _load_json_mapping(path: Path) -> dict:
@@ -24,12 +27,63 @@ def _load_json_mapping(path: Path) -> dict:
     return payload if isinstance(payload, dict) else {}
 
 
+def _snapshot_symbols(snapshot: dict) -> set[str]:
+    return {
+        str(row.get("symbol") or "").strip().upper()
+        for row in snapshot.get("records", [])
+        if isinstance(row, dict) and str(row.get("symbol") or "").strip()
+    }
+
+
+def _required_leadership_symbols(report: dict) -> list[str]:
+    symbols = {BENCHMARK_SYMBOL}
+    for row in report.get("candidates", []):
+        if not isinstance(row, dict) or row.get("nomination_eligible") is False:
+            continue
+        symbol = str(row.get("underlying_symbol") or "").strip().upper()
+        if symbol:
+            symbols.add(symbol)
+    return sorted(symbols)
+
+
+def _ensure_market_snapshot_coverage(root: Path, report: dict) -> dict:
+    """Ensure AI CIO owns SPY + current nominee history before leadership scoring.
+
+    The existing MarketDataService remains authoritative. This helper is cache-first,
+    read-only market-data access; it never reads Swing Bot files and never touches a
+    broker. Missing provider data remains explicit in the resulting partial snapshot.
+    """
+    snapshot_path = root / "market_data_snapshot.json"
+    snapshot = _load_json_mapping(snapshot_path)
+    required = _required_leadership_symbols(report)
+    missing = sorted(set(required) - _snapshot_symbols(snapshot))
+    if not missing:
+        return snapshot
+
+    print(
+        "Discovery Leadership market coverage: refreshing AI CIO snapshot for "
+        + ", ".join(missing)
+    )
+    refreshed = write_market_data_snapshot(
+        root_path=str(root),
+        symbols=required,
+        force_refresh=False,
+    )
+    refreshed_symbols = _snapshot_symbols(refreshed)
+    still_missing = sorted(set(required) - refreshed_symbols)
+    if still_missing:
+        print(
+            "Discovery Leadership market coverage warning: still missing "
+            + ", ".join(still_missing)
+        )
+    return refreshed
+
+
 def main() -> int:
     root = ROOT
     input_path = root / "inputs" / "enterprise_weekly_market_observations.json"
     previous_path = root / "results" / "enterprise_weekly_market_discovery.json"
     swing_bucket_path = root / "results" / "enterprise_swing_discovery_bucket.json"
-    market_snapshot_path = root / "market_data_snapshot.json"
     if not input_path.is_file():
         raise SystemExit(
             "No normalized weekly observations are available; refusing to fabricate discovery candidates: "
@@ -49,9 +103,10 @@ def main() -> int:
     )
 
     # Discovery Leadership consumes the AI CIO-owned, read-only market snapshot.
-    # It does not read Swing Bot data and does not perform a network fetch here.
+    # Ensure SPY plus current nominees are covered by the existing cache-backed
+    # MarketDataService before scoring. No Swing Bot data is read.
     swing_bucket = _load_json_mapping(swing_bucket_path)
-    market_snapshot = _load_json_mapping(market_snapshot_path)
+    market_snapshot = _ensure_market_snapshot_coverage(root, report)
     if market_snapshot:
         enriched_bucket = enrich_swing_discovery_bucket_from_snapshot(
             swing_bucket,
