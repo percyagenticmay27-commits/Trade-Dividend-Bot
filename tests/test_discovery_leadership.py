@@ -6,6 +6,7 @@ from datetime import date, timedelta
 from src.dividend_bot.discovery_leadership import (
     calculate_relative_leadership,
     enrich_swing_discovery_bucket,
+    has_trapper_2x_spy_evidence,
 )
 
 
@@ -84,6 +85,7 @@ def test_negative_spy_period_does_not_use_misleading_multiple(tmp_path):
     available = [row for row in result["horizons"].values() if row.get("evidence_status") == "AVAILABLE"]
     assert available
     assert all(row["relative_multiple"] is None for row in available)
+    assert all(row["trapper_2x_spy_evidence"] is False for row in available)
     assert any("MULTIPLE_NOT_MEANINGFUL" in row.get("warning", "") for row in available)
 
 
@@ -212,3 +214,28 @@ def test_theme_momentum_is_only_used_when_explicit(tmp_path):
     candidate = result["candidates"][0]
     assert candidate["theme_leadership"]["classification"] == "RISING"
     assert "RISING_THEME" in candidate["discovery_reasons"]
+
+
+def test_trapper_2x_rule_requires_positive_stock_and_meaningful_positive_benchmark():
+    assert has_trapper_2x_spy_evidence(20.0, 5.0, 15.0, 4.0) is True
+    assert has_trapper_2x_spy_evidence(-20.0, 5.0, 15.0, 4.0) is False
+    assert has_trapper_2x_spy_evidence(20.0, 0.5, 19.5, 40.0) is False
+    assert has_trapper_2x_spy_evidence(20.0, -5.0, 25.0, -4.0) is False
+
+
+def test_trapper_reason_uses_same_horizon_flag_as_classifier(tmp_path):
+    _write_history(tmp_path, "SPY", _series(100, 110))
+    _write_history(tmp_path, "AAA", _series(100, 150))
+    result = enrich_swing_discovery_bucket(
+        _bucket("AAA"),
+        _report({"underlying_symbol": "AAA", "source_confluence": {"level": "NONE"}}),
+        [{"underlying_symbol": "AAA"}],
+        history_dir=tmp_path,
+    )
+    candidate = result["candidates"][0]
+    flags = [
+        row["trapper_2x_spy_evidence"]
+        for row in candidate["relative_leadership"]["horizons"].values()
+        if row.get("evidence_status") == "AVAILABLE"
+    ]
+    assert ("TRAPPER_2X_SPY_EVIDENCE" in candidate["discovery_reasons"]) is any(flags)
