@@ -131,8 +131,10 @@ def test_missing_sector_and_industry_do_not_reject_candidate(tmp_path):
 
 def test_leading_stock_in_leading_industry_gets_reason(tmp_path):
     _write_history(tmp_path, "SPY", _series(100, 110))
-    _write_history(tmp_path, "AAA", _series(100, 150))
-    _write_history(tmp_path, "BBB", _series(100, 145))
+    # Use peers that are leaders across the short and long horizons so the
+    # peer-average industry score genuinely reaches the LEADING band.
+    _write_history(tmp_path, "AAA", _series(100, 200))
+    _write_history(tmp_path, "BBB", _series(100, 190))
     weekly = _report(
         {"underlying_symbol": "AAA", "sector": "Technology", "source_confluence": {"level": "CONFIRMED"}},
         {"underlying_symbol": "BBB", "sector": "Technology", "source_confluence": {"level": "CONFIRMED"}},
