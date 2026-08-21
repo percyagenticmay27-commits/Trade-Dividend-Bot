@@ -10,16 +10,6 @@ Production flow:
 
 The weekly Discovery Leadership producer does not read `/home/tradebot/Trade-Swing-Bot/main/data` and does not create a second authoritative historical market-data store.
 
-## Weekly coverage preflight
-
-Before leadership enrichment, the weekly generator verifies that the AI CIO snapshot contains `SPY` plus every currently nomination-eligible discovery candidate.
-
-If all required symbols are present, no market-data refresh is performed.
-
-If coverage is incomplete, the generator invokes the existing cache-backed `write_market_data_snapshot()` path with the required symbols and `force_refresh=False`. Fresh cached data therefore remains preferred, and the established provider/stale-cache fallback policy remains authoritative.
-
-If a required symbol still cannot be obtained, it stays missing and leadership evidence fails closed. No return, relative multiple, leadership score, or ranking input is fabricated.
-
 ## Existing evidence preserved
 
 `enterprise_discovery_market_evidence.py` remains the short-horizon evidence layer for weekly return, benchmark-relative strength, volume expansion, and dollar volume.
@@ -39,6 +29,27 @@ Per-symbol records use existing fields when available:
 
 SPY is obtained from the same snapshot and is the default benchmark.
 
+## Coverage preflight
+
+Before leadership enrichment, the weekly producer ensures the AI CIO snapshot covers:
+
+- `SPY`
+- every current nomination-eligible Enterprise discovery candidate
+
+If all required symbols are already present, no market refresh is performed.
+
+If coverage is missing, the producer calls the existing AI CIO `write_market_data_snapshot()` path with the required symbols and `force_refresh=False`. This keeps the flow cache-first: fresh cached provider responses are reused, while only missing/stale provider needs may require external retrieval under the existing `MarketDataService` rules.
+
+The refresh remains read-only and preserves the existing paper-only market-data safety contract.
+
+## Trapper 2x-SPY evidence consistency
+
+Each available horizon now publishes `trapper_2x_spy_evidence` from the centralized evidence rule in `discovery_leadership.py`.
+
+The same boolean supports leadership classification and the `TRAPPER_2X_SPY_EVIDENCE` explanation reason. This prevents explanation/scoring drift.
+
+The evidence requires a meaningful positive benchmark return, a positive stock return, relative multiple >= 2.0, and at least 5 percentage points of outperformance.
+
 ## Safety and failure behavior
 
 - No broker or execution calls are added.
@@ -46,7 +57,7 @@ SPY is obtained from the same snapshot and is the default benchmark.
 - No Entry Score or Opportunity Quality logic is moved into AI CIO Discovery.
 - Missing stock or SPY records yield explicit missing evidence and `null` leadership scores.
 - Stale market data is disclosed in candidate warnings.
-- Missing provider coverage remains explicit after the preflight rather than being inferred.
+- Missing `market_data_snapshot.json` leaves the existing base SWING-001 bucket intact instead of fabricating leadership evidence.
 - Existing SWING-001 top-level contract remains `schema_version=1.0`, `strategy_id=SWING-001`, and `candidates=[]`.
 
 ## Compatibility
