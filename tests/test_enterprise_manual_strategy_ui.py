@@ -10,19 +10,30 @@ def _contract(path: Path, *, status: str = "INTAKE_HANDLER_PENDING") -> None:
     path.write_text(
         json.dumps(
             {
-                "schema_version": "1.0",
+                "schema_version": "1.2",
                 "strategy_id": "SWING-001",
                 "form_id": "SWING_MANUAL_ENTRY_STRATEGY",
                 "display_name": "Manual Strategy",
                 "paper_trade_mode": True,
                 "allocation_authority": "SWING_PORTFOLIO_ALLOCATOR",
                 "fields": [
-                    {"name": "timeframe", "choices": ["1D", "4H"]},
-                    {"name": "direction", "choices": ["LONG"]},
-                    {"name": "rule_logic", "choices": ["ALL", "ANY"]},
-                    {"name": "rules", "operator_choices": [">", "<", "between"]},
-                    {"name": "regime_logic", "choices": ["ALL", "ANY"]},
-                    {"name": "regime_filters", "operator_choices": [">", "<", "between"]},
+                    {"name": "name", "help": "Friendly name shown to the user.", "example": "NFLX Daily Keltner Entry"},
+                    {"name": "strategy_id", "help": "Permanent strategy identifier.", "example": "NFLX_DAILY_KELTNER_V1"},
+                    {"name": "underlying_symbol", "help": "Ticker used to generate the signal.", "example": "NFLX"},
+                    {"name": "execution_symbol", "help": "Read-only verified mapping.", "example": "NFLX → NFLU"},
+                    {"name": "timeframe", "choices": ["1D", "4H"], "help": "Bar interval for the strategy.", "example": "1D"},
+                    {"name": "direction", "choices": ["LONG"], "help": "Supported trade direction.", "example": "LONG"},
+                    {"name": "session", "help": "Eligible trading session.", "example": "REGULAR_SESSION"},
+                    {"name": "number_of_entries", "help": "How many staged purchases Swing divides the allocation into.", "example": "2 means $600 becomes two $300 entries"},
+                    {"name": "rule_logic", "choices": ["ALL", "ANY"], "help": "How entry rules combine.", "example": "ALL"},
+                    {"name": "rules", "operator_choices": [">", "<", "between"], "help": "Conditions that trigger an entry.", "example": "close > ema, period 20"},
+                    {"name": "confirmation", "help": "Optional consecutive-bar confirmation.", "example": "2 consecutive qualifying Daily closes"},
+                    {"name": "regime_logic", "choices": ["ALL", "ANY"], "help": "How regime filters combine.", "example": "ALL"},
+                    {"name": "regime_filters", "operator_choices": [">", "<", "between"], "help": "Optional market conditions required for entry.", "example": "CHOP(14) < 60"},
+                    {"name": "exit_policy_id", "help": "Reference to an existing exit policy.", "example": "TIERED_TRAILING"},
+                    {"name": "reentry_cooldown", "help": "Optional wait after exit.", "example": "1 bar"},
+                    {"name": "allocation_authority", "help": "Swing controls allocation dollars.", "example": "SWING_PORTFOLIO_ALLOCATOR"},
+                    {"name": "paper_trade_mode", "help": "Mandatory paper-only safety mode.", "example": "TRUE"},
                 ],
                 "current_registry": {
                     "strategies": [
@@ -79,6 +90,20 @@ def test_manual_strategy_panel_reads_swing_declared_contract(tmp_path: Path) -> 
     assert "Test Strategy" in output
     assert "structured rules" in output
     assert "Save unavailable" in output
+
+
+def test_manual_strategy_panel_explains_fields_and_examples(tmp_path: Path) -> None:
+    _contract(tmp_path / "results/manual_entry_strategy_form_contract.json", status="AVAILABLE")
+    output = render_manual_strategy_panel(_swing_row(tmp_path))
+
+    assert "How to use this form" in output
+    assert "Friendly name shown to the user" in output
+    assert "NFLX Daily Keltner Entry" in output
+    assert "2 means $600 becomes two $300 entries" in output
+    assert "close &gt; ema, period 20" in output
+    assert "Source / Indicator" in output
+    assert "Value / Indicator" in output
+    assert "Period" in output
 
 
 def test_manual_strategy_form_posts_named_structured_rule_arrays(tmp_path: Path) -> None:
