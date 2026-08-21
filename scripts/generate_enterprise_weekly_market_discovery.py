@@ -16,6 +16,9 @@ from market_data_integration_engine import write_market_data_snapshot
 from src.dividend_bot.discovery_leadership_snapshot import (
     enrich_swing_discovery_bucket_from_snapshot,
 )
+from src.dividend_bot.discovery_source_class_projection import (
+    propagate_source_classes_to_swing_bucket,
+)
 
 BENCHMARK_SYMBOL = "SPY"
 
@@ -107,22 +110,28 @@ def main() -> int:
     # MarketDataService before scoring. No Swing Bot data is read.
     swing_bucket = _load_json_mapping(swing_bucket_path)
     market_snapshot = _ensure_market_snapshot_coverage(root, report)
+    final_bucket = swing_bucket
     if market_snapshot:
-        enriched_bucket = enrich_swing_discovery_bucket_from_snapshot(
+        final_bucket = enrich_swing_discovery_bucket_from_snapshot(
             swing_bucket,
             report,
             observations,
             market_snapshot,
-        )
-        swing_bucket_path.write_text(
-            json.dumps(enriched_bucket, indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
         )
     else:
         print(
             "Discovery Leadership: market_data_snapshot.json missing; "
             "base SWING-001 bucket preserved without fabricated leadership evidence"
         )
+
+    # AI CIO owns source classification.  Propagate its normalized producer
+    # authority into the SWING-001 evidence records after any leadership enrichment.
+    # This is additive metadata only and never alters Discovery Leadership values.
+    final_bucket = propagate_source_classes_to_swing_bucket(final_bucket, report)
+    swing_bucket_path.write_text(
+        json.dumps(final_bucket, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
 
     print(f"Enterprise weekly discovery: {len(report['candidates'])} candidate(s)")
     return 0
