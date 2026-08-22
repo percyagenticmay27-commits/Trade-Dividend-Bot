@@ -78,7 +78,7 @@ def _help(contract: Mapping[str, Any], name: str) -> str:
 def _rule_row(prefix: str, field: Mapping[str, Any], disabled: str, *, kind: str = "entry") -> str:
     source_placeholder = "CHOP / close / etc." if kind == "regime" else "close / indicator"
     return (
-        "<div class='manual-rule-row'>"
+        f"<div class='manual-rule-row' data-manual-rule-row='{prefix}'>"
         f"<input name='{prefix}_left' placeholder='{source_placeholder}' aria-label='Rule source'{disabled}>"
         f"<select name='{prefix}_operator' aria-label='Rule operator'{disabled}>{_options(field.get('operator_choices'))}</select>"
         f"<input name='{prefix}_right' placeholder='Value / indicator' aria-label='Rule value'{disabled}>"
@@ -86,6 +86,7 @@ def _rule_row(prefix: str, field: Mapping[str, Any], disabled: str, *, kind: str
         f"<input name='{prefix}_factor' type='number' min='0' step='0.01' placeholder='Factor' aria-label='Rule factor'{disabled}>"
         f"<select name='{prefix}_smoothing' aria-label='Rule smoothing'{disabled}>{_options(field.get('smoothing_choices'), blank=True)}</select>"
         f"<select name='{prefix}_price_source' aria-label='Rule price source'{disabled}>{_options(field.get('price_source_choices'), blank=True)}</select>"
+        f"<button type='button' class='remove-rule-action' data-remove-manual-rule='{prefix}' aria-label='Remove rule'{disabled}>Remove</button>"
         "</div>"
     )
 
@@ -105,7 +106,7 @@ def _rule_section(title: str, contract: Mapping[str, Any], field_name: str, pref
     <fieldset><legend>{html.escape(title)}</legend>
       <div class='section-help'>{_help(contract, field_name)}</div>
       {logic_html}
-      <div class='manual-rule-column-labels'><span>Source</span><span>Operator</span><span>Value / Indicator</span><span>Period</span><span>Factor</span><span>Smoothing</span><span>Price Source</span></div>
+      <div class='manual-rule-column-labels'><span>Source</span><span>Operator</span><span>Value / Indicator</span><span>Period</span><span>Factor</span><span>Smoothing</span><span>Price Source</span><span>Action</span></div>
       <div class='manual-rule-list' data-rule-list='{prefix}'>{row}</div>
       <button type='button' class='secondary-action' data-add-manual-rule='{prefix}'{disabled}>{html.escape(add_label)}</button>
     </fieldset>
@@ -201,17 +202,56 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
   (() => {{
     const root = document.currentScript && document.currentScript.closest('[data-manual-strategy-form]');
     if (!root) return;
+
+    const templates = {{}};
+    root.querySelectorAll('[data-rule-list]').forEach((list) => {{
+      const key = list.getAttribute('data-rule-list');
+      if (key && list.firstElementChild) templates[key] = list.firstElementChild.cloneNode(true);
+    }});
+
+    const resetRow = (row) => {{
+      row.querySelectorAll('input').forEach((input) => input.value = '');
+      row.querySelectorAll('select').forEach((select) => select.selectedIndex = 0);
+      return row;
+    }};
+
+    const updateRemoveButtons = () => {{
+      root.querySelectorAll('[data-rule-list]').forEach((list) => {{
+        const key = list.getAttribute('data-rule-list');
+        const buttons = list.querySelectorAll('[data-remove-manual-rule]');
+        buttons.forEach((button) => {{
+          button.disabled = key === 'entry_rule' && list.children.length <= 1;
+          button.title = button.disabled ? 'At least one Entry Rule is required' : 'Remove this rule';
+        }});
+      }});
+    }};
+
     root.querySelectorAll('[data-add-manual-rule]').forEach((button) => {{
       button.addEventListener('click', () => {{
         const key = button.getAttribute('data-add-manual-rule');
         const list = root.querySelector(`[data-rule-list='${{key}}']`);
-        if (!list || !list.firstElementChild) return;
-        const clone = list.firstElementChild.cloneNode(true);
-        clone.querySelectorAll('input').forEach((input) => input.value = '');
-        clone.querySelectorAll('select').forEach((select) => select.selectedIndex = 0);
-        list.appendChild(clone);
+        const template = key ? templates[key] : null;
+        if (!list || !template) return;
+        list.appendChild(resetRow(template.cloneNode(true)));
+        updateRemoveButtons();
       }});
     }});
+
+    root.addEventListener('click', (event) => {{
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const button = target.closest('[data-remove-manual-rule]');
+      if (!button || !root.contains(button)) return;
+      const key = button.getAttribute('data-remove-manual-rule');
+      const list = key ? root.querySelector(`[data-rule-list='${{key}}']`) : null;
+      const row = button.closest('[data-manual-rule-row]');
+      if (!list || !row) return;
+      if (key === 'entry_rule' && list.children.length <= 1) return;
+      row.remove();
+      updateRemoveButtons();
+    }});
+
+    updateRemoveButtons();
   }})();
   </script>
 </section>
@@ -221,7 +261,7 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
 def manual_strategy_ui_css() -> str:
     return """
 <style>
-.manual-strategy-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.manual-strategy-heading h3{margin-bottom:4px}.paper-only-badge{padding:6px 10px;border-radius:999px;background:#ede9fe;color:#5b21b6;font-weight:900;font-size:12px;white-space:nowrap}.manual-strategy-authority{margin:14px 0;padding:12px 14px;border-radius:10px;background:#eef6ff;border:1px solid #bfdbfe;color:#1e3a8a}.manual-strategy-guide{margin:0 0 16px;padding:12px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569}.manual-strategy-form{display:grid;gap:16px}.manual-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.manual-strategy-form label{display:grid;gap:6px;align-content:start}.manual-strategy-form label>span,.manual-strategy-form legend{font-weight:800;color:#344054}.manual-strategy-form input,.manual-strategy-form select{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}.manual-strategy-form input[readonly]{background:#f1f5f9;color:#475569}.manual-strategy-form fieldset{border:1px solid #dbe3ef;border-radius:12px;padding:14px}.field-help{font-size:12px;line-height:1.4;color:#64748b}.field-help strong{color:#475569}.section-help{margin:2px 0 12px}.manual-rule-list{display:grid;gap:8px;margin:8px 0 10px}.manual-rule-row,.manual-rule-column-labels{display:grid;grid-template-columns:1.1fr .65fr 1.1fr .65fr .6fr .85fr 1fr;gap:7px}.manual-rule-column-labels{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.03em}.secondary-action,.primary-action{padding:9px 13px;border-radius:9px;font-weight:800}.secondary-action{border:1px solid #8b5cf6;background:#fff;color:#5d18d6}.primary-action{border:0;background:#5d18d6;color:#fff}.check-row{display:flex!important;grid-template-columns:auto 1fr!important;align-items:center;gap:8px}.check-row input{width:auto}.form-help{font-size:12px;color:#64748b}.manual-current-strategies{margin-top:18px}.manual-current-strategies table{width:100%;border-collapse:collapse}.manual-current-strategies th,.manual-current-strategies td{padding:9px;border-bottom:1px solid #e5e7eb;text-align:left}.workspace-tab[data-workspace-tab-target='manual-strategy'].active{background:#0f766e}
-@media(max-width:900px){.manual-rule-row,.manual-rule-column-labels{grid-template-columns:1fr 1fr}.manual-rule-column-labels{display:none}}
+.manual-strategy-heading{display:flex;justify-content:space-between;gap:18px;align-items:flex-start}.manual-strategy-heading h3{margin-bottom:4px}.paper-only-badge{padding:6px 10px;border-radius:999px;background:#ede9fe;color:#5b21b6;font-weight:900;font-size:12px;white-space:nowrap}.manual-strategy-authority{margin:14px 0;padding:12px 14px;border-radius:10px;background:#eef6ff;border:1px solid #bfdbfe;color:#1e3a8a}.manual-strategy-guide{margin:0 0 16px;padding:12px 14px;border-radius:10px;background:#f8fafc;border:1px solid #e2e8f0;color:#475569}.manual-strategy-form{display:grid;gap:16px}.manual-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.manual-strategy-form label{display:grid;gap:6px;align-content:start}.manual-strategy-form label>span,.manual-strategy-form legend{font-weight:800;color:#344054}.manual-strategy-form input,.manual-strategy-form select{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #cbd5e1;border-radius:9px;background:#fff}.manual-strategy-form input[readonly]{background:#f1f5f9;color:#475569}.manual-strategy-form fieldset{border:1px solid #dbe3ef;border-radius:12px;padding:14px}.field-help{font-size:12px;line-height:1.4;color:#64748b}.field-help strong{color:#475569}.section-help{margin:2px 0 12px}.manual-rule-list{display:grid;gap:8px;margin:8px 0 10px}.manual-rule-row,.manual-rule-column-labels{display:grid;grid-template-columns:1.05fr .6fr 1.05fr .6fr .55fr .8fr .95fr .65fr;gap:7px;align-items:center}.manual-rule-column-labels{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.03em}.secondary-action,.primary-action,.remove-rule-action{padding:9px 13px;border-radius:9px;font-weight:800}.secondary-action{border:1px solid #8b5cf6;background:#fff;color:#5d18d6}.primary-action{border:0;background:#5d18d6;color:#fff}.remove-rule-action{border:1px solid #dc2626;background:#fff;color:#b91c1c;padding:8px 9px}.remove-rule-action:disabled{border-color:#cbd5e1;color:#94a3b8;background:#f8fafc;cursor:not-allowed}.check-row{display:flex!important;grid-template-columns:auto 1fr!important;align-items:center;gap:8px}.check-row input{width:auto}.form-help{font-size:12px;color:#64748b}.manual-current-strategies{margin-top:18px}.manual-current-strategies table{width:100%;border-collapse:collapse}.manual-current-strategies th,.manual-current-strategies td{padding:9px;border-bottom:1px solid #e5e7eb;text-align:left}.workspace-tab[data-workspace-tab-target='manual-strategy'].active{background:#0f766e}
+@media(max-width:1050px){.manual-rule-row,.manual-rule-column-labels{grid-template-columns:1fr 1fr}.manual-rule-column-labels{display:none}}
 @media(max-width:700px){.manual-form-grid,.manual-rule-row{grid-template-columns:1fr}.manual-strategy-heading{display:block}.paper-only-badge{display:inline-block;margin-top:8px}}
 </style>"""
