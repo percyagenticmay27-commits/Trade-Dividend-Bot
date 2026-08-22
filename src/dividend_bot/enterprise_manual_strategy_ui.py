@@ -99,17 +99,15 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
     contract = load_manual_strategy_contract(row)
     if contract is None:
         return (
-            "<section class='manual-strategy-panel'>"
-            "<h3>Manual Strategy</h3>"
-            "<div class='data-availability data-availability-pending'>"
-            "<strong>Form contract pending</strong>"
-            "<span>SWING-001 has not yet published a readable manual strategy form contract.</span>"
-            "</div></section>"
+            "<section class='manual-strategy-panel'><h3>Manual Strategy</h3>"
+            "<div class='data-availability data-availability-pending'><strong>Form contract pending</strong>"
+            "<span>SWING-001 has not yet published a readable manual strategy form contract.</span></div></section>"
         )
 
     registry = contract.get("current_registry") if isinstance(contract.get("current_registry"), Mapping) else {}
     strategies = registry.get("strategies") if isinstance(registry.get("strategies"), list) else []
     assignments = registry.get("assignments") if isinstance(registry.get("assignments"), list) else []
+    assignment_mode = _field(contract, "assignment_mode")
     timeframe = _field(contract, "timeframe")
     direction = _field(contract, "direction")
     entry_logic = _field(contract, "rule_logic")
@@ -133,7 +131,8 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
     assignment_rows = "".join(
         "<li>"
         f"<strong>{html.escape(str(item.get('underlying_symbol') or ''))}</strong> → "
-        f"{html.escape(str(item.get('strategy_id') or ''))}"
+        f"{html.escape(str(item.get('strategy_id') or ''))} "
+        f"<em>({html.escape(str(item.get('assignment_mode') or 'DIRECT'))})</em>"
         "</li>"
         for item in assignments if isinstance(item, Mapping)
     ) or "<li>No explicit underlying assignments yet.</li>"
@@ -149,15 +148,16 @@ def render_manual_strategy_panel(row: Mapping[str, Any]) -> str:
   </header>
   <div class='manual-strategy-authority'>
     <strong>Allocation:</strong> {html.escape(str(contract.get('allocation_authority') or 'SWING_PORTFOLIO_ALLOCATOR'))}
-    &nbsp;·&nbsp; <strong>Assignment:</strong> UNDERLYING SYMBOL
+    &nbsp;·&nbsp; <strong>Assignment:</strong> DIRECT or SHADOW
     &nbsp;·&nbsp; <strong>Execution vehicle:</strong> VERIFIED SWING MAPPING
   </div>
-  <div class='manual-strategy-guide'><strong>How to use this form:</strong> Enter the strategy identity and underlying first, then define the entry rules. Optional confirmation and regime filters further restrict when an entry is allowed. Swing decides allocation dollars automatically.</div>
+  <div class='manual-strategy-guide'><strong>How to use this form:</strong> Choose DIRECT when this strategy should control future entry evaluation for the symbol. Choose SHADOW to run it only as a background challenger using simulated capital equal to the symbol's current Swing allocation. Shadow strategies never auto-promote.</div>
   <form class='manual-strategy-form' method='post' action='/strategy/manual-entry'{disabled}>
     <div class='manual-form-grid'>
       <label><span>Strategy Name</span><input name='name' required{disabled}>{_help(contract, 'name')}</label>
       <label><span>Strategy ID</span><input name='strategy_id' required placeholder='NFLX_DAILY_ENTRY_V1'{disabled}>{_help(contract, 'strategy_id')}</label>
       <label><span>Underlying Symbol</span><input name='underlying_symbol' required placeholder='NFLX'{disabled}>{_help(contract, 'underlying_symbol')}</label>
+      <label><span>Assignment Mode</span><select name='assignment_mode' required{disabled}>{_options(assignment_mode.get('choices'))}</select>{_help(contract, 'assignment_mode')}</label>
       <label><span>Execution Vehicle</span><input value='Resolved from verified mapping' readonly>{_help(contract, 'execution_symbol')}</label>
       <label><span>Direction</span><select name='direction'{disabled}>{_options(direction.get('choices'))}</select>{_help(contract, 'direction')}</label>
       <label><span>Timeframe</span><select name='timeframe'{disabled}>{_options(timeframe.get('choices'))}</select>{_help(contract, 'timeframe')}</label>
