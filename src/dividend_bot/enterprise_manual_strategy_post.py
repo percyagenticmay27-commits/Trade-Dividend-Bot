@@ -79,10 +79,14 @@ def parse_manual_strategy_form(body: bytes) -> dict[str, Any]:
 
     confirmation_text = _scalar(values, "confirmation")
     reentry_text = _scalar(values, "reentry_cooldown")
+    assignment_mode = _scalar(values, "assignment_mode", "DIRECT").upper()
+    if assignment_mode not in {"DIRECT", "SHADOW"}:
+        raise ValueError("assignment_mode must be DIRECT or SHADOW")
     submission: dict[str, Any] = {
         "strategy_id": _scalar(values, "strategy_id").upper(),
         "name": _scalar(values, "name"),
         "underlying_symbol": _scalar(values, "underlying_symbol").upper(),
+        "assignment_mode": assignment_mode,
         "enabled": _scalar(values, "enabled", "true").lower() not in {"0", "false", "off", "no"},
         "assignment_enabled": _scalar(values, "assignment_enabled", "true").lower() not in {"0", "false", "off", "no"},
         "direction": _scalar(values, "direction", "LONG").upper(),
