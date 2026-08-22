@@ -89,3 +89,60 @@ def test_transport_surfaces_process_failure_when_cli_returns_no_json(tmp_path: P
 def test_transport_fails_closed_when_swing_runtime_missing(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="repository root"):
         transport.submit_manual_strategy_to_swing({}, swing_root=tmp_path / "missing")
+
+
+def test_transport_preserves_swing_venv_python_symlink_path(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """The Swing venv interpreter must not resolve to the system Python."""
+
+    root = tmp_path / "swing"
+    venv_python = root / ".venv/bin/python"
+    system_python = tmp_path / "usr/bin/python3.12"
+
+    venv_python.parent.mkdir(parents=True)
+    system_python.parent.mkdir(parents=True)
+    system_python.write_text("stub", encoding="utf-8")
+    venv_python.symlink_to(system_python)
+
+    captured = {}
+
+    def fake_run(args, **kwargs):
+        captured["args"] = args
+        captured.update(kwargs)
+        return Completed(
+            stdout=json.dumps(
+                {
+                    "ok": True,
+                    "paper_trade_mode": True,
+                    "result": {
+                        "status": "SAVED",
+                        "strategy_id": "SYMLINK_TEST",
+                    },
+                }
+            )
+        )
+
+    monkeypatch.setattr(transport.subprocess, "run", fake_run)
+
+    response = transport.submit_manual_strategy_to_swing(
+        {"strategy_id": "SYMLINK_TEST"},
+        swing_root=root,
+    )
+
+    expected_venv_python = root.resolve() / ".venv/bin/python"
+
+    assert response["ok"] is True
+    assert captured["args"][0] == str(expected_venv_python)
+
+    # Critical regression: never collapse the venv interpreter
+    # to its underlying system-Python target.
+    assert captured["args"][0] != str(system_python.resolve())
+
+    assert captured["args"][1:] == [
+        "-m",
+        transport.SWING_INTAKE_MODULE,
+    ]
+    assert captured["cwd"] == root.resolve()
+    assert "shell" not in captured

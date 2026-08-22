@@ -31,7 +31,7 @@ def submit_manual_strategy_to_swing(
 ) -> dict[str, Any]:
     """Submit one form payload to the Swing-owned validator/persistence layer."""
     root = swing_root.resolve(strict=False)
-    python_path = (swing_python or (root / ".venv/bin/python")).resolve(strict=False)
+    python_path = Path(swing_python) if swing_python is not None else root / ".venv/bin/python"
     if not root.is_dir():
         raise RuntimeError(f"Swing repository root is unavailable: {root}")
     if not python_path.is_file():
