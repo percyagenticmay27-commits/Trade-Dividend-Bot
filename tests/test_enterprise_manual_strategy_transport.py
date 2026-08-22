@@ -75,6 +75,17 @@ def test_transport_rejects_non_paper_response(tmp_path: Path, monkeypatch) -> No
         transport.submit_manual_strategy_to_swing({}, swing_root=root, swing_python=python)
 
 
+def test_transport_surfaces_process_failure_when_cli_returns_no_json(tmp_path: Path, monkeypatch) -> None:
+    root, python = _runtime(tmp_path)
+    monkeypatch.setattr(
+        transport.subprocess,
+        "run",
+        lambda *a, **k: Completed(returncode=1, stderr="TypeError: bad strategy payload"),
+    )
+    with pytest.raises(ValueError, match="bad strategy payload"):
+        transport.submit_manual_strategy_to_swing({}, swing_root=root, swing_python=python)
+
+
 def test_transport_fails_closed_when_swing_runtime_missing(tmp_path: Path) -> None:
     with pytest.raises(RuntimeError, match="repository root"):
         transport.submit_manual_strategy_to_swing({}, swing_root=tmp_path / "missing")
