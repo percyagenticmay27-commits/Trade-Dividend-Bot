@@ -108,6 +108,17 @@ def test_manual_strategy_form_posts_full_lifecycle_rule_arrays(tmp_path: Path) -
     assert "name='conditional_exit_cooldown_bars'" in output
 
 
+def test_rule_rows_are_removable_and_entry_keeps_one_required_row(tmp_path: Path) -> None:
+    _contract(tmp_path / "results/manual_entry_strategy_form_contract.json", status="AVAILABLE")
+    output = render_manual_strategy_panel(_swing_row(tmp_path))
+    for prefix in ("entry_rule", "regime_rule", "normal_exit_rule", "conditional_exit_rule"):
+        assert f"data-remove-manual-rule='{prefix}'" in output
+        assert f"data-rule-list='{prefix}'" in output
+    assert "At least one Entry Rule is required" in output
+    assert "row.remove()" in output
+    assert "const templates = {}" in output
+
+
 def test_swing_workspace_receives_manual_strategy_tab_only_when_capability_declared(tmp_path: Path) -> None:
     _contract(tmp_path / "results/manual_entry_strategy_form_contract.json")
     output = render_strategy_workspace({"strategy_kpis": [_swing_row(tmp_path)]}, audience="executive")
