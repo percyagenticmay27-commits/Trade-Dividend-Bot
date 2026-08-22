@@ -47,15 +47,25 @@ def submit_manual_strategy_to_swing(
         check=False,
     )
     stdout = completed.stdout.strip()
+    stderr = completed.stderr.strip()
+
+    if not stdout:
+        if completed.returncode != 0:
+            raise ValueError(stderr or "Swing intake process failed before returning a JSON response")
+        raise RuntimeError("Swing intake returned an empty response")
+
     try:
-        response = json.loads(stdout) if stdout else {}
+        response = json.loads(stdout)
     except json.JSONDecodeError as exc:
+        if completed.returncode != 0:
+            raise ValueError(stderr or "Swing intake process returned non-JSON failure output") from exc
         raise RuntimeError("Swing intake returned invalid JSON") from exc
+
     if not isinstance(response, dict):
         raise RuntimeError("Swing intake returned a non-object response")
     if response.get("paper_trade_mode") is not True:
         raise RuntimeError("Swing intake response did not preserve paper-only mode")
     if completed.returncode != 0 or response.get("ok") is not True:
-        message = str(response.get("error") or completed.stderr.strip() or "Swing intake rejected submission")
+        message = str(response.get("error") or stderr or "Swing intake rejected submission")
         raise ValueError(message)
     return response
