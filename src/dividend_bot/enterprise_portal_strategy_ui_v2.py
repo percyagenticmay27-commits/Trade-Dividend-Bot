@@ -1,13 +1,9 @@
 """Compatibility wrapper upgrading strategy-specific Enterprise workspace tabs.
 
-The underlying strategy workspace remains owned by enterprise_portal_strategy_ui.
-This wrapper replaces/extends strategy-specific panels while preserving the base
-registry-driven dashboard. SWING-001 additionally receives a Manual Strategy tab
-rendered from its declared form contract.
-
-Panel mutation deliberately uses balanced <section> matching rather than a
-non-greedy regular expression. Renderers contain nested <section> elements, so
-stopping at the first </section> corrupts the surrounding workspace DOM.
+SWING-001 receives strategy-owned workspace extensions while the base Enterprise
+renderer remains shared. Manual Strategy handles creation/editing; Strategy
+Assignments shows Direct/Shadow relationships and is the only tab allowed to
+surface an explicit user promotion control.
 """
 from __future__ import annotations
 
@@ -20,18 +16,15 @@ from .enterprise_holdings_purchase_date_ui import holdings_ui_css, render_holdin
 from .enterprise_income_ui import income_ui_css, render_income_panel
 from .enterprise_manual_strategy_ui import manual_strategy_ui_css, render_manual_strategy_panel
 from .enterprise_position_history_ui import position_history_ui_css, render_position_history_panel
+from .enterprise_strategy_assignments_ui import strategy_assignments_ui_css, render_strategy_assignments_panel
 from .enterprise_trade_analytics_ui import trade_analytics_ui_css, render_trade_analytics_panel
 from .enterprise_swing_alerts_ui import render_swing_alerts_panel, swing_alerts_ui_css
-from .enterprise_swing_decision_journal_ui import (
-    render_swing_decision_journal_panel,
-    swing_decision_journal_ui_css,
-)
+from .enterprise_swing_decision_journal_ui import render_swing_decision_journal_panel, swing_decision_journal_ui_css
 
 render_left_navigation = _base.render_left_navigation
 
 
 def _find_matching_section_end(output: str, start: int) -> int | None:
-    """Return the end offset of the section opened at *start*."""
     token_pattern = re.compile(r"<section\b[^>]*>|</section\s*>", flags=re.IGNORECASE)
     depth = 0
     for match in token_pattern.finditer(output, start):
@@ -64,7 +57,6 @@ def _panel_bounds(output: str, *, sid: str, tab: str) -> tuple[int, int, int] | 
 
 
 def _replace_panel(output: str, *, sid: str, tab: str, body: str) -> str:
-    """Replace only the body of one workspace tab panel without changing its DOM shell."""
     bounds = _panel_bounds(output, sid=sid, tab=tab)
     if bounds is None:
         return output
@@ -73,7 +65,6 @@ def _replace_panel(output: str, *, sid: str, tab: str, body: str) -> str:
 
 
 def _append_panel(output: str, *, sid: str, tab: str, body: str) -> str:
-    """Append content inside a tab's outer section while preserving its existing body."""
     bounds = _panel_bounds(output, sid=sid, tab=tab)
     if bounds is None:
         return output
@@ -81,14 +72,9 @@ def _append_panel(output: str, *, sid: str, tab: str, body: str) -> str:
     return output[:closing_start] + body + output[closing_start:]
 
 
-def _insert_manual_strategy_tab(output: str, *, sid: str, row: Mapping[str, Any]) -> str:
-    capabilities = row.get("capabilities")
-    if not isinstance(capabilities, list) or "manual_strategy" not in capabilities:
-        return output
-    tab_id = "manual-strategy"
+def _insert_workspace_tab(output: str, *, sid: str, tab_id: str, label: str, body: str) -> str:
     if f"id='tab-{sid}-{tab_id}'" in output:
         return output
-
     strategy_start = output.find(f"<section id='strategy-{sid}'")
     if strategy_start < 0:
         return output
@@ -98,28 +84,45 @@ def _insert_manual_strategy_tab(output: str, *, sid: str, row: Mapping[str, Any]
     tab_nav_end = output.find("</nav>", tab_nav_start)
     if tab_nav_end < 0:
         return output
-
     button = (
         f"<button type='button' class='workspace-tab' "
         f"data-workspace-strategy='{sid}' data-workspace-tab-target='{tab_id}' "
-        f"id='tab-{sid}-{tab_id}' role='tab' "
-        f"aria-controls='panel-{sid}-{tab_id}' aria-selected='false' tabindex='-1'>"
-        "Manual Strategy</button>"
+        f"id='tab-{sid}-{tab_id}' role='tab' aria-controls='panel-{sid}-{tab_id}' "
+        f"aria-selected='false' tabindex='-1'>{html.escape(label)}</button>"
     )
     output = output[:tab_nav_end] + button + output[tab_nav_end:]
-
     details_marker = "<details class='readable-evidence'>"
     details_start = output.find(details_marker, tab_nav_end + len(button))
     if details_start < 0:
         return output
-    body = render_manual_strategy_panel(row)
     panel = (
         f"<section class='workspace-tab-panel' hidden "
         f"data-workspace-strategy-panel='{sid}' data-workspace-tab-panel='{tab_id}' "
-        f"id='panel-{sid}-{tab_id}' role='tabpanel' "
-        f"aria-labelledby='tab-{sid}-{tab_id}'>{body}</section>"
+        f"id='panel-{sid}-{tab_id}' role='tabpanel' aria-labelledby='tab-{sid}-{tab_id}'>"
+        f"{body}</section>"
     )
     return output[:details_start] + panel + output[details_start:]
+
+
+def _insert_swing_extension_tabs(output: str, *, sid: str, row: Mapping[str, Any]) -> str:
+    capabilities = row.get("capabilities")
+    if isinstance(capabilities, list) and "manual_strategy" in capabilities:
+        output = _insert_workspace_tab(
+            output,
+            sid=sid,
+            tab_id="manual-strategy",
+            label="Manual Strategy",
+            body=render_manual_strategy_panel(row),
+        )
+        # Strategy Assignments is intentionally a separate governance surface.
+        output = _insert_workspace_tab(
+            output,
+            sid=sid,
+            tab_id="strategy-assignments",
+            label="Strategy Assignments",
+            body=render_strategy_assignments_panel(row),
+        )
+    return output
 
 
 def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> str:
@@ -135,30 +138,12 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
         sid = html.escape(raw_sid, quote=True)
         holdings_body = render_holdings_panel(row)
         if raw_sid.upper() == "SWING-001":
-            # The Holdings route is a common deep link. Keep its capital and
-            # management tables, remove Dividend income in the holdings renderer,
-            # and append the same authoritative Swing position performance.
             holdings_body += render_trade_analytics_panel(row)
         output = _replace_panel(output, sid=sid, tab="holdings", body=holdings_body)
         if raw_sid.upper() == "SWING-001":
-            output = _replace_panel(
-                output,
-                sid=sid,
-                tab="income",
-                body=render_trade_analytics_panel(row),
-            )
-            output = _replace_panel(
-                output,
-                sid=sid,
-                tab="alerts",
-                body=render_swing_alerts_panel(row),
-            )
-            output = _replace_panel(
-                output,
-                sid=sid,
-                tab="decisions",
-                body=render_swing_decision_journal_panel(row),
-            )
+            output = _replace_panel(output, sid=sid, tab="income", body=render_trade_analytics_panel(row))
+            output = _replace_panel(output, sid=sid, tab="alerts", body=render_swing_alerts_panel(row))
+            output = _replace_panel(output, sid=sid, tab="decisions", body=render_swing_decision_journal_panel(row))
             output = output.replace(
                 f"id='tab-{sid}-income' role='tab'",
                 f"id='tab-{sid}-income' role='tab' data-section-kind='trade-analytics'",
@@ -170,15 +155,10 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
                 label_end = output.find("</button>", label_start)
                 if label_start > 0 and label_end >= label_start:
                     output = output[:label_start] + "Trade Analytics" + output[label_end:]
-            output = _insert_manual_strategy_tab(output, sid=sid, row=row)
+            output = _insert_swing_extension_tabs(output, sid=sid, row=row)
         else:
             output = _replace_panel(output, sid=sid, tab="income", body=render_income_panel(row))
-        output = _append_panel(
-            output,
-            sid=sid,
-            tab="performance",
-            body=render_position_history_panel(row),
-        )
+        output = _append_panel(output, sid=sid, tab="performance", body=render_position_history_panel(row))
     return output
 
 
@@ -192,4 +172,5 @@ def strategy_ui_css() -> str:
         + swing_alerts_ui_css()
         + swing_decision_journal_ui_css()
         + manual_strategy_ui_css()
+        + strategy_assignments_ui_css()
     )
