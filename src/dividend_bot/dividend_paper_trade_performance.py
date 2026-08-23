@@ -57,6 +57,7 @@ def build_dividend_paper_trade_performance(
     rows: list[Mapping[str, Any]],
     *,
     generated_at_utc: str | None = None,
+    paper_state: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Reconstruct closed sleeve round trips and calculate realized win rate.
 
@@ -69,6 +70,30 @@ def build_dividend_paper_trade_performance(
     open_trades: dict[tuple[str, str, str], dict[str, Any]] = {}
     closed: list[dict[str, Any]] = []
     warnings: list[str] = []
+
+    # Historical paper-log entries may predate an administrative Enterprise
+    # capital-contract scaling operation. Normalize those legacy entry values
+    # onto the same capital basis as subsequent exits so administrative scaling
+    # cannot be reported as investment profit.
+    capital_scale_factor = 1.0
+    capital_contract_applied = False
+    capital_contract_effective_date = ""
+
+    if paper_state:
+        candidate_factor = _number(
+            paper_state.get("enterprise_capital_scale_factor"),
+            1.0,
+        )
+        capital_contract_applied = bool(
+            paper_state.get("enterprise_capital_contract_applied")
+        )
+        capital_contract_effective_date = str(
+            paper_state.get("enterprise_capital_contract_effective_date")
+            or ""
+        ).strip()
+
+        if capital_contract_applied and candidate_factor > 0:
+            capital_scale_factor = candidate_factor
 
     for raw in rows:
         pair = str(raw.get("Pair") or "").strip()
@@ -91,6 +116,7 @@ def build_dividend_paper_trade_performance(
                 "symbol": ticker,
                 "entry_date": date,
                 "entry_value": value,
+                "raw_entry_value": value,
                 "income_received": 0.0,
             }
             continue
@@ -104,9 +130,37 @@ def build_dividend_paper_trade_performance(
 
         if action in EXIT_ACTIONS and key in open_trades:
             trade = open_trades.pop(key)
-            entry_value = float(trade["entry_value"])
+
+            entry_date = str(trade.get("entry_date") or "")
+            raw_entry_value = float(
+                trade.get("raw_entry_value", trade["entry_value"])
+            )
+
+            crosses_capital_boundary = (
+                capital_contract_applied
+                and bool(capital_contract_effective_date)
+                and bool(entry_date)
+                and entry_date < capital_contract_effective_date
+                and date >= capital_contract_effective_date
+            )
+
+            entry_value = (
+                raw_entry_value * capital_scale_factor
+                if crosses_capital_boundary
+                else raw_entry_value
+            )
+
+            trade["entry_value"] = entry_value
+            trade.pop("raw_entry_value", None)
+
             income = float(trade["income_received"])
-            realized_value = value + income
+
+            # Dividend cash is tracked separately as income evidence. While the
+            # sleeve is invested, the operational paper engine reinvests that
+            # cash into additional A/B shares, so the final exit value already
+            # contains the economic effect of those distributions. Adding the
+            # income again here would double-count reinvested dividends.
+            realized_value = value
             pnl = realized_value - entry_value
             if pnl > 1e-9:
                 outcome = "WIN"
@@ -124,6 +178,41 @@ def build_dividend_paper_trade_performance(
                 "total_return_pct": round(return_pct, 4),
                 "outcome": outcome,
             })
+
+    # Reconstructed historical opens must not override authoritative current
+    # paper state. If the current pair/sleeve has zero shares, suppress that
+    # unmatched historical ledger entry from the active-open report.
+    if paper_state:
+        pairs = paper_state.get("pairs")
+        if isinstance(pairs, Mapping):
+            filtered_open_trades: dict[tuple[str, str, str], dict[str, Any]] = {}
+
+            for key, trade in open_trades.items():
+                pair, sleeve, _ticker = key
+                current = pairs.get(pair)
+
+                if not isinstance(current, Mapping):
+                    filtered_open_trades[key] = trade
+                    continue
+
+                if sleeve == "A":
+                    shares = _number(current.get("a_shares"), 0.0)
+                elif sleeve == "B":
+                    shares = _number(current.get("b_shares"), 0.0)
+                else:
+                    filtered_open_trades[key] = trade
+                    continue
+
+                if shares > 1e-12:
+                    filtered_open_trades[key] = trade
+                else:
+                    warnings.append(
+                        f"Stale historical open suppressed for "
+                        f"{pair} {sleeve} {trade.get('symbol')} because "
+                        f"authoritative paper_state reports zero current shares."
+                    )
+
+            open_trades = filtered_open_trades
 
     win_count = sum(item["outcome"] == "WIN" for item in closed)
     loss_count = sum(item["outcome"] == "LOSS" for item in closed)
@@ -190,5 +279,19 @@ def write_dividend_paper_trade_performance(
     target = Path(output_path)
     if not target.is_absolute():
         target = root / target
-    report = build_dividend_paper_trade_performance(_load_rows(source))
+    state_path = root / "paper_state.json"
+    paper_state: Mapping[str, Any] | None = None
+
+    if state_path.is_file():
+        try:
+            loaded_state = json.loads(state_path.read_text(encoding="utf-8"))
+            if isinstance(loaded_state, dict):
+                paper_state = loaded_state
+        except (OSError, json.JSONDecodeError):
+            paper_state = None
+
+    report = build_dividend_paper_trade_performance(
+        _load_rows(source),
+        paper_state=paper_state,
+    )
     return _atomic_write(target, json.dumps(report, indent=2, sort_keys=True) + "\n")

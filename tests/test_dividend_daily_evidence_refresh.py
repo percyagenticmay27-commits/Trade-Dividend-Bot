@@ -97,7 +97,7 @@ def test_refresh_runs_intelligence_momentum_ranking_watchlist_candidate_performa
     assert report["momentum_symbol_count"] == 1
     assert report["ranking_count"] == 1
     assert report["momentum_evidence_path"].endswith("momentum_score_report.json")
-    assert report["performance_evidence_path"].endswith("results/strategy_performance_analytics.json")
+    assert report["performance_evidence_path"].endswith("results/dividend_paper_trade_performance.json")
     assert report["payment_history_path"].endswith("results/payment_history.json")
     assert report["upcoming_payments_path"].endswith("results/upcoming_payments.json")
     assert report["portfolio_snapshot_path"].endswith("results/portfolio_snapshot.json")
@@ -137,7 +137,7 @@ def test_refresh_preserves_governance_and_execution_locks(monkeypatch, tmp_path:
     monkeypatch.setattr(
         dividend_paper_trade_performance,
         "write_dividend_paper_trade_performance",
-        lambda **_: tmp_path / "results/strategy_performance_analytics.json",
+        lambda **_: tmp_path / "results/dividend_paper_trade_performance.json",
     )
     monkeypatch.setattr(
         dividend_income_payment_evidence,

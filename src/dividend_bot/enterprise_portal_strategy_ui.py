@@ -296,8 +296,10 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
             + _metric_table((
                 ("Allocated Capital", _money(row.get("allocated_capital"))),
                 ("Portfolio Value", _money(row.get("portfolio_value"))),
-                ("Realized Gain", _gain_loss_money(row.get("realized_gain"))),
-                ("Unrealized Gain", _gain_loss_money(row.get("unrealized_gain"))),
+                ("Total P/L", _gain_loss_money(row.get("strategy_nav_pnl"))),
+                ("Total Return", _value(row.get("strategy_nav_return_pct"), "%")),
+                ("Realized P/L", _gain_loss_money(row.get("realized_gain"))),
+                ("Unrealized P/L", _gain_loss_money(row.get("unrealized_gain"))),
             ))
         )
         watchlist_body = render_watchlist_panel(row)
@@ -313,8 +315,10 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
         performance_body = (
             "<h3>Performance</h3>"
             + _metric_table((
-                ("Realized Gain", _gain_loss_money(row.get("realized_gain"))),
-                ("Unrealized Gain", _gain_loss_money(row.get("unrealized_gain"))),
+                ("Total P/L", _gain_loss_money(row.get("strategy_nav_pnl"))),
+                ("Total Return", _value(row.get("strategy_nav_return_pct"), "%")),
+                ("Realized P/L", _gain_loss_money(row.get("realized_gain"))),
+                ("Unrealized P/L", _gain_loss_money(row.get("unrealized_gain"))),
                 ("Win Rate", _value(row.get("win_rate_percent"), "%")),
                 ("Opportunity Quality", _value(row.get("opportunity_quality"), " / 100")),
             ))

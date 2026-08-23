@@ -8,9 +8,26 @@ from src.dividend_bot.dividend_strategy_kpi_evidence import (
 )
 
 
-def test_cross_strategy_performance_uses_dividend_row_only(tmp_path: Path) -> None:
+def test_canonical_dividend_performance_precedes_stale_cross_strategy_file(
+    tmp_path: Path,
+) -> None:
     results = tmp_path / "results"
     results.mkdir()
+
+    # Authoritative DIVIDEND-001 performance.
+    (results / "dividend_paper_trade_performance.json").write_text(
+        json.dumps({
+            "strategy_id": "DIVIDEND-001",
+            "closed_trade_count": 6,
+            "open_trade_count": 0,
+            "win_count": 0,
+            "loss_count": 6,
+            "win_rate_percent": 0.0,
+        }),
+        encoding="utf-8",
+    )
+
+    # Deliberately stale legacy/cross-strategy evidence.
     (results / "strategy_performance_analytics.json").write_text(
         json.dumps({
             "strategies": [
@@ -23,5 +40,11 @@ def test_cross_strategy_performance_uses_dividend_row_only(tmp_path: Path) -> No
 
     report = build_dividend_strategy_kpi_evidence(tmp_path)
 
-    assert report["win_rate_percent"] == 64.0
-    assert report["calculation_methods"]["win_rate_percent"] == "DECLARED_DIVIDEND_WIN_RATE"
+    assert report["win_rate_percent"] == 0.0
+    assert report["metric_sources"]["win_rate_percent"].endswith(
+        "results/dividend_paper_trade_performance.json"
+    )
+    assert (
+        report["calculation_methods"]["win_rate_percent"]
+        == "DECLARED_DIVIDEND_WIN_RATE"
+    )

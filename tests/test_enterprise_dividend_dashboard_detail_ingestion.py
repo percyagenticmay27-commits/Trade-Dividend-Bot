@@ -178,3 +178,79 @@ def test_swing_row_does_not_receive_dividend_detail_evidence(tmp_path: Path) -> 
     assert row["performance_detail"] == {}
     assert row["alerts"] == []
     assert row["risk_flags"] == []
+
+
+def test_dividend_enterprise_row_exposes_account_nav_separately_from_realized_pnl(
+    tmp_path: Path,
+) -> None:
+    _write_json(
+        tmp_path / "paper_state.json",
+        {
+            "starting_capital": 5000.0,
+            "enterprise_capital_contract_amount": 5000.0,
+            "pairs": {
+                "AAA / BBB": {
+                    "a_shares": 0.0,
+                    "b_shares": 0.0,
+                    "last_prices": {
+                        "A": 10.0,
+                        "B": 20.0,
+                    },
+                    "sgov_balance": 4715.63,
+                    "total_dividends_received": 58.47,
+                }
+            },
+        },
+    )
+
+    _write_json(
+        tmp_path / "results" / "dividend_paper_trade_performance.json",
+        {
+            "strategy_id": "DIVIDEND-001",
+            "closed_trade_count": 1,
+            "open_trade_count": 0,
+            "win_count": 1,
+            "loss_count": 0,
+            "flat_count": 0,
+            "win_rate_percent": 100.0,
+            "closed_trades": [
+                {
+                    "symbol": "AAA",
+                    "pnl": 5.50,
+                }
+            ],
+            "open_trades": [],
+        },
+    )
+
+    rows, warnings = build_strategy_kpis(
+        registry={
+            "strategy_plugins": [
+                _dividend_plugin()
+            ]
+        },
+        strategy_allocations={
+            "DIVIDEND-001": 5000.0
+        },
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+    assert len(rows) == 1
+
+    row = rows[0]
+
+    assert row["strategy_id"] == "DIVIDEND-001"
+    assert row["allocated_capital"] == 5000.0
+
+    # Account-level NAV performance.
+    assert row["strategy_nav"] == 4715.63
+    assert row["strategy_nav_pnl"] == -284.37
+    assert row["strategy_nav_return_pct"] == -5.6874
+    assert (
+        row["nav_accounting_method"]
+        == "CURRENT_STRATEGY_NAV_MINUS_ALLOCATED_CAPITAL"
+    )
+
+    # Closed-trade accounting remains independent.
+    assert row["realized_gain"] == 5.5

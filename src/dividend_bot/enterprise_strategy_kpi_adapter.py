@@ -112,6 +112,7 @@ def _artifact_declarations(plugin: Mapping[str, Any]) -> list[dict[str, Any]]:
                 "artifact_type": str(_first(item, ("artifact_type", "report_type", "type"), "UNKNOWN")),
                 "path": _first(item, ("path", "report_path", "artifact_path", "output_path")),
                 "format": str(_first(item, ("format", "file_format"), "UNKNOWN")),
+                "scope": str(item.get("scope") or "").strip().upper(),
                 "authoritative": bool(item.get("authoritative", False)),
                 "required": bool(item.get("required", False)),
             })
@@ -576,7 +577,17 @@ def build_strategy_kpis(
             else root
         )
 
+        enterprise_output_paths = {
+            str(item.get("path"))
+            for item in artifact_declarations
+            if str(item.get("scope") or "").upper() == "ENTERPRISE"
+            and item.get("path")
+        }
+
         for raw_path in _declared_paths(plugin):
+            if strategy_id == "DIVIDEND-001" and raw_path in enterprise_output_paths:
+                continue
+
             path = _safe_path(raw_path, evidence_root)
             if path is None:
                 warnings.append(f"{strategy_id}: unsupported evidence path {raw_path}")
@@ -636,9 +647,12 @@ def build_strategy_kpis(
         )
         realized = dashboard_realized
         if realized is None:
-            realized = _metric(
-                payloads,
-                ("realized_gain", "realized_profit", "realized_pnl", "net_profit"),
+            realized = _strategy_metric_value(
+                payloads, strategy_id, "realized_gain"
+            )
+        if realized is None:
+            realized = _strategy_metric_value(
+                payloads, strategy_id, "realized_pnl"
             )
 
         dashboard_unrealized = (
@@ -647,14 +661,13 @@ def build_strategy_kpis(
             else None
         )
         unrealized = dashboard_unrealized
-        if unrealized is None and strategy_id != "DIVIDEND-001":
+        if unrealized is None:
             unrealized = _strategy_metric_value(
-                payloads, strategy_id, "unrealized_pnl"
+                payloads, strategy_id, "unrealized_gain"
             )
         if unrealized is None:
-            unrealized = _metric(
-                payloads,
-                ("unrealized_gain", "unrealized_profit", "unrealized_pnl"),
+            unrealized = _strategy_metric_value(
+                payloads, strategy_id, "unrealized_pnl"
             )
 
         invested_capital = (
@@ -863,6 +876,35 @@ def build_strategy_kpis(
             "published_artifacts": artifact_declarations,
             "allocated_capital": round(allocated, 2),
             "portfolio_value": round(portfolio_value, 2) if portfolio_value is not None else None,
+
+            # Dividend account-level NAV evidence. These fields intentionally
+            # remain separate from realized_gain/unrealized_gain so enterprise
+            # reporting does not confuse total strategy NAV change with
+            # reconstructed closed-trade P/L.
+            "strategy_nav": (
+                _number(dashboard_evidence.get("strategy_nav"))
+                if strategy_id == "DIVIDEND-001"
+                and isinstance(dashboard_evidence, Mapping)
+                else None
+            ),
+            "strategy_nav_pnl": (
+                _number(dashboard_evidence.get("strategy_nav_pnl"))
+                if strategy_id == "DIVIDEND-001"
+                and isinstance(dashboard_evidence, Mapping)
+                else None
+            ),
+            "strategy_nav_return_pct": (
+                _number(dashboard_evidence.get("strategy_nav_return_pct"))
+                if strategy_id == "DIVIDEND-001"
+                and isinstance(dashboard_evidence, Mapping)
+                else None
+            ),
+            "nav_accounting_method": (
+                dashboard_evidence.get("nav_accounting_method")
+                if strategy_id == "DIVIDEND-001"
+                and isinstance(dashboard_evidence, Mapping)
+                else None
+            ),
             "invested_capital": round(invested_capital, 2) if invested_capital is not None else None,
             "cash_balance": round(cash_balance, 2) if cash_balance is not None else None,
             "positions_market_value": round(positions_market_value, 2) if positions_market_value is not None else None,

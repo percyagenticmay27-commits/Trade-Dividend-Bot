@@ -110,8 +110,19 @@ def _strategy_cards(rows: list[dict[str, Any]]) -> str:
         _, tone, reason = _strategy_concern(row)
         sid = html.escape(str(row.get("strategy_id") or "UNKNOWN"))
         name = html.escape(str(row.get("display_name") or sid))
-        pnl_values = [_number(row.get("realized_gain")), _number(row.get("unrealized_gain"))]
-        pnl = sum(value for value in pnl_values if value is not None) if any(value is not None for value in pnl_values) else None
+        nav_pnl = _number(row.get("strategy_nav_pnl"))
+        if nav_pnl is not None:
+            pnl = nav_pnl
+        else:
+            pnl_values = [
+                _number(row.get("realized_gain")),
+                _number(row.get("unrealized_gain")),
+            ]
+            pnl = (
+                sum(value for value in pnl_values if value is not None)
+                if any(value is not None for value in pnl_values)
+                else None
+            )
         cards.append(
             f"<button type='button' class='scan-strategy-card {tone}' data-scan-target='{sid}'>"
             f"<span class='strategy-name'>{name}</span>"
@@ -132,9 +143,11 @@ def _strategy_details(rows: list[dict[str, Any]]) -> str:
         metrics = (
             ("Allocated Capital", _money(row.get("allocated_capital"))),
             ("Portfolio Value", _money(row.get("portfolio_value"))),
+            ("Total P/L", _money(row.get("strategy_nav_pnl"))),
+            ("Total Return", _percent(row.get("strategy_nav_return_pct"))),
             ("Income", _money(row.get("income"))),
-            ("Realized P&L", _money(row.get("realized_gain"))),
-            ("Unrealized P&L", _money(row.get("unrealized_gain"))),
+            ("Realized P/L", _money(row.get("realized_gain"))),
+            ("Unrealized P/L", _money(row.get("unrealized_gain"))),
             ("Win Rate", _percent(row.get("win_rate_percent"))),
             ("Watchlist", str(row.get("watchlist_count") if row.get("watchlist_count") is not None else "Not reported")),
             ("Positions / Holdings", str(row.get("position_count") if row.get("position_count") is not None else "Not reported")),
@@ -195,6 +208,9 @@ def render_scan_first_dashboard(report: Mapping[str, Any], *, audience: str) -> 
 <section class='scan-section'><div class='section-heading'><div><p class='eyebrow'>Strategy comparison</p><h2>Where should I look?</h2></div><p>Strategies are ordered by concern. Select one to open only its KPI data.</p></div><div class='scan-strategy-grid'>{_strategy_cards(rows)}</div></section>
 <section class='scan-section'><div class='section-heading'><div><p class='eyebrow'>Selected strategy</p><h2>Strategy KPI workspace</h2></div><p>Portfolio, watchlist, analytics, performance, and evidence remain isolated to the selected strategy.</p></div>{_strategy_details(rows)}</section>
 <details class='diagnostic-details'><summary>Enterprise diagnostics and technical metadata</summary><p>Registry identity, declared capabilities, artifact contracts, raw evidence paths, and other deployment diagnostics belong here so they remain available without overwhelming the investor scan.</p></details>
+"""
+
+    script = """
 <script>
 (function(){
  const cards=[...document.querySelectorAll('[data-scan-target]')];
@@ -210,4 +226,4 @@ def render_scan_first_dashboard(report: Mapping[str, Any], *, audience: str) -> 
 body{background:#07111f;color:#e8eef7}.enterprise-content{padding:22px}.scan-hero{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:20px;align-items:stretch;margin-bottom:20px}.scan-hero h1{font-size:34px;margin:4px 0 10px}.scan-hero p{max-width:780px;color:#aebcd0}.eyebrow{text-transform:uppercase;letter-spacing:.11em;font-size:11px;font-weight:800;color:#8fa8c8;margin:0}.hero-status{border-radius:16px;padding:20px;border:1px solid #2a3d58;display:flex;flex-direction:column;gap:8px}.hero-status span{font-size:12px;text-transform:uppercase}.hero-status strong{font-size:22px}.hero-status small{line-height:1.4}.good{border-color:#2f9e65!important}.watch{border-color:#d49a2d!important}.danger{border-color:#d94a4a!important}.neutral{border-color:#49627f!important}.scan-summary-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px;margin-bottom:24px}.scan-card{background:#101d2f;border:1px solid #2a3d58;border-radius:14px;padding:16px;min-height:125px}.scan-label{font-size:12px;color:#9db0c9;text-transform:uppercase;font-weight:800}.scan-value{font-size:23px;font-weight:800;margin:12px 0 8px}.scan-detail{font-size:12px;color:#aebcd0;line-height:1.4}.scan-section{background:#0c1828;border:1px solid #223752;border-radius:18px;padding:20px;margin-bottom:20px}.section-heading{display:flex;justify-content:space-between;gap:24px;align-items:end;margin-bottom:16px}.section-heading h2{margin:4px 0 0}.section-heading>p{max-width:460px;color:#9db0c9}.scan-strategy-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}.scan-strategy-card{background:#101d2f;color:#e8eef7;border:1px solid #2a3d58;border-radius:14px;padding:16px;text-align:left;cursor:pointer;display:flex;flex-direction:column;gap:8px}.scan-strategy-card.active{outline:3px solid #7c5cff}.strategy-name{font-weight:800;font-size:17px}.strategy-result{font-size:21px;font-weight:800}.strategy-health,.strategy-reason{color:#aebcd0;font-size:12px}.strategy-action{color:#b7a7ff;font-weight:800;margin-top:6px}.scan-detail-panel{scroll-margin-top:100px}.detail-heading{display:flex;justify-content:space-between;align-items:center}.status-pill{padding:7px 11px;border:1px solid;border-radius:999px;font-size:12px;font-weight:800}.mini-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0}.mini-metric{background:#101d2f;border:1px solid #223752;border-radius:12px;padding:14px}.mini-metric span{display:block;color:#9db0c9;font-size:11px;text-transform:uppercase}.mini-metric strong{display:block;margin-top:8px;font-size:17px}.detail-columns{display:grid;grid-template-columns:1fr 1fr;gap:14px}.detail-columns article,.diagnostic-details{background:#101d2f;border:1px solid #223752;border-radius:12px;padding:16px}.diagnostic-details summary{cursor:pointer;font-weight:800}.empty-state{padding:18px;background:#101d2f;border-radius:12px;color:#aebcd0}
 @media(max-width:1100px){.scan-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.scan-hero{grid-template-columns:1fr}}@media(max-width:700px){.scan-summary-grid,.detail-columns{grid-template-columns:1fr}.section-heading{display:block}.enterprise-content{padding:12px}}
 </style>"""
-    return f"{css}<div class='portal-frame'>{render_left_navigation('Executive Dashboard' if audience.lower() == 'executive' else 'Investor Dashboard')}<main class='enterprise-content'>{content}</main></div>"
+    return f"{css}<div class='portal-frame'>{render_left_navigation('Executive Dashboard' if audience.lower() == 'executive' else 'Investor Dashboard')}<main class='enterprise-content'>{content}{script}</main></div>"

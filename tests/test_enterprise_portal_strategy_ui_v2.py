@@ -258,3 +258,40 @@ def test_swing_holdings_reach_strategy_workspace_without_reconciliation_warning(
     assert "+$25.52" in swing_workspace
     assert "does not match reported portfolio value" not in swing_workspace
 
+
+
+def test_dividend_workspace_uses_authoritative_strategy_nav_accounting() -> None:
+    report = _report()
+    dividend = report["strategy_kpis"][0]
+
+    dividend.update({
+        "allocated_capital": 5000.0,
+        "portfolio_value": 4715.63,
+        "strategy_nav": 4715.63,
+        "strategy_nav_pnl": -284.37,
+        "strategy_nav_return_pct": -5.6874,
+        "nav_accounting_method": "CURRENT_STRATEGY_NAV_MINUS_ALLOCATED_CAPITAL",
+        "realized_gain": -155.01,
+        "unrealized_gain": None,
+        "income": 58.47,
+    })
+
+    output = render_strategy_workspace(report, audience="executive")
+
+    dividend_start = output.index("id='strategy-DIVIDEND-001'")
+    swing_start = output.index("id='strategy-SWING-001'")
+    dividend_workspace = output[dividend_start:swing_start]
+
+    assert "Total P/L" in dividend_workspace
+    assert "-$284.37" in dividend_workspace
+    assert "Total Return" in dividend_workspace
+    assert "-5.6874%" in dividend_workspace
+
+    assert "Realized P/L" in dividend_workspace
+    assert "-$155.01" in dividend_workspace
+
+    assert "Unrealized P/L" in dividend_workspace
+    assert "Not reported" in dividend_workspace
+
+    assert "Realized Gain" not in dividend_workspace
+    assert "Unrealized Gain" not in dividend_workspace

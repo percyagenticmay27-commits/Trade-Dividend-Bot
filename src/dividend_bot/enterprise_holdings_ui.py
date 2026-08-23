@@ -334,7 +334,20 @@ def render_holdings_panel(row: Mapping[str, Any]) -> str:
         current_value = reported_portfolio_value
 
     count_number = _number(row.get("position_count")); position_count = int(count_number) if count_number is not None else len(holdings)
-    value_change = current_value - allocated_capital if allocated_capital is not None else None
+
+    # Prefer strategy-published NAV accounting when available. The arithmetic
+    # fallback preserves legacy/external strategy behavior when the strategy
+    # does not publish an authoritative NAV P/L field.
+    reported_nav_pnl = _number(row.get("strategy_nav_pnl"))
+    value_change = (
+        reported_nav_pnl
+        if reported_nav_pnl is not None
+        else (
+            current_value - allocated_capital
+            if allocated_capital is not None
+            else None
+        )
+    )
     if is_swing:
         summary = "".join((
             _summary_value("◆", "Allocated Capital", _money(allocated_capital), "AI CIO governed strategy allocation"),

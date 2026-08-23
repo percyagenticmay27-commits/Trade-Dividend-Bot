@@ -244,6 +244,8 @@ def test_dividend_alias_uses_canonical_allocation_and_blocks_cross_strategy_kpi_
                         "opportunity_quality": 91.0,
                         "watchlist_count": 3,
                         "win_rate_percent": 45.0,
+                        "realized_pnl": 111.11,
+                        "unrealized_pnl": -188.13,
                     },
                     {
                         "strategy_id": "dividend",
@@ -277,6 +279,9 @@ def test_dividend_alias_uses_canonical_allocation_and_blocks_cross_strategy_kpi_
     assert row["opportunity_quality"] is None
     assert row["watchlist_count"] is None
     assert row["win_rate_percent"] is None
+    assert row["realized_gain"] is None
+    assert row["unrealized_gain"] is None
+    assert row["unrealized_pnl"] is None
 
 
 def test_dividend_decision_journal_reaches_enterprise_kpi_row(tmp_path: Path) -> None:

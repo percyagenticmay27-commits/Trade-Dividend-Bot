@@ -20,8 +20,8 @@ def test_normalizes_dividend_owned_kpi_sources(tmp_path: Path) -> None:
     )
     results = tmp_path / "results"
     results.mkdir()
-    (results / "strategy_performance_analytics.json").write_text(
-        json.dumps({"strategies": [{"strategy_id": "DIVIDEND-001", "win_rate_pct": 63.5}]}),
+    (results / "dividend_paper_trade_performance.json").write_text(
+        json.dumps({"strategy_id": "DIVIDEND-001", "win_rate_percent": 63.5}),
         encoding="utf-8",
     )
 
@@ -72,8 +72,8 @@ def test_opportunity_pairing_is_supported_without_arbitrary_recursive_alias(tmp_
 def test_win_rate_is_not_fabricated_from_return_or_profit(tmp_path: Path) -> None:
     results = tmp_path / "results"
     results.mkdir()
-    (results / "strategy_performance_analytics.json").write_text(
-        json.dumps({"return_percent": 25.0, "net_profit": 1000.0}),
+    (results / "dividend_paper_trade_performance.json").write_text(
+        json.dumps({"strategy_id": "DIVIDEND-001", "return_percent": 25.0, "net_profit": 1000.0}),
         encoding="utf-8",
     )
 

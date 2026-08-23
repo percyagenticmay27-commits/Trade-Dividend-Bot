@@ -83,7 +83,7 @@ def refresh_dividend_daily_evidence(root_dir: str | Path = ".") -> dict[str, Any
     candidate = write_candidate_discovery(root_path=str(root))
     performance_path = write_dividend_paper_trade_performance(
         root_dir=root,
-        output_path="results/strategy_performance_analytics.json",
+        output_path="results/dividend_paper_trade_performance.json",
     )
     income_evidence = write_income_payment_evidence(root)
     portfolio_snapshot_path = write_portfolio_snapshot_evidence(root)

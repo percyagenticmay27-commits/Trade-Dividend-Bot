@@ -42,6 +42,11 @@ OPPORTUNITY_SOURCES = (
     Path("results/opportunity_pairing_report.json"),
 )
 PERFORMANCE_SOURCES = (
+    # Canonical DIVIDEND-001 closed-trade performance authority.
+    Path("results/dividend_paper_trade_performance.json"),
+
+    # Legacy compatibility fallbacks. These must never override the
+    # strategy-owned canonical Dividend performance artifact above.
     Path("results/strategy_performance_analytics.json"),
     Path("strategy_performance_analytics.json"),
 )

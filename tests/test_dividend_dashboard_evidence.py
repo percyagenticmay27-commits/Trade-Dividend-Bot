@@ -135,3 +135,61 @@ def test_watchlist_receives_current_entry_progress_and_requirements(tmp_path: Pa
     assert candidate["requirements_for_buy"] == ["PRICE_ABOVE_EMA20"]
     assert candidate["entry_evidence_source"] == "entry_score_report.json"
     assert candidate["entry_evidence_generated_at_utc"] == "2026-08-11T12:00:00Z"
+
+
+def test_strategy_nav_performance_is_separate_from_closed_trade_pnl(
+    tmp_path: Path,
+) -> None:
+    _write_json(
+        tmp_path / "paper_state.json",
+        {
+            "starting_capital": 5000.0,
+            "enterprise_capital_contract_amount": 5000.0,
+            "pairs": {
+                "AAA / BBB": {
+                    "a_shares": 0.0,
+                    "b_shares": 0.0,
+                    "last_prices": {"A": 10.0, "B": 20.0},
+                    "sgov_balance": 4715.63,
+                    "total_dividends_received": 58.47,
+                }
+            },
+        },
+    )
+
+    _write_json(
+        tmp_path / "results" / "dividend_paper_trade_performance.json",
+        {
+            "strategy_id": "DIVIDEND-001",
+            "closed_trade_count": 1,
+            "open_trade_count": 0,
+            "win_count": 1,
+            "loss_count": 0,
+            "flat_count": 0,
+            "win_rate_percent": 100.0,
+            "closed_trades": [
+                {
+                    "symbol": "AAA",
+                    "pnl": 5.50,
+                }
+            ],
+            "open_trades": [],
+        },
+    )
+
+    report = build_dividend_dashboard_evidence(tmp_path)
+
+    # Closed-trade performance remains trade-level accounting.
+    assert report["realized_gain"] == 5.5
+
+    # NAV performance is independently derived from account value.
+    assert report["allocated_capital"] == 5000.0
+    assert report["portfolio_value"] == 4715.63
+    assert report["strategy_nav"] == 4715.63
+    assert report["strategy_nav_pnl"] == -284.37
+    assert report["strategy_nav_return_pct"] == -5.6874
+
+    assert (
+        report["nav_accounting_method"]
+        == "CURRENT_STRATEGY_NAV_MINUS_ALLOCATED_CAPITAL"
+    )

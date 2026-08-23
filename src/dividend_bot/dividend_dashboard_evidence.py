@@ -360,6 +360,38 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
     projected_annual_income = total_projected_annual_income(holdings)
     realized_gain = round(sum(_number(item.get("pnl"), 0.0) or 0.0 for item in performance.get("closed_trades", []) if isinstance(item, Mapping)), 2) if isinstance(performance.get("closed_trades"), list) else None
     unrealized_gain = total_unrealized_pnl(holdings)
+
+    # Strategy NAV performance is account-level evidence and must remain
+    # separate from realized closed-trade P/L. Administrative capital scaling,
+    # reserve holdings, reinvestment, and other account-level movements can
+    # cause current NAV change to differ from reconstructed trade P/L.
+    allocated_capital = _number(
+        state.get("enterprise_capital_contract_amount"),
+        None,
+    )
+
+    if allocated_capital is None:
+        allocated_capital = _number(
+            state.get("starting_capital"),
+            None,
+        )
+
+    strategy_nav_pnl = None
+    strategy_nav_return_pct = None
+
+    if (
+        allocated_capital is not None
+        and allocated_capital > 0
+        and portfolio_value is not None
+    ):
+        strategy_nav_pnl = round(
+            float(portfolio_value) - float(allocated_capital),
+            2,
+        )
+        strategy_nav_return_pct = round(
+            (strategy_nav_pnl / float(allocated_capital)) * 100.0,
+            4,
+        )
     decision_journal = build_dividend_decision_journal(
         holdings=active_holdings,
         watchlist=watchlist,
@@ -420,7 +452,13 @@ def build_dividend_dashboard_evidence(root_dir: str | Path = ".") -> dict[str, A
         "reinvestment_accounting_method": realized_income["reinvestment_accounting_method"],
         "projected_annual_income": projected_annual_income,
         "income_events": income_events,
-        "realized_gain": realized_gain, "unrealized_gain": unrealized_gain,
+        "realized_gain": realized_gain,
+        "unrealized_gain": unrealized_gain,
+        "allocated_capital": allocated_capital,
+        "strategy_nav": portfolio_value if holdings else None,
+        "strategy_nav_pnl": strategy_nav_pnl,
+        "strategy_nav_return_pct": strategy_nav_return_pct,
+        "nav_accounting_method": "CURRENT_STRATEGY_NAV_MINUS_ALLOCATED_CAPITAL",
         "decision_journal_status": "AVAILABLE",
         "decision_journal": decision_journal,
         "decision_count": decision_journal["decision_count"],

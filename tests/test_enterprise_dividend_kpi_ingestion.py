@@ -40,8 +40,8 @@ def test_dividend_host_evidence_populates_dashboard_kpis(tmp_path: Path) -> None
     )
     results = tmp_path / "results"
     results.mkdir()
-    (results / "strategy_performance_analytics.json").write_text(
-        json.dumps({"strategy_id": "DIVIDEND-001", "win_rate_pct": 62.5}),
+    (results / "dividend_paper_trade_performance.json").write_text(
+        json.dumps({"strategy_id": "DIVIDEND-001", "win_rate_percent": 62.5}),
         encoding="utf-8",
     )
 
@@ -61,7 +61,7 @@ def test_dividend_host_evidence_populates_dashboard_kpis(tmp_path: Path) -> None
     assert row["evidence_status"] == "AVAILABLE"
     assert any(path.endswith("candidate_discovery.json") for path in row["evidence_paths"])
     assert any(path.endswith("dividend_rankings.json") for path in row["evidence_paths"])
-    assert any(path.endswith("strategy_performance_analytics.json") for path in row["evidence_paths"])
+    assert any(path.endswith("dividend_paper_trade_performance.json") for path in row["evidence_paths"])
 
 
 def test_dividend_host_evidence_does_not_enable_execution(tmp_path: Path) -> None:
