@@ -17,11 +17,17 @@ def test_daily_launcher_runs_dashboard_refresh() -> None:
     assert "python3 refresh_enterprise_dashboards.py" in text
 
 
-def test_daily_cycle_runs_before_dashboard_refresh() -> None:
+def test_daily_launcher_refreshes_dividend_performance() -> None:
+    text = _launcher_text()
+    assert "python3 refresh_dividend_paper_trade_performance.py" in text
+
+
+def test_daily_cycle_and_realized_performance_run_before_dashboard_refresh() -> None:
     text = _launcher_text()
     daily = text.index("python3 run_daily_paper_cycle.py")
+    realized = text.index("python3 refresh_dividend_paper_trade_performance.py")
     dashboards = text.index("python3 refresh_enterprise_dashboards.py")
-    assert daily < dashboards
+    assert daily < realized < dashboards
 
 
 def test_launcher_remains_fail_fast() -> None:
@@ -37,4 +43,5 @@ def test_launcher_preserves_paper_environment_default() -> None:
 def test_dashboard_refresh_does_not_replace_daily_cycle() -> None:
     text = _launcher_text()
     assert text.count("python3 run_daily_paper_cycle.py") == 1
+    assert text.count("python3 refresh_dividend_paper_trade_performance.py") == 1
     assert text.count("python3 refresh_enterprise_dashboards.py") == 1
