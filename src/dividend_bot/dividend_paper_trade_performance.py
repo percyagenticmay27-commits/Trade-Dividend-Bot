@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Mapping
 
 MODULE_NAME = "dividend_paper_trade_performance"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 SCHEMA_VERSION = "1.0"
 STRATEGY_ID = "DIVIDEND-001"
 
@@ -46,11 +46,33 @@ def _number(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _positive_number(value: Any) -> float | None:
+    number = _number(value, 0.0)
+    return number if number > 0 else None
+
+
 def _load_rows(path: Path) -> list[dict[str, str]]:
     if not path.is_file():
         return []
     with path.open(newline="", encoding="utf-8") as handle:
         return [dict(row) for row in csv.DictReader(handle)]
+
+
+def _entry_cost_for_exit(trade: Mapping[str, Any], exit_shares: float | None) -> tuple[float, str]:
+    """Return the economic cost basis for the shares that were actually sold.
+
+    Enterprise allocation normalization scales paper-state share quantities without
+    rewriting historical trade rows. When the exit row therefore contains more
+    shares than the original entry row, use the entry's per-share cost to scale the
+    cost basis to the sold quantity. If share evidence is unavailable, preserve the
+    legacy recorded-entry-value behavior rather than fabricating a scale factor.
+    """
+    recorded_entry_value = float(trade.get("recorded_entry_value") or 0.0)
+    entry_shares = _positive_number(trade.get("entry_shares"))
+    if entry_shares is None or exit_shares is None:
+        return recorded_entry_value, "RECORDED_ENTRY_VALUE"
+    unit_cost = recorded_entry_value / entry_shares
+    return unit_cost * exit_shares, "ENTRY_UNIT_COST_X_EXIT_SHARES"
 
 
 def build_dividend_paper_trade_performance(
@@ -65,6 +87,11 @@ def build_dividend_paper_trade_performance(
     cash logged for a pair is split equally between its A/B sleeves, matching the
     operational paper engine's 50/50 reinvestment rule, and is credited to an
     open round trip before classifying WIN/LOSS/FLAT.
+
+    Historical entry rows can predate an Enterprise paper-allocation resize. The
+    resize intentionally does not rewrite the ledger, so a later exit can contain
+    proportionally more shares. Realized P/L therefore uses entry cost per share
+    multiplied by the actual exit shares when both share quantities are reported.
     """
     open_trades: dict[tuple[str, str, str], dict[str, Any]] = {}
     closed: list[dict[str, Any]] = []
@@ -77,6 +104,8 @@ def build_dividend_paper_trade_performance(
         action = str(raw.get("Action") or "").strip().upper()
         date = str(raw.get("Date") or "").strip()
         value = max(0.0, _number(raw.get("Paper_Value"), 0.0))
+        shares = _positive_number(raw.get("Shares"))
+        price = _positive_number(raw.get("Price"))
         key = (pair, sleeve, ticker)
 
         if action in ENTRY_ACTIONS and pair and sleeve and ticker and ticker != "SGOV":
@@ -90,7 +119,10 @@ def build_dividend_paper_trade_performance(
                 "sleeve": sleeve,
                 "symbol": ticker,
                 "entry_date": date,
+                "recorded_entry_value": value,
                 "entry_value": value,
+                "entry_shares": shares,
+                "entry_price": price,
                 "income_received": 0.0,
             }
             continue
@@ -104,7 +136,7 @@ def build_dividend_paper_trade_performance(
 
         if action in EXIT_ACTIONS and key in open_trades:
             trade = open_trades.pop(key)
-            entry_value = float(trade["entry_value"])
+            entry_value, cost_basis_method = _entry_cost_for_exit(trade, shares)
             income = float(trade["income_received"])
             realized_value = value + income
             pnl = realized_value - entry_value
@@ -117,7 +149,11 @@ def build_dividend_paper_trade_performance(
             return_pct = ((realized_value / entry_value) - 1.0) * 100.0 if entry_value > 0 else 0.0
             closed.append({
                 **trade,
+                "entry_value": round(entry_value, 6),
+                "cost_basis_method": cost_basis_method,
                 "exit_date": date,
+                "exit_shares": shares,
+                "exit_price": price,
                 "exit_value": round(value, 6),
                 "realized_value": round(realized_value, 6),
                 "pnl": round(pnl, 6),
@@ -146,6 +182,7 @@ def build_dividend_paper_trade_performance(
         "win_rate_percent": win_rate,
         "closed_trades": closed,
         "open_trades": list(open_trades.values()),
+        "realized_cost_basis_policy": "ENTRY_UNIT_COST_X_EXIT_SHARES_WHEN_AVAILABLE",
         "evidence_status": "AVAILABLE" if closed_count else "INSUFFICIENT_DATA",
         "warnings": warnings + ([] if closed_count else ["No closed Dividend paper round trips are available for realized win rate."]),
         "paper_trade_mode": True,
