@@ -108,10 +108,15 @@ def _event_value(event: Mapping[str, Any]) -> float | None:
 
 
 def _event_fingerprint(event: Mapping[str, Any]) -> tuple[Any, ...]:
-    """Identify duplicate ledger rows created by repeated initialization runs."""
+    """Identify duplicate economic ledger rows created by repeated initialization.
+
+    Reason text is intentionally excluded. The legacy initializer and the later
+    signal-aware initializer could record the same economic opening transaction
+    with different descriptive reasons. Counting both doubles historical cost.
+    """
     return (
         event.get("date"), event.get("action"), event.get("pair"), event.get("sleeve"),
-        event.get("shares"), event.get("price"), event.get("paper_value"), event.get("reason"),
+        event.get("shares"), event.get("price"), event.get("paper_value"),
     )
 
 
@@ -153,15 +158,23 @@ def _is_never_entered(symbol_events: list[dict[str, Any]], is_current: bool) -> 
 def _completed_cycle_entry_value(
     symbol_events: list[dict[str, Any]],
     latest_exit: Mapping[str, Any] | None,
-) -> float | None:
+) -> tuple[float | None, str | None]:
+    """Return cost basis for the shares represented by the completed exit.
+
+    Enterprise paper-capital normalization scales live state quantities but, by
+    design, does not rewrite historical trade rows. For a position opened before
+    such a resize, the exit can therefore contain more shares than the historical
+    entry. In that case the authoritative economic cost is the weighted entry cost
+    per share multiplied by the actual exit shares.
+    """
     if latest_exit is None:
-        return None
+        return None, None
     try:
         latest_exit_index = max(
             index for index, event in enumerate(symbol_events) if event is latest_exit
         )
     except ValueError:
-        return None
+        return None, None
 
     previous_exit_index = -1
     for index in range(latest_exit_index - 1, -1, -1):
@@ -169,14 +182,34 @@ def _completed_cycle_entry_value(
             previous_exit_index = index
             break
 
-    values: list[float] = []
-    for event in symbol_events[previous_exit_index + 1 : latest_exit_index + 1]:
-        if event.get("action") not in _BUY_ACTIONS:
-            continue
-        value = _event_value(event)
-        if value is not None:
-            values.append(value)
-    return round(sum(values), 2) if values else None
+    buy_events = [
+        event for event in symbol_events[previous_exit_index + 1 : latest_exit_index + 1]
+        if event.get("action") in _BUY_ACTIONS
+    ]
+    values = [_event_value(event) for event in buy_events]
+    reported_values = [value for value in values if value is not None]
+    if not reported_values:
+        return None, None
+
+    recorded_cost = float(sum(reported_values))
+    entry_shares = [
+        float(event["shares"])
+        for event in buy_events
+        if event.get("shares") is not None and float(event["shares"]) > 0
+    ]
+    exit_shares = latest_exit.get("shares")
+    try:
+        exit_shares_number = float(exit_shares) if exit_shares is not None else None
+    except (TypeError, ValueError):
+        exit_shares_number = None
+
+    if entry_shares and exit_shares_number is not None and exit_shares_number > 0:
+        total_entry_shares = sum(entry_shares)
+        if total_entry_shares > 0:
+            unit_cost = recorded_cost / total_entry_shares
+            return round(unit_cost * exit_shares_number, 2), "ENTRY_UNIT_COST_X_EXIT_SHARES"
+
+    return round(recorded_cost, 2), "RECORDED_ENTRY_VALUE"
 
 
 def _reentry_count(symbol_events: list[dict[str, Any]]) -> int:
@@ -277,7 +310,10 @@ def build_position_lifecycle(
             lifecycle_status = "CLOSED"
             current_open_date = None
 
-        entry_value = None if never_entered else _completed_cycle_entry_value(symbol_events, latest_exit)
+        if never_entered:
+            entry_value, cost_basis_method = None, None
+        else:
+            entry_value, cost_basis_method = _completed_cycle_entry_value(symbol_events, latest_exit)
         exit_value = None if never_entered else (_event_value(latest_exit) if latest_exit else None)
         realized_gain_loss = None
         if entry_value is not None and exit_value is not None:
@@ -295,6 +331,7 @@ def build_position_lifecycle(
             "entry_value": entry_value,
             "last_exit_value": exit_value,
             "realized_gain_loss": realized_gain_loss,
+            "realized_cost_basis_method": cost_basis_method,
             "pair": (current.get(symbol) or {}).get("pair") or (symbol_events[-1].get("pair") if symbol_events else None),
             "sleeve": (current.get(symbol) or {}).get("sleeve") or (symbol_events[-1].get("sleeve") if symbol_events else None),
             "reentry_count": 0 if never_entered else reentry_count,
@@ -312,7 +349,8 @@ def build_position_lifecycle(
             "symbol": "SGOV", "lifecycle_status": "RESERVE", "is_current_holding": True,
             "first_purchase_date": None, "current_open_date": None, "last_exit_date": None,
             "last_exit_action": None, "last_exit_reason": None, "entry_value": None, "last_exit_value": None,
-            "realized_gain_loss": None, "pair": "CASH RESERVE", "sleeve": "RESERVE",
+            "realized_gain_loss": None, "realized_cost_basis_method": None,
+            "pair": "CASH RESERVE", "sleeve": "RESERVE",
             "reentry_count": 0, "event_count": 0, "raw_event_count": 0,
             "reserve_value": round(reserve_value, 2), "never_entered_reason": None,
             "evidence_source": "paper_state.json",
