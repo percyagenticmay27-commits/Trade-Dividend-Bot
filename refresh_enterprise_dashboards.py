@@ -8,6 +8,9 @@ import tempfile
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from src.dividend_bot.dividend_paper_trade_performance import (
+    write_dividend_paper_trade_performance,
+)
 from src.dividend_bot.registry_dashboard_evidence_adapter_v2 import (
     build_registry_dashboard_evidence_v2,
 )
@@ -371,6 +374,13 @@ def refresh_enterprise_dashboards(
         directory / DEFAULT_REGISTRY_EVIDENCE_JSON,
         registry_evidence,
     )
+
+    # Realized Dividend P/L is ledger-owned. Refresh its reporting-only artifact
+    # from the authoritative paper trade log before any strategy KPI reads occur.
+    # If the ledger is absent, preserve the existing evidence behavior; when it is
+    # present, regeneration errors propagate rather than silently publishing stale P/L.
+    if (root / "paper_trade_log.csv").is_file():
+        write_dividend_paper_trade_performance(root_dir=root)
 
     cash_state, cash_warning = _read_mapping(state / "paper_cash_account.json")
     strategy_kpis, kpi_warnings = build_strategy_kpis(
