@@ -145,3 +145,77 @@ def test_manual_strategy_route_is_paper_only() -> None:
     assert server.BROKER_EXECUTION_ENABLED is False
     assert server.ORDER_PLACEMENT_ENABLED is False
     assert server.CAPITAL_MOVEMENT_ENABLED is False
+
+
+def test_dividend_manual_strategy_route_isolated_from_swing(monkeypatch):
+    from io import BytesIO
+    from urllib.parse import urlencode
+
+    from src.dividend_bot import enterprise_manual_strategy_server as server
+
+    called = {}
+
+    def fake_submit(body):
+        called["body"] = body
+        return {
+            "ok": True,
+            "paper_trade_mode": True,
+            "shadow_only": True,
+            "result": {
+                "strategy_id": "STRATEGY_C",
+                "pair": "AMDW / AMDL",
+            },
+        }
+
+    monkeypatch.setattr(
+        server,
+        "submit_dividend_manual_strategy_form",
+        fake_submit,
+    )
+
+    body = urlencode(
+        {
+            "strategy_id": "STRATEGY_C",
+            "display_name": "Strategy C",
+            "pair": "AMDW / AMDL",
+            "entry_rule_left": "PRICE",
+            "entry_rule_operator": ">",
+            "entry_rule_right": "EMA20",
+        }
+    ).encode("utf-8")
+
+    environ = {
+        "PATH_INFO": server.DIVIDEND_MANUAL_STRATEGY_PATH,
+        "REQUEST_METHOD": "POST",
+        "CONTENT_TYPE": "application/x-www-form-urlencoded",
+        "CONTENT_LENGTH": str(len(body)),
+        "wsgi.input": BytesIO(body),
+    }
+
+    payload, status = server._dividend_manual_strategy_response(environ)
+
+    assert status == "200 OK"
+    assert called["body"] == body
+    assert b"Dividend Manual Strategy Saved" in payload
+    assert b"STRATEGY_C" in payload
+    assert b"AMDW / AMDL" in payload
+    assert b"paper-only Shadow research candidate" in payload
+
+
+def test_dividend_manual_strategy_route_constant_is_distinct():
+    from src.dividend_bot import enterprise_manual_strategy_server as server
+
+    assert (
+        server.DIVIDEND_MANUAL_STRATEGY_PATH
+        == "/strategy/dividend-manual-entry"
+    )
+
+    assert (
+        server.DIVIDEND_MANUAL_STRATEGY_PATH
+        != server.MANUAL_STRATEGY_PATH
+    )
+
+    assert (
+        server.DIVIDEND_MANUAL_STRATEGY_PATH
+        != server.SHADOW_PROMOTION_PATH
+    )

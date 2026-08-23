@@ -66,3 +66,108 @@ def test_registry_rejects_incomplete_future_strategy(tmp_path: Path) -> None:
     )
     with pytest.raises(ValueError, match="missing fields"):
         load_strategy_registry(path)
+
+
+def test_register_test_strategy_adds_pair_scoped_manual_candidate(tmp_path):
+    from src.dividend_bot.dividend_strategy_registry import (
+        load_strategy_registry,
+        register_test_strategy,
+    )
+
+    path = tmp_path / "dividend_strategy_registry.json"
+
+    result = register_test_strategy(
+        {
+            "strategy_id": "STRATEGY_C",
+            "display_name": "Strategy C",
+            "eligible_pairs": ["AMDW / AMDL"],
+            "description": "Research challenger for AMD pair.",
+            "manual_definition": {
+                "timeframe": "4H",
+                "entry_rules": [
+                    {
+                        "left": "close",
+                        "operator": ">",
+                        "right": "ema",
+                        "period": 14,
+                    }
+                ],
+            },
+        },
+        path=path,
+    )
+
+    assert result["strategy_id"] == "STRATEGY_C"
+    assert result["strategy_role"] == "TEST_CANDIDATE"
+    assert result["eligible_pairs"] == ["AMDW / AMDL"]
+    assert result["manual_strategy"] is True
+    assert result["paper_trade_mode"] is True
+    assert result["broker_execution_enabled"] is False
+    assert result["capital_movement_enabled"] is False
+
+    rows = load_strategy_registry(path)
+    assert [row["strategy_id"] for row in rows] == [
+        "STRATEGY_A",
+        "STRATEGY_B",
+        "STRATEGY_C",
+    ]
+
+
+def test_register_test_strategy_cannot_overwrite_builtin_primary(tmp_path):
+    from src.dividend_bot.dividend_strategy_registry import (
+        register_test_strategy,
+    )
+
+    path = tmp_path / "dividend_strategy_registry.json"
+
+    import pytest
+
+    with pytest.raises(ValueError, match="protected built-in"):
+        register_test_strategy(
+            {
+                "strategy_id": "STRATEGY_A",
+                "display_name": "Fake Strategy A",
+                "eligible_pairs": ["AMDW / AMDL"],
+            },
+            path=path,
+        )
+
+
+def test_register_test_strategy_updates_same_manual_strategy_without_duplicates(
+    tmp_path,
+):
+    from src.dividend_bot.dividend_strategy_registry import (
+        load_strategy_registry,
+        register_test_strategy,
+    )
+
+    path = tmp_path / "dividend_strategy_registry.json"
+
+    register_test_strategy(
+        {
+            "strategy_id": "STRATEGY_C",
+            "display_name": "Strategy C",
+            "eligible_pairs": ["AMDW / AMDL"],
+        },
+        path=path,
+    )
+
+    register_test_strategy(
+        {
+            "strategy_id": "STRATEGY_C",
+            "display_name": "Strategy C Revised",
+            "eligible_pairs": ["AMDW / AMDL"],
+        },
+        path=path,
+    )
+
+    rows = load_strategy_registry(path)
+
+    strategy_c = [
+        row
+        for row in rows
+        if row["strategy_id"] == "STRATEGY_C"
+    ]
+
+    assert len(strategy_c) == 1
+    assert strategy_c[0]["display_name"] == "Strategy C Revised"

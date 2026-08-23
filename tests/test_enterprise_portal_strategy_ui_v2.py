@@ -295,3 +295,65 @@ def test_dividend_workspace_uses_authoritative_strategy_nav_accounting() -> None
 
     assert "Realized Gain" not in dividend_workspace
     assert "Unrealized Gain" not in dividend_workspace
+
+
+def test_dividend_receives_own_strategy_assignments_tab(monkeypatch):
+    from src.dividend_bot import enterprise_portal_strategy_ui_v2 as ui
+
+    monkeypatch.setattr(
+        ui,
+        "render_dividend_strategy_assignments",
+        lambda root=".": (
+            "<div id='dividend-assignment-test'>"
+            "Dividend Strategy Assignments"
+            "</div>"
+        ),
+    )
+
+    report = _report()
+    report["strategy_kpis"] = [
+        row
+        for row in report["strategy_kpis"]
+        if row.get("strategy_id") == "DIVIDEND-001"
+    ]
+
+    output = ui.render_strategy_workspace(
+        report,
+        audience="executive",
+    )
+
+    assert "tab-DIVIDEND-001-strategy-assignments" in output
+    assert "Dividend Strategy Assignments" in output
+    assert "dividend-assignment-test" in output
+
+
+def test_dividend_manual_strategy_tab_uses_dividend_transport_only():
+    from src.dividend_bot import enterprise_portal_strategy_ui_v2 as ui
+
+    report = _report()
+    report["strategy_kpis"] = [
+        row
+        for row in report["strategy_kpis"]
+        if row.get("strategy_id") == "DIVIDEND-001"
+    ]
+
+    output = ui.render_strategy_workspace(
+        report,
+        audience="executive",
+    )
+
+    # Dividend now intentionally owns its own Manual Strategy tab.
+    assert "tab-DIVIDEND-001-manual-strategy" in output
+
+    # It must submit only to the Dividend-owned intake route.
+    assert "action='/strategy/dividend-manual-entry'" in output
+
+    # Swing-owned write/promotion routes must not appear in Dividend's form.
+    assert "action='/strategy/manual-entry'" not in output
+    assert "action='/strategy/shadow-promote'" not in output
+
+    # Safety/governance presentation remains explicit.
+    assert "PAPER / SHADOW ONLY" in output
+    assert "TEST_CANDIDATE" in output
+    assert "Automatic Promotion:</strong> DISABLED" in output
+

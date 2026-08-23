@@ -17,6 +17,14 @@ from .enterprise_income_ui import income_ui_css, render_income_panel
 from .enterprise_manual_strategy_ui import manual_strategy_ui_css, render_manual_strategy_panel
 from .enterprise_position_history_ui import position_history_ui_css, render_position_history_panel
 from .enterprise_strategy_assignments_ui import strategy_assignments_ui_css, render_strategy_assignments_panel
+from .enterprise_dividend_strategy_assignments_ui import (
+    dividend_strategy_assignments_css,
+    render_dividend_strategy_assignments,
+)
+from .enterprise_dividend_manual_strategy_ui import (
+    dividend_manual_strategy_ui_css,
+    render_dividend_manual_strategy_panel,
+)
 from .enterprise_trade_analytics_ui import trade_analytics_ui_css, render_trade_analytics_panel
 from .enterprise_swing_alerts_ui import render_swing_alerts_panel, swing_alerts_ui_css
 from .enterprise_swing_decision_journal_ui import render_swing_decision_journal_panel, swing_decision_journal_ui_css
@@ -125,6 +133,33 @@ def _insert_swing_extension_tabs(output: str, *, sid: str, row: Mapping[str, Any
     return output
 
 
+def _insert_dividend_extension_tabs(
+    output: str,
+    *,
+    sid: str,
+    row: Mapping[str, Any],
+) -> str:
+    """Add Dividend-owned research/governance workspace extensions."""
+
+    output = _insert_workspace_tab(
+        output,
+        sid=sid,
+        tab_id="manual-strategy",
+        label="Manual Strategy",
+        body=render_dividend_manual_strategy_panel(),
+    )
+
+    output = _insert_workspace_tab(
+        output,
+        sid=sid,
+        tab_id="strategy-assignments",
+        label="Strategy Assignments",
+        body=render_dividend_strategy_assignments("."),
+    )
+
+    return output
+
+
 def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> str:
     output = _base.render_strategy_workspace(report, audience=audience)
     strategies = report.get("strategy_kpis")
@@ -158,6 +193,14 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
             output = _insert_swing_extension_tabs(output, sid=sid, row=row)
         else:
             output = _replace_panel(output, sid=sid, tab="income", body=render_income_panel(row))
+
+            if raw_sid.lower() in {"dividend", "dividend-001"}:
+                output = _insert_dividend_extension_tabs(
+                    output,
+                    sid=sid,
+                    row=row,
+                )
+
         output = _append_panel(output, sid=sid, tab="performance", body=render_position_history_panel(row))
     return output
 
@@ -173,4 +216,6 @@ def strategy_ui_css() -> str:
         + swing_decision_journal_ui_css()
         + manual_strategy_ui_css()
         + strategy_assignments_ui_css()
+        + dividend_strategy_assignments_css()
+        + dividend_manual_strategy_ui_css()
     )

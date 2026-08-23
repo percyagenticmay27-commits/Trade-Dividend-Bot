@@ -118,6 +118,103 @@ def ensure_strategy_registry(
     return rows
 
 
+def register_test_strategy(
+    strategy: Mapping[str, Any],
+    *,
+    path: str | Path = DEFAULT_STRATEGY_REGISTRY_PATH,
+) -> dict[str, Any]:
+    """Register or update one paper-only Dividend research strategy.
+
+    Manual strategies enter as TEST_CANDIDATE research definitions only.
+    This function cannot promote a strategy, move capital, or enable execution.
+    """
+    file = Path(path)
+    rows = ensure_strategy_registry(file)
+
+    row = dict(strategy)
+
+    strategy_id = str(row.get("strategy_id") or "").strip().upper()
+    display_name = str(row.get("display_name") or "").strip()
+
+    if not strategy_id:
+        raise ValueError("strategy_id is required")
+    if not display_name:
+        raise ValueError("display_name is required")
+
+    eligible_pairs = row.get("eligible_pairs")
+    if not isinstance(eligible_pairs, list) or not eligible_pairs:
+        raise ValueError("eligible_pairs must contain at least one Dividend pair")
+
+    normalized = {
+        **row,
+        "strategy_id": strategy_id,
+        "display_name": display_name,
+        "strategy_role": "TEST_CANDIDATE",
+        "lifecycle_status": "ACTIVE",
+        "version": str(row.get("version") or "1.0"),
+        "description": str(
+            row.get("description")
+            or "User-defined Dividend shadow research strategy."
+        ),
+        "signal_key": str(
+            row.get("signal_key")
+            or strategy_id.lower()
+        ),
+        "buy_signal_field": str(
+            row.get("buy_signal_field")
+            or "manual_buy_signal"
+        ),
+        "sell_signal_field": str(
+            row.get("sell_signal_field")
+            or "manual_sell_signal"
+        ),
+        "eligible_pairs": [str(value) for value in eligible_pairs],
+        "promotion_eligible": True,
+        "manual_strategy": True,
+        "paper_trade_mode": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "capital_movement_enabled": False,
+    }
+
+    existing = {
+        row["strategy_id"]: dict(row)
+        for row in rows
+    }
+
+    # Built-in production strategies cannot be overwritten through manual intake.
+    if strategy_id in {"STRATEGY_A", "STRATEGY_B"}:
+        raise ValueError(
+            f"{strategy_id} is a protected built-in strategy"
+        )
+
+    existing[strategy_id] = normalized
+    validated = _validate(list(existing.values()))
+
+    payload = {
+        "schema_version": "1.0",
+        "paper_trade_mode": True,
+        "live_trading_enabled": False,
+        "broker_execution_enabled": False,
+        "capital_movement_enabled": False,
+        "strategies": validated,
+    }
+
+    file.parent.mkdir(parents=True, exist_ok=True)
+    temporary = file.with_suffix(file.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    os.replace(temporary, file)
+
+    return next(
+        item
+        for item in validated
+        if item["strategy_id"] == strategy_id
+    )
+
+
 def active_strategies_for_pair(
     pair: str,
     *,

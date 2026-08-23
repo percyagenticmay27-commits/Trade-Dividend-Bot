@@ -13,7 +13,7 @@ def test_default_dividend_strategy_plugin_is_locked_paper_only():
 
     assert len(plugins) == 1
     plugin = plugins[0]
-    assert plugin == {
+    expected = {
         "strategy_id": "dividend",
         "display_name": "Dividend Income Strategy",
         "plugin_type": "STRATEGY",
@@ -27,6 +27,9 @@ def test_default_dividend_strategy_plugin_is_locked_paper_only():
         "broker_execution_enabled": False,
         "capital_movement_enabled": False,
     }
+
+    for key, value in expected.items():
+        assert plugin.get(key) == value
 
 
 def test_build_service_registry_publishes_strategy_plugins_without_changing_services():

@@ -7,6 +7,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any, Mapping
 
+from .dividend_manual_strategy_evaluator import evaluate_manual_strategy
 from .dividend_strategy_registry import active_strategies_for_pair
 
 PAPER_TRADE_MODE = True
@@ -119,12 +120,75 @@ def _rebase_strategy_state(row: dict[str, Any], allocation_basis: float) -> dict
     return row
 
 
+def _manual_evidence(
+    signals: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Flatten existing A/B technical evidence for manual shadow research."""
+    strategy_a = (
+        signals.get("strategy_a")
+        if isinstance(signals.get("strategy_a"), Mapping)
+        else {}
+    )
+    strategy_b = (
+        signals.get("strategy_b")
+        if isinstance(signals.get("strategy_b"), Mapping)
+        else {}
+    )
+
+    stoch = (
+        strategy_a.get("stoch_oscillator")
+        if isinstance(strategy_a.get("stoch_oscillator"), Mapping)
+        else {}
+    )
+    stoch_rsi = (
+        strategy_a.get("stoch_rsi")
+        if isinstance(strategy_a.get("stoch_rsi"), Mapping)
+        else {}
+    )
+
+    return {
+        "price": strategy_b.get("price"),
+        "ema20": strategy_b.get("ema20"),
+        "ema50": strategy_b.get("ema50"),
+        "rsi14": strategy_a.get("rsi14"),
+        "rsi14_previous": strategy_a.get("rsi14_previous"),
+        "stoch_k": stoch.get("k"),
+        "stoch_k_previous": stoch.get("k_previous"),
+        "stoch_d": stoch.get("d"),
+        "stoch_d_previous": stoch.get("d_previous"),
+        "stoch_rsi_k": stoch_rsi.get("k"),
+        "stoch_rsi_k_previous": stoch_rsi.get("k_previous"),
+        "stoch_rsi_d": stoch_rsi.get("d"),
+        "stoch_rsi_d_previous": stoch_rsi.get("d_previous"),
+    }
+
+
 def _strategy_signal(
     signals: Mapping[str, Any],
     definition: Mapping[str, Any],
 ) -> tuple[bool, bool]:
+    """Resolve built-in signals or evaluate a manual shadow strategy."""
+    if (
+        definition.get("manual_strategy") is True
+        and isinstance(definition.get("manual_definition"), Mapping)
+    ):
+        result = evaluate_manual_strategy(
+            definition,
+            _manual_evidence(signals),
+        )
+        return (
+            bool(result.get("buy_trigger")),
+            bool(result.get("sell_trigger")),
+        )
+
+    # Preserve authoritative built-in Strategy A/B behavior unchanged.
     signal_key = str(definition.get("signal_key") or "")
-    row = signals.get(signal_key) if isinstance(signals.get(signal_key), Mapping) else {}
+    row = (
+        signals.get(signal_key)
+        if isinstance(signals.get(signal_key), Mapping)
+        else {}
+    )
+
     return (
         bool(row.get(str(definition.get("buy_signal_field") or ""))),
         bool(row.get(str(definition.get("sell_signal_field") or ""))),

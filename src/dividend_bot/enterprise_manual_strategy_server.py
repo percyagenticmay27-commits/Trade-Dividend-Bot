@@ -9,6 +9,9 @@ from wsgiref.simple_server import make_server
 
 from . import paper_capital_allocation_server as base
 from .enterprise_manual_strategy_post import submit_manual_strategy_form
+from .enterprise_dividend_manual_strategy_post import (
+    submit_dividend_manual_strategy_form,
+)
 from .enterprise_shadow_strategy_promotion_transport import promote_shadow_strategy_in_swing
 
 PAPER_TRADE_MODE = True
@@ -18,6 +21,7 @@ ORDER_PLACEMENT_ENABLED = False
 CAPITAL_MOVEMENT_ENABLED = False
 AUTO_PROMOTION_ENABLED = False
 MANUAL_STRATEGY_PATH = "/strategy/manual-entry"
+DIVIDEND_MANUAL_STRATEGY_PATH = "/strategy/dividend-manual-entry"
 SHADOW_PROMOTION_PATH = "/strategy/shadow-promote"
 
 
@@ -62,6 +66,45 @@ def _manual_strategy_response(environ: Mapping[str, Any]) -> tuple[bytes, str]:
     )
 
 
+def _dividend_manual_strategy_response(
+    environ: Mapping[str, Any],
+) -> tuple[bytes, str]:
+    body = _read_form(
+        environ,
+        label="Dividend manual strategy form",
+    )
+
+    response = submit_dividend_manual_strategy_form(body)
+
+    result = (
+        response.get("result")
+        if isinstance(response.get("result"), Mapping)
+        else {}
+    )
+
+    strategy_id = str(
+        result.get("strategy_id")
+        or "manual Dividend strategy"
+    )
+
+    pair = str(
+        result.get("pair")
+        or "Dividend pair"
+    )
+
+    return (
+        _response_page(
+            "Dividend Manual Strategy Saved",
+            f"{strategy_id} was validated and registered for {pair} "
+            "as a paper-only Shadow research candidate. "
+            "It cannot move capital, place orders, or become Primary "
+            "outside the existing Dividend promotion governance.",
+        ),
+        "200 OK",
+    )
+
+
+
 def _shadow_promotion_response(environ: Mapping[str, Any]) -> tuple[bytes, str]:
     body = _read_form(environ, label="shadow promotion form")
     values = parse_qs(body.decode("utf-8"), keep_blank_values=True)
@@ -98,16 +141,34 @@ def create_wsgi_app(**kwargs: Any) -> Callable:
     def app(environ: Mapping[str, Any], start_response: Callable) -> Iterable[bytes]:
         path = str(environ.get("PATH_INFO") or "/")
         method = str(environ.get("REQUEST_METHOD") or "GET").upper()
-        if method != "POST" or path not in {MANUAL_STRATEGY_PATH, SHADOW_PROMOTION_PATH}:
+        if method != "POST" or path not in {
+            MANUAL_STRATEGY_PATH,
+            DIVIDEND_MANUAL_STRATEGY_PATH,
+            SHADOW_PROMOTION_PATH,
+        }:
             return base_app(environ, start_response)
         try:
             if path == MANUAL_STRATEGY_PATH:
                 payload, status = _manual_strategy_response(environ)
+            elif path == DIVIDEND_MANUAL_STRATEGY_PATH:
+                payload, status = _dividend_manual_strategy_response(environ)
             else:
                 payload, status = _shadow_promotion_response(environ)
         except (ValueError, RuntimeError, PermissionError, TypeError, UnicodeDecodeError) as exc:
-            title = "Manual Strategy Not Saved" if path == MANUAL_STRATEGY_PATH else "Shadow Strategy Not Promoted"
-            payload = _response_page(title, f"Swing rejected the user-controlled request: {exc}")
+            if path == MANUAL_STRATEGY_PATH:
+                title = "Manual Strategy Not Saved"
+                prefix = "Swing rejected the user-controlled request"
+            elif path == DIVIDEND_MANUAL_STRATEGY_PATH:
+                title = "Dividend Manual Strategy Not Saved"
+                prefix = "Dividend rejected the user-controlled request"
+            else:
+                title = "Shadow Strategy Not Promoted"
+                prefix = "Swing rejected the user-controlled request"
+
+            payload = _response_page(
+                title,
+                f"{prefix}: {exc}",
+            )
             status = "400 Bad Request"
         start_response(
             status,
