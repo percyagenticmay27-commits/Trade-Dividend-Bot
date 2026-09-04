@@ -16,20 +16,24 @@ from enterprise_weekly_market_discovery import write_weekly_discovery
 
 def _merge_fresh_shared_evidence(observations: list[dict], previous: list[dict]) -> None:
     """Refresh retained candidates without treating research-only evidence as a nomination."""
-    fresh_financial_health = {
-        str(row.get("underlying_symbol") or "").strip().upper(): row.get("financial_health")
+    fresh_blocks = {
+        str(row.get("underlying_symbol") or "").strip().upper(): {
+            key: row.get(key)
+            for key in ("financial_health", "theme_strength")
+            if isinstance(row.get(key), dict)
+        }
         for row in observations
-        if isinstance(row, dict) and isinstance(row.get("financial_health"), dict)
+        if isinstance(row, dict)
     }
-    if not fresh_financial_health:
-        return
     for row in previous:
         if not isinstance(row, dict):
             continue
         symbol = str(row.get("underlying_symbol") or "").strip().upper()
-        block = fresh_financial_health.get(symbol)
-        if isinstance(block, dict):
-            row["financial_health"] = block
+        blocks = fresh_blocks.get(symbol, {})
+        for key in ("financial_health", "theme_strength"):
+            block = blocks.get(key)
+            if isinstance(block, dict):
+                row[key] = block
 
 
 def main() -> int:
