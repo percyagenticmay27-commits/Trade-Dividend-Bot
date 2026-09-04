@@ -10,8 +10,19 @@ def _dividend_row():
         "watchlist": [
             {
                 "symbol": "DG",
+                "name": "Dollar General",
                 "watchlist_rank": 1,
                 "status": "WATCHLIST",
+                "entry_status": "WATCH",
+                "entry_score": 54,
+                "entry_confidence": 63.5,
+                "entry_confidence_level": "MEDIUM",
+                "timing_context": "WAIT_FOR_PULLBACK",
+                "requirements_for_buy": ["PRICE_CONFIRMATION"],
+                "market_data_stale": False,
+                "currently_held": False,
+                "evidence_source": "results/dividend_entry_score.json",
+                "entry_evidence_generated_at_utc": "2026-09-04T12:00:00Z",
                 "trusted_sources": {"status": "PASS", "value": 6, "threshold": 5},
                 "financial_health": {"status": "PASS", "value": 76.2, "threshold": 70},
                 "dividend_suitability": {"status": "PASS", "reason": "Income mandate satisfied"},
@@ -28,14 +39,46 @@ def _dividend_row():
     }
 
 
-def test_dividend_watchlist_renders_collapsible_symbol_record():
+def test_dividend_watchlist_preserves_original_columns_and_values():
     output = render_dividend_watchlist_panel(_dividend_row())
 
-    assert "Dividend Watchlist" in output
-    assert ">DG<" in output
-    assert "dividend-watch-toggle" in output
+    for heading in (
+        "Rank",
+        "Candidate",
+        "Entry Status",
+        "Entry Score",
+        "Confidence",
+        "Timing",
+        "Why It Has Not Progressed",
+        "What Happens Next",
+        "Market Data",
+        "Held",
+        "Evidence As-Of",
+    ):
+        assert f">{heading}<" in output
+
+    assert "DG" in output
+    assert "Dollar General" in output
+    assert ">WATCH<" in output
+    assert ">54.0<" in output
+    assert "63.5 (Medium)" in output
+    assert "Wait For Pullback" in output
+    assert "Waiting for Price confirmation." in output
+    assert "Re-evaluate after the listed requirements are satisfied." in output
+    assert ">FRESH<" in output
+    assert ">NO<" in output
+    assert "results/dividend_entry_score.json" in output
+    assert "2026-09-04T12:00:00Z" in output
+
+
+def test_dividend_watchlist_adds_only_collapsible_record_below_symbol_row():
+    output = render_dividend_watchlist_panel(_dividend_row())
+
+    assert "dividend-watch-detail-toggle" in output
     assert "dividend-watch-detail-1" in output
-    assert "Dividend Promotion Readiness — DG" in output
+    assert "colspan='11'" in output
+    assert "Promotion Readiness — DG" in output
+    assert "Dividend pre-trade Promotion Readiness" in output
     assert "Trusted Sources / Evidence" in output
     assert "Financial Health" in output
     assert "Dividend / Income Suitability" in output
@@ -44,6 +87,10 @@ def test_dividend_watchlist_renders_collapsible_symbol_record():
     assert "Theme / Opportunity Evidence" in output
     assert "Entry Readiness" in output
     assert "ENTRY_READINESS" in output
+
+    # No replacement summary columns were introduced.
+    assert "<th>Promotion</th>" not in output
+    assert "<th>Status</th>" not in output
 
 
 def test_missing_dividend_gate_evidence_is_pending_not_pass():
@@ -54,10 +101,10 @@ def test_missing_dividend_gate_evidence_is_pending_not_pass():
     valuation_start = output.index("Valuation / Price Suitability")
     valuation_slice = output[valuation_start:valuation_start + 500]
     assert "PENDING" in valuation_slice
-    assert "Authoritative evidence has not been published" in valuation_slice
+    assert "Authoritative gate evidence is unavailable" in valuation_slice
 
 
-def test_dividend_workspace_replaces_base_watchlist_with_collapsible_panel():
+def test_dividend_workspace_keeps_original_watchlist_and_adds_collapsible_detail():
     row = _dividend_row()
     row.update({
         "strategy_type": "DIVIDEND",
@@ -75,6 +122,12 @@ def test_dividend_workspace_replaces_base_watchlist_with_collapsible_panel():
     })
     output = render_strategy_workspace({"strategy_kpis": [row]}, audience="executive")
 
-    assert "Dividend Promotion Readiness — DG" in output
-    assert "Each symbol expands to the Dividend Bot's pre-trade qualification record." in output
-    assert "post-entry Win Rate / return / drawdown gates" in output
+    assert "Strategy-owned candidates being monitored before promotion or allocation." in output
+    assert "Total Watchlist" in output
+    assert "Ready / Promoted" in output
+    assert "Currently Held" in output
+    assert "Stale Market Data" in output
+    assert "Why It Has Not Progressed" in output
+    assert "What Happens Next" in output
+    assert "Promotion Readiness — DG" in output
+    assert "without changing the original Watchlist columns or published values" in output
