@@ -6,6 +6,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Mapping
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -18,14 +19,69 @@ from enterprise_discovery_theme_strength import attach_candidate_theme_strength
 from market_data_provider import MarketDataService
 
 
-def _active_candidate_symbols(root: Path) -> set[str]:
+def _active_candidates(root: Path) -> dict[str, dict]:
+    """Return retained active candidate context keyed by underlying symbol."""
     payload = load_json_if_present(root / "results" / "enterprise_weekly_market_discovery.json") or {}
     rows = payload.get("candidates", []) if isinstance(payload, dict) else []
-    return {
-        str(row.get("underlying_symbol") or "").strip().upper()
-        for row in rows
-        if isinstance(row, dict) and str(row.get("underlying_symbol") or "").strip()
-    }
+    result: dict[str, dict] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("underlying_symbol") or "").strip().upper()
+        if symbol:
+            result[symbol] = row
+    return result
+
+
+def _active_candidate_symbols(root: Path) -> set[str]:
+    """Backward-compatible symbol-only view of retained active candidates."""
+    return set(_active_candidates(root))
+
+
+def _hydrate_retained_theme_context(
+    report: dict,
+    active_candidates: Mapping[str, Mapping[str, object]],
+) -> dict:
+    """Carry retained authoritative theme labels into same-symbol research refreshes.
+
+    A current discovery observation can be research-only and therefore omit theme
+    labels even while the symbol remains an active retained candidate. Reusing the
+    retained label does not reconfirm nomination and does not fabricate a new theme;
+    it only lets current shared evidence refresh the already-retained theme context.
+    """
+    for row in report.get("observations", []):
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("underlying_symbol") or "").strip().upper()
+        retained = active_candidates.get(symbol)
+        if not isinstance(retained, Mapping):
+            continue
+        current_themes = [str(value).strip() for value in row.get("themes", []) if str(value).strip()]
+        retained_themes = [str(value).strip() for value in retained.get("themes", []) if str(value).strip()]
+        if not current_themes and retained_themes:
+            row["themes"] = retained_themes
+    return report
+
+
+def _refresh_financial_health_for_active_candidates(
+    report: dict,
+    service: MarketDataService,
+    active_symbols: set[str],
+) -> dict:
+    """Backward-compatible Financial Health-only retained-candidate refresh helper."""
+    original_states: list[tuple[dict, object]] = []
+    for row in report.get("observations", []):
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("underlying_symbol") or "").strip().upper()
+        if symbol in active_symbols and row.get("nomination_eligible") is False:
+            original_states.append((row, row.get("nomination_eligible")))
+            row["nomination_eligible"] = True
+    try:
+        return attach_candidate_financial_health(report, service)
+    finally:
+        for row, original in original_states:
+            row["nomination_eligible"] = original
 
 
 def _refresh_shared_evidence_for_active_candidates(
@@ -34,8 +90,12 @@ def _refresh_shared_evidence_for_active_candidates(
     active_symbols: set[str],
     *,
     generated_at: datetime,
+    active_candidates: Mapping[str, Mapping[str, object]] | None = None,
 ) -> dict:
     """Refresh retained candidates without converting research evidence into a nomination."""
+    if active_candidates:
+        report = _hydrate_retained_theme_context(report, active_candidates)
+
     original_states: list[tuple[dict, object]] = []
     for row in report.get("observations", []):
         if not isinstance(row, dict):
@@ -74,11 +134,13 @@ def main() -> int:
         market_snapshot=market,
     )
     service = MarketDataService(root_path=str(root))
+    active_candidates = _active_candidates(root)
     report = _refresh_shared_evidence_for_active_candidates(
         report,
         service,
-        _active_candidate_symbols(root),
+        set(active_candidates),
         generated_at=generated_at,
+        active_candidates=active_candidates,
     )
     output = root / "inputs" / "enterprise_weekly_market_observations.json"
     output.parent.mkdir(parents=True, exist_ok=True)
