@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import re
+from copy import deepcopy
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -19,6 +20,44 @@ SWING_STATUSES = {"EMERGING", "RISING", "HOT", "COOLING", "DECLINING"}
 SWING_ELIGIBLE = {"EMERGING", "RISING", "HOT"}
 LEVERAGED_SUFFIXES = ("2X", "3X", "BULL", "BEAR")
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
+
+CATALYST_FLAG_FIELDS = (
+    "earnings_growth_related",
+    "analyst_upgrade_related",
+    "guidance_outlook_related",
+    "product_innovation_related",
+    "contracts_customer_wins_related",
+    "capex_infrastructure_demand_related",
+    "regulatory_government_related",
+    "ma_strategic_activity_related",
+    "sector_industry_tailwind_related",
+    "corporate_capital_catalyst_related",
+)
+
+# These fields are authoritative/review metadata used by the governed catalyst
+# classifier. Weekly normalization must not erase them before history recovery or
+# downstream strategy projection can consume the already-reviewed evidence.
+CATALYST_METADATA_FIELDS = (
+    "credibility_reviewed",
+    "authority",
+    "platform",
+    "catalyst_families",
+    "catalyst_events",
+    "catalyst_classification",
+)
+
+# Source-specific provenance is retained for auditability. None of these fields
+# create catalyst claims by themselves; classification remains fail closed.
+EVIDENCE_PROVENANCE_FIELDS = (
+    "form",
+    "accession_number",
+    "primary_document",
+    "broad_discovery_source",
+    "channel_id",
+    "provider_sentiment_label",
+    "provider_relevance_score",
+    "provider_sentiment_score",
+)
 
 
 def _utc(value: Any) -> datetime:
@@ -59,9 +98,19 @@ def _independent_story_key(item: Mapping[str, Any], story: str, producer: str) -
     return story.lower()
 
 
+def _copy_optional_evidence_fields(raw: Mapping[str, Any], row: dict[str, Any]) -> None:
+    for field in (*CATALYST_METADATA_FIELDS, *EVIDENCE_PROVENANCE_FIELDS):
+        if field in raw:
+            row[field] = deepcopy(raw[field])
+    for field in CATALYST_FLAG_FIELDS:
+        row[field] = bool(raw.get(field, False))
+
+
 def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    seen: set[tuple[str, str, str]] = set()
+    # Last occurrence wins for the same independent story/producer/day. Merge callers
+    # intentionally order recovered -> retained -> fresh evidence, so a fresh reviewed
+    # record can enrich an older copy instead of being discarded by first-seen dedupe.
+    rows_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
     for raw in items:
         source = str(raw.get("source") or raw.get("source_name") or "").strip()
         mentioned = str(raw.get("mentioned_on") or raw.get("published_at") or "")[:10]
@@ -69,13 +118,10 @@ def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, An
             continue
         mentioned = date.fromisoformat(mentioned).isoformat()
         story = _story_key(raw) or f"{source.lower()}:{mentioned}"
-        producer = str(raw.get("producer") or raw.get("originating_source") or source).strip().lower()
-        independent_story = _independent_story_key(raw, story, producer)
-        key = (independent_story, producer, mentioned)
-        if key in seen:
-            continue
-        seen.add(key)
-        rows.append({
+        producer_key = str(raw.get("producer") or raw.get("originating_source") or source).strip().lower()
+        independent_story = _independent_story_key(raw, story, producer_key)
+        key = (independent_story, producer_key, mentioned)
+        row = {
             "source": source,
             "mentioned_on": mentioned,
             "source_class": str(raw.get("source_class") or "UNCLASSIFIED").upper(),
@@ -86,9 +132,10 @@ def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, An
             "source_url": str(raw.get("source_url") or raw.get("url") or "").strip() or None,
             "themes": sorted({str(v).strip() for v in raw.get("themes", []) if str(v).strip()}),
             "stance": str(raw.get("stance") or "NEUTRAL").upper(),
-            "earnings_growth_related": bool(raw.get("earnings_growth_related", False)),
-            "analyst_upgrade_related": bool(raw.get("analyst_upgrade_related", False)),
-        })
+        }
+        _copy_optional_evidence_fields(raw, row)
+        rows_by_key[key] = row
+    rows = list(rows_by_key.values())
     return sorted(rows, key=lambda row: (row["mentioned_on"], row["source"], row["story_id"]))
 
 
@@ -294,6 +341,18 @@ def build_weekly_discovery(
     }
 
 
+def _strategy_evidence_projection(evidence: Mapping[str, Any]) -> dict[str, Any]:
+    projected = {
+        "source": evidence["source"],
+        "mentioned_on": evidence["mentioned_on"],
+        "themes": list(evidence.get("themes", [])),
+    }
+    for field in (*CATALYST_FLAG_FIELDS, *CATALYST_METADATA_FIELDS):
+        if field in evidence:
+            projected[field] = deepcopy(evidence[field])
+    return projected
+
+
 def build_swing_projection(report: Mapping[str, Any]) -> dict[str, Any]:
     candidates = []
     for row in report.get("candidates", []):
@@ -310,14 +369,9 @@ def build_swing_projection(report: Mapping[str, Any]) -> dict[str, Any]:
             "weekly_lifecycle_status": row.get("discovery_status"),
             "themes": list(row.get("themes") or []),
             "evidence_sources": [
-                {
-                    "source": evidence["source"],
-                    "mentioned_on": evidence["mentioned_on"],
-                    "themes": evidence.get("themes", []),
-                    "earnings_growth_related": evidence.get("earnings_growth_related", False),
-                    "analyst_upgrade_related": evidence.get("analyst_upgrade_related", False),
-                }
+                _strategy_evidence_projection(evidence)
                 for evidence in row.get("source_evidence", [])
+                if isinstance(evidence, Mapping)
             ],
         }
         if isinstance(row.get("financial_health"), Mapping):
