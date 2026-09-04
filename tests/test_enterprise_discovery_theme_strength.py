@@ -4,6 +4,7 @@ from enterprise_discovery_theme_strength import (
     build_theme_strength_block,
 )
 from enterprise_weekly_market_discovery import build_swing_projection, build_weekly_discovery
+from scripts.collect_enterprise_discovery_sources import _hydrate_retained_theme_context
 
 
 def _row(**overrides):
@@ -86,6 +87,28 @@ def test_attach_adds_block_without_changing_nomination_state():
     assert result["observations"][0]["nomination_eligible"] is False
     assert "theme_strength" in result["observations"][0]
     assert result["theme_strength_policy"] == "ALL_COMPONENTS_REQUIRED_FAIL_CLOSED"
+
+
+def test_retained_active_theme_is_reused_when_current_research_row_omits_theme():
+    report = {
+        "observations": [
+            {
+                "underlying_symbol": "NVDA",
+                "nomination_eligible": False,
+                "themes": [],
+            }
+        ]
+    }
+    active = {
+        "NVDA": {
+            "underlying_symbol": "NVDA",
+            "nomination_eligible": True,
+            "themes": ["Semiconductors"],
+        }
+    }
+    result = _hydrate_retained_theme_context(report, active)
+    assert result["observations"][0]["themes"] == ["Semiconductors"]
+    assert result["observations"][0]["nomination_eligible"] is False
 
 
 def test_weekly_and_swing_projection_preserve_theme_strength():
