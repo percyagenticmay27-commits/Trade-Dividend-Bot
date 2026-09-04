@@ -1,17 +1,17 @@
 """Read-only Yahoo Finance provider for Dividend Bot market and fundamental data.
 
 The provider retrieves quotes, price history, dividends, and normalized fundamental
-fields used by the Dividend Opportunity Quality components. It never contacts a
-broker, places orders, or mutates portfolio state.
+fields used by the Dividend Opportunity Quality and shared Enterprise Financial Health
+components. It never contacts a broker, places orders, or mutates portfolio state.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Iterable
 
 MODULE_NAME = "yahoo_finance_provider"
-MODULE_VERSION = "1.2.0"
+MODULE_VERSION = "1.3.0"
 PROVIDER_NAME = "YAHOO_FINANCE"
 READ_ONLY = True
 BROKER_EXECUTION_ENABLED = False
@@ -66,6 +66,75 @@ def _date_text(value: Any) -> str | None:
     if len(text) >= 10 and text[4:5] == "-" and text[7:8] == "-":
         return text[:10]
     return text
+
+
+def _statement_series(frame: Any, labels: tuple[str, ...]) -> list[float]:
+    if frame is None or getattr(frame, "empty", True):
+        return []
+    index = getattr(frame, "index", [])
+    for label in labels:
+        if label not in index:
+            continue
+        try:
+            values = list(frame.loc[label])
+        except Exception:
+            continue
+        normalized = [_number(value) for value in values]
+        return [value for value in normalized if value is not None]
+    return []
+
+
+def _gross_margin_pair(frame: Any) -> tuple[float | None, float | None]:
+    gross_profit = _statement_series(frame, ("Gross Profit", "GrossProfit"))
+    total_revenue = _statement_series(frame, ("Total Revenue", "TotalRevenue", "Operating Revenue"))
+    if len(gross_profit) < 2 or len(total_revenue) < 2:
+        return None, None
+    margins: list[float] = []
+    for gross, revenue in zip(gross_profit, total_revenue):
+        if revenue == 0:
+            continue
+        margins.append(gross / revenue)
+        if len(margins) == 2:
+            break
+    if len(margins) < 2:
+        return None, None
+    return margins[0], margins[1]
+
+
+def _analyst_revision_counts(frame: Any, *, now: datetime) -> tuple[bool, int, int]:
+    if frame is None:
+        return False, 0, 0
+    if getattr(frame, "empty", False):
+        return True, 0, 0
+    cutoff = now - timedelta(days=90)
+    upgrades = 0
+    downgrades = 0
+    try:
+        iterator = frame.iterrows()
+    except Exception:
+        return False, 0, 0
+    for index, row in iterator:
+        observed: datetime | None = None
+        if isinstance(index, datetime):
+            observed = index
+        else:
+            try:
+                observed = datetime.fromisoformat(str(index).replace("Z", "+00:00"))
+            except ValueError:
+                observed = None
+        if observed is not None:
+            if observed.tzinfo is None:
+                observed = observed.replace(tzinfo=timezone.utc)
+            else:
+                observed = observed.astimezone(timezone.utc)
+            if observed < cutoff:
+                continue
+        action = str(row.get("Action") or row.get("action") or "").strip().lower()
+        if action in {"up", "upgrade"}:
+            upgrades += 1
+        elif action in {"down", "downgrade"}:
+            downgrades += 1
+    return True, upgrades, downgrades
 
 
 @dataclass(frozen=True)
@@ -150,6 +219,45 @@ class YahooFinanceProvider:
             "category": _text(info.get("category")),
             "fund_family": _text(info.get("fundFamily")),
             "quote_type": _text(info.get("quoteType")),
+        }
+
+    def get_financial_health_inputs(self, symbol: str) -> dict[str, Any]:
+        """Return raw, timestamped evidence needed to build all seven shared components."""
+        ticker_symbol = symbol.strip().upper()
+        if not ticker_symbol:
+            raise ValueError("symbol is required")
+        yf = _load_yfinance()
+        ticker = yf.Ticker(ticker_symbol)
+        now = datetime.now(timezone.utc)
+        try:
+            info = dict(getattr(ticker, "info", {}) or {})
+            statements = getattr(ticker, "quarterly_income_stmt", None)
+            if statements is None or getattr(statements, "empty", True):
+                statements = getattr(ticker, "quarterly_financials", None)
+            revisions = getattr(ticker, "upgrades_downgrades", None)
+        except Exception as exc:
+            raise MarketDataProviderError(
+                f"financial-health retrieval failed for {ticker_symbol}: {exc}"
+            ) from exc
+
+        gross_margin_current, gross_margin_prior = _gross_margin_pair(statements)
+        analyst_available, upgrades, downgrades = _analyst_revision_counts(revisions, now=now)
+        return {
+            "provider": PROVIDER_NAME,
+            "retrieved_at_utc": now.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+            "symbol": ticker_symbol,
+            "sector": _text(info.get("sector")),
+            "industry": _text(info.get("industry")),
+            "revenue_growth": _number(info.get("revenueGrowth")),
+            "eps_growth": _number(info.get("earningsGrowth")) or _number(info.get("earningsQuarterlyGrowth")),
+            "operating_cash_flow": _number(info.get("operatingCashflow")),
+            "total_revenue": _number(info.get("totalRevenue")),
+            "gross_margin_current": gross_margin_current,
+            "gross_margin_prior": gross_margin_prior,
+            "debt_to_equity": _number(info.get("debtToEquity")),
+            "analyst_revisions_available": analyst_available,
+            "analyst_upgrades_90d": upgrades,
+            "analyst_downgrades_90d": downgrades,
         }
 
     def get_history(self, symbol: str, period: str = "1y", interval: str = "1d") -> dict[str, Any]:
