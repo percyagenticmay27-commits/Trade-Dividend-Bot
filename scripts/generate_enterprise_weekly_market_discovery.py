@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from enterprise_discovery_catalyst_evidence import attach_candidate_catalyst_classification
 from enterprise_discovery_theme_strength import build_theme_strength_block
 from enterprise_weekly_market_discovery import _evidence_analysis, _normalize_evidence, write_weekly_discovery
 
@@ -109,6 +110,16 @@ def _merge_fresh_shared_evidence(
             row["independent_source_count"] = analysis["independent_source_count"]
             row["source_confluence"] = analysis
             row["evidence_stance_summary"] = analysis["stance_summary"]
+
+        # Recovered history must pass the same governed catalyst classifier as fresh
+        # observations before Theme Strength can consume any explicit catalyst claim.
+        classifier_report = {"observations": [row], "warnings": []}
+        attach_candidate_catalyst_classification(classifier_report)
+        if classifier_report.get("warnings"):
+            existing = row.setdefault("evidence_warnings", [])
+            if isinstance(existing, list):
+                existing.extend(classifier_report["warnings"])
+                row["evidence_warnings"] = list(dict.fromkeys(str(value) for value in existing))
 
         row.pop("theme_strength", None)
         theme_strength = build_theme_strength_block(row, generated_at=stamp)
