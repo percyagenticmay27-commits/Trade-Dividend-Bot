@@ -18,6 +18,7 @@ from enterprise_discovery_financial_health import attach_candidate_financial_hea
 from enterprise_discovery_source_collector import collect_credential_free_observations, load_json_if_present
 from enterprise_discovery_market_evidence import attach_candidate_market_evidence
 from enterprise_discovery_sec_catalyst_events import enrich_report_with_sec_reviewed_events
+from enterprise_discovery_targeted_sec_enrichment import enrich_active_candidates_with_sec_submissions
 from enterprise_discovery_theme_strength import attach_candidate_theme_strength
 from market_data_provider import MarketDataService
 
@@ -142,11 +143,9 @@ def _refresh_shared_evidence_for_active_candidates(
         for row, original in original_states:
             row["nomination_eligible"] = original
 
-    # SEC evidence first passes a source-specific producer. Generic forms do not
-    # create events: only explicit reviewed SEC event metadata can populate the
-    # reviewed_catalyst_events contract. The generic structured extractor and the
-    # governed classifier then independently validate those events before Theme
-    # Strength can consume them.
+    # SEC evidence first passes a source-specific producer. Generic forms and SEC
+    # item codes do not create events. Only explicit reviewed SEC event metadata can
+    # populate reviewed_catalyst_events; downstream layers independently validate it.
     report = enrich_report_with_sec_reviewed_events(report)
     report = enrich_observations_with_catalyst_events(report)
     report = attach_candidate_catalyst_classification(report)
@@ -175,6 +174,17 @@ def main() -> int:
     )
     service = MarketDataService(root_path=str(root))
     active_candidates = _active_candidates(root)
+
+    # The daily SEC index remains broad discovery. Detailed submissions metadata is
+    # fetched only for retained active candidates already present in this collection.
+    # This can add structured item codes, but it cannot infer or emit catalyst events.
+    report = enrich_active_candidates_with_sec_submissions(
+        report,
+        set(active_candidates),
+        as_of=generated_at,
+        user_agent=user_agent,
+    )
+
     report = _refresh_shared_evidence_for_active_candidates(
         report,
         service,
