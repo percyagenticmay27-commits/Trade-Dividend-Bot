@@ -17,6 +17,7 @@ from email.utils import parsedate_to_datetime
 from pathlib import Path
 from typing import Any, Callable, Iterable, Mapping
 
+from enterprise_discovery_sec_filing_metadata import extract_recent_sec_filing_metadata
 from enterprise_weekly_market_discovery import _symbol
 
 SEC_SUBMISSIONS_URL = "https://data.sec.gov/submissions/CIK{cik}.json"
@@ -37,7 +38,7 @@ def _as_date(value: Any) -> date | None:
         return date.fromisoformat(text[:10])
     except ValueError:
         try:
-            if re.fullmatch(r"\\d{8}(?:T\\d{4,6})?", text):
+            if re.fullmatch(r"\d{8}(?:T\d{4,6})?", text):
                 return datetime.strptime(text[:8], "%Y%m%d").date()
             parsed = parsedate_to_datetime(text)
             return parsed.date()
@@ -213,31 +214,28 @@ def collect_youtube_evidence(
 
 
 def _recent_sec_evidence(payload: Mapping[str, Any], source: Mapping[str, Any], cutoff: date) -> list[dict[str, Any]]:
-    recent = ((payload.get("filings") or {}).get("recent") or {}) if isinstance(payload, Mapping) else {}
-    forms = recent.get("form") or []
-    dates = recent.get("filingDate") or []
-    accessions = recent.get("accessionNumber") or []
-    primary_docs = recent.get("primaryDocument") or []
     rows = []
-    for index, form in enumerate(forms):
-        filed = _as_date(dates[index] if index < len(dates) else None)
-        if not filed or filed < cutoff or str(form).upper() not in SEC_FORMS:
-            continue
-        accession = str(accessions[index] if index < len(accessions) else "").strip()
-        document = str(primary_docs[index] if index < len(primary_docs) else "").strip()
+    for filing in extract_recent_sec_filing_metadata(payload, cutoff=cutoff):
+        form = str(filing.get("form") or "").upper()
+        filed = str(filing.get("filing_date") or "").strip()
+        accession = str(filing.get("accession_number") or "").strip()
+        document = str(filing.get("primary_document") or "").strip()
         rows.append({
             "source": str(source.get("source_name") or "SEC EDGAR"),
             "source_class": "PRIMARY_COMPANY",
             "producer": "U.S. Securities and Exchange Commission",
-            "mentioned_on": filed.isoformat(),
-            "story_id": f"SEC:{accession or document or filed.isoformat()}",
+            "mentioned_on": filed,
+            "story_id": f"SEC:{accession or document or filed}",
             "stance": "NEUTRAL",
             "themes": list(source.get("themes") or []),
-            "earnings_growth_related": str(form).upper() in {"10-K", "10-Q", "20-F", "40-F", "6-K"},
+            "earnings_growth_related": form in {"10-K", "10-Q", "20-F", "40-F", "6-K"},
             "analyst_upgrade_related": False,
-            "form": str(form).upper(),
+            "form": form,
+            "filing_date": filed,
             "accession_number": accession or None,
             "primary_document": document or None,
+            "sec_item_codes": list(filing.get("sec_item_codes") or []),
+            "sec_filing_metadata": dict(filing.get("sec_filing_metadata") or {}),
         })
     return rows
 
@@ -728,7 +726,6 @@ def collect_credential_free_observations(
         row["themes"] = sorted(row["themes"])
         market = market_records.get(symbol)
         row["market_evidence"] = market if market is not None else None
-        producers = {str(item.get("producer") or item.get("source") or "").lower() for item in row["source_evidence"]}
         confirmation_producers = row.pop("confirmation_producers", set())
         non_youtube_producers = {
             str(item.get("producer") or item.get("source") or "").lower()
