@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,26 +14,71 @@ if str(ROOT) not in sys.path:
 from enterprise_discovery_theme_strength import build_theme_strength_block
 from enterprise_weekly_market_discovery import _evidence_analysis, _normalize_evidence, write_weekly_discovery
 
+HISTORY_EVIDENCE_LOOKBACK_DAYS = 14
+
+
+def _recent_history_evidence(
+    history_path: Path,
+    active_symbols: set[str],
+    *,
+    generated_at: datetime,
+    lookback_days: int = HISTORY_EVIDENCE_LOOKBACK_DAYS,
+) -> dict[str, list[dict]]:
+    """Recover still-current evidence from the append-only discovery audit history.
+
+    History is recovery evidence only: it may restore source records that disappeared from a
+    retained snapshot, but it never restores nomination eligibility or lifecycle state.
+    Evidence is bounded by its own mentioned/published date so old stories cannot be revived
+    merely because a newer history snapshot happened to contain them.
+    """
+    recovered: dict[str, list[dict]] = {symbol: [] for symbol in active_symbols}
+    if not history_path.is_file() or not active_symbols:
+        return recovered
+    cutoff = generated_at.astimezone(timezone.utc).date() - timedelta(days=lookback_days)
+    for raw_line in history_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            snapshot = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(snapshot, dict):
+            continue
+        symbol = str(snapshot.get("underlying_symbol") or "").strip().upper()
+        if symbol not in active_symbols:
+            continue
+        evidence = snapshot.get("source_evidence") or snapshot.get("evidence_sources") or []
+        if not isinstance(evidence, list):
+            continue
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            raw_date = str(item.get("mentioned_on") or item.get("published_at") or "")[:10]
+            try:
+                mentioned = date.fromisoformat(raw_date)
+            except ValueError:
+                continue
+            if cutoff <= mentioned <= generated_at.date():
+                recovered[symbol].append(item)
+    return {symbol: _normalize_evidence(items) for symbol, items in recovered.items() if items}
+
 
 def _merge_fresh_shared_evidence(
     observations: list[dict],
     previous: list[dict],
     *,
     generated_at: datetime | None = None,
+    history_evidence: dict[str, list[dict]] | None = None,
 ) -> None:
-    """Refresh retained candidate context without reconfirming a research-only nomination.
-
-    Retained candidates can receive fresh research-only evidence. Merge that evidence with
-    the retained evidence set, recompute confluence from the merged set, and then rebuild
-    Theme Strength from the same evidence that will actually be published. This prevents
-    stale confluence metadata from disagreeing with the published source_evidence list.
-    """
+    """Refresh retained candidate context without reconfirming a research-only nomination."""
     fresh_rows = {
         str(row.get("underlying_symbol") or "").strip().upper(): row
         for row in observations
         if isinstance(row, dict) and str(row.get("underlying_symbol") or "").strip()
     }
     stamp = generated_at or datetime.now(timezone.utc)
+    history_evidence = history_evidence or {}
     for row in previous:
         if not isinstance(row, dict):
             continue
@@ -56,7 +101,8 @@ def _merge_fresh_shared_evidence(
         fresh_evidence_raw = fresh.get("source_evidence") or fresh.get("evidence_sources") or []
         retained_evidence = retained_evidence_raw if isinstance(retained_evidence_raw, list) else []
         fresh_evidence = fresh_evidence_raw if isinstance(fresh_evidence_raw, list) else []
-        merged_evidence = _normalize_evidence([*retained_evidence, *fresh_evidence])
+        recovered_evidence = history_evidence.get(symbol, [])
+        merged_evidence = _normalize_evidence([*recovered_evidence, *retained_evidence, *fresh_evidence])
         if merged_evidence:
             row["source_evidence"] = merged_evidence
             analysis = _evidence_analysis(merged_evidence)
@@ -64,22 +110,20 @@ def _merge_fresh_shared_evidence(
             row["source_confluence"] = analysis
             row["evidence_stance_summary"] = analysis["stance_summary"]
 
-        # Rebuild Theme Strength from the merged evidence context. Never retain a stale
-        # block if the now-published evidence cannot support a complete current score.
         row.pop("theme_strength", None)
         theme_strength = build_theme_strength_block(row, generated_at=stamp)
         if isinstance(theme_strength, dict):
             row["theme_strength"] = theme_strength
 
-        # Deliberately do not copy nomination_eligible or discovery_status. A research-only
-        # observation may refresh evidence for an already-retained candidate, but it may not
-        # reconfirm the nomination or alter the retained lifecycle state.
+        # Deliberately do not copy nomination_eligible or discovery_status. Research and
+        # audit evidence may refresh a retained candidate, but neither can promote it.
 
 
 def main() -> int:
     root = ROOT
     input_path = root / "inputs" / "enterprise_weekly_market_observations.json"
     previous_path = root / "results" / "enterprise_weekly_market_discovery.json"
+    history_path = root / "state" / "enterprise_market_discovery_history.jsonl"
     if not input_path.is_file():
         raise SystemExit(
             "No normalized weekly observations are available; refusing to fabricate discovery candidates: "
@@ -92,7 +136,22 @@ def main() -> int:
         prior_payload = json.loads(previous_path.read_text(encoding="utf-8"))
         previous = prior_payload.get("candidates", []) if isinstance(prior_payload, dict) else []
     generated_at = datetime.now(timezone.utc)
-    _merge_fresh_shared_evidence(observations, previous, generated_at=generated_at)
+    active_symbols = {
+        str(row.get("underlying_symbol") or "").strip().upper()
+        for row in previous
+        if isinstance(row, dict) and str(row.get("underlying_symbol") or "").strip()
+    }
+    history_evidence = _recent_history_evidence(
+        history_path,
+        active_symbols,
+        generated_at=generated_at,
+    )
+    _merge_fresh_shared_evidence(
+        observations,
+        previous,
+        generated_at=generated_at,
+        history_evidence=history_evidence,
+    )
     report = write_weekly_discovery(
         root,
         observations,
