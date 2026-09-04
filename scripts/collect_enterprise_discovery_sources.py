@@ -17,6 +17,37 @@ from enterprise_discovery_market_evidence import attach_candidate_market_evidenc
 from market_data_provider import MarketDataService
 
 
+def _active_candidate_symbols(root: Path) -> set[str]:
+    payload = load_json_if_present(root / "results" / "enterprise_weekly_market_discovery.json") or {}
+    rows = payload.get("candidates", []) if isinstance(payload, dict) else []
+    return {
+        str(row.get("underlying_symbol") or "").strip().upper()
+        for row in rows
+        if isinstance(row, dict) and str(row.get("underlying_symbol") or "").strip()
+    }
+
+
+def _refresh_financial_health_for_active_candidates(
+    report: dict,
+    service: MarketDataService,
+    active_symbols: set[str],
+) -> dict:
+    """Refresh current nominees plus retained active candidates without changing nomination state."""
+    original_states: list[tuple[dict, object]] = []
+    for row in report.get("observations", []):
+        if not isinstance(row, dict):
+            continue
+        symbol = str(row.get("underlying_symbol") or "").strip().upper()
+        if symbol in active_symbols and row.get("nomination_eligible") is False:
+            original_states.append((row, row.get("nomination_eligible")))
+            row["nomination_eligible"] = True
+    try:
+        return attach_candidate_financial_health(report, service)
+    finally:
+        for row, original in original_states:
+            row["nomination_eligible"] = original
+
+
 def main() -> int:
     root = ROOT
     config_path = root / "configs" / "enterprise_discovery_sources.json"
@@ -38,7 +69,11 @@ def main() -> int:
     )
     service = MarketDataService(root_path=str(root))
     report = attach_candidate_market_evidence(report, service)
-    report = attach_candidate_financial_health(report, service)
+    report = _refresh_financial_health_for_active_candidates(
+        report,
+        service,
+        _active_candidate_symbols(root),
+    )
     output = root / "inputs" / "enterprise_weekly_market_observations.json"
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
