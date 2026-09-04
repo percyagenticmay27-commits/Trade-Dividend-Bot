@@ -123,10 +123,17 @@ def render_executive_dashboard_body(report: Mapping[str, Any]) -> str:
 
 
 def load_executive_dashboard_body(*, html_path: Path, json_path: Path) -> tuple[str, bool]:
-    if html_path.is_file():
-        return html_path.read_text(encoding="utf-8"), True
+    """Render the freshest structured Executive Dashboard evidence when available.
+
+    The JSON artifact is the live reporting contract and is refreshed as upstream
+    strategy evidence changes. A pre-rendered HTML artifact is retained strictly
+    as a compatibility fallback so an older HTML snapshot cannot mask newer Swing
+    watchlist / Promotion Readiness evidence.
+    """
     if json_path.is_file():
         return render_executive_dashboard_body(_load_mapping(json_path)), False
+    if html_path.is_file():
+        return html_path.read_text(encoding="utf-8"), True
     return _portal_frame(render_unavailable_dashboard("Executive Dashboard Unavailable", "Executive dashboard data has not been generated yet."), "Executive Dashboard"), False
 
 
