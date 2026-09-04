@@ -182,15 +182,27 @@ def _entry_gate(item: Mapping[str, Any]) -> dict[str, Any]:
         status = "FAIL"
     else:
         status = "PENDING"
+    reason_parts = []
+    if raw_status:
+        reason_parts.append(f"Status: {raw_status}")
+    confidence = item.get("entry_confidence_level") or item.get("entry_confidence")
+    if confidence not in (None, ""):
+        reason_parts.append(f"Confidence: {confidence}")
+    timing = item.get("timing_context")
+    if timing not in (None, ""):
+        reason_parts.append(f"Timing: {timing}")
+    reasons = item.get("entry_reasons")
+    if isinstance(reasons, list) and reasons:
+        reason_parts.append("Reasons: " + ", ".join(str(x) for x in reasons if x))
     gate: dict[str, Any] = {
         "status": status,
         "value": score,
-        "reason": "; ".join(str(x) for x in item.get("entry_reasons", []) if x) if isinstance(item.get("entry_reasons"), list) else None,
+        "reason": "; ".join(reason_parts) or "Authoritative entry evidence is unavailable.",
         "evidence_source": item.get("entry_evidence_source") or item.get("evidence_source") or "entry_score_report.json",
         "as_of": item.get("entry_evidence_generated_at_utc"),
         "entry_status": raw_status or None,
-        "confidence": item.get("entry_confidence_level") or item.get("entry_confidence"),
-        "timing": item.get("timing_context"),
+        "confidence": confidence,
+        "timing": timing,
     }
     if item.get("entry_threshold") is not None:
         gate["threshold"] = item.get("entry_threshold")
