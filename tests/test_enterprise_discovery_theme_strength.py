@@ -111,6 +111,45 @@ def test_retained_active_theme_is_reused_when_current_research_row_omits_theme()
     assert result["observations"][0]["nomination_eligible"] is False
 
 
+def test_exact_approved_market_industry_restores_theme_when_legacy_retention_lost_it():
+    report = {
+        "observations": [
+            {
+                "underlying_symbol": "NVDA",
+                "nomination_eligible": False,
+                "themes": [],
+                "market_evidence": {"industry": "Semiconductors"},
+            }
+        ]
+    }
+    active = {
+        "NVDA": {
+            "underlying_symbol": "NVDA",
+            "nomination_eligible": True,
+            "themes": [],
+        }
+    }
+    result = _hydrate_retained_theme_context(report, active)
+    assert result["observations"][0]["themes"] == ["Semiconductors"]
+    assert result["observations"][0]["nomination_eligible"] is False
+
+
+def test_unapproved_market_industry_does_not_create_theme():
+    report = {
+        "observations": [
+            {
+                "underlying_symbol": "POOL",
+                "nomination_eligible": False,
+                "themes": [],
+                "market_evidence": {"industry": "Home Improvement Retail"},
+            }
+        ]
+    }
+    active = {"POOL": {"underlying_symbol": "POOL", "themes": []}}
+    result = _hydrate_retained_theme_context(report, active)
+    assert result["observations"][0]["themes"] == []
+
+
 def test_weekly_and_swing_projection_preserve_theme_strength():
     row = _row()
     row["theme_strength"] = build_theme_strength_block(row, generated_at="2026-09-04T16:40:00Z")
