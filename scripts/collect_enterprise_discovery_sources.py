@@ -17,6 +17,7 @@ from enterprise_discovery_catalyst_evidence import attach_candidate_catalyst_cla
 from enterprise_discovery_financial_health import attach_candidate_financial_health
 from enterprise_discovery_source_collector import collect_credential_free_observations, load_json_if_present
 from enterprise_discovery_market_evidence import attach_candidate_market_evidence
+from enterprise_discovery_official_macro_sources import collect_official_macro_evidence, attach_official_macro_evidence
 from enterprise_discovery_sec_catalyst_events import enrich_report_with_sec_reviewed_events
 from enterprise_discovery_sec_event_review_candidates import enrich_report_with_sec_event_review_candidates
 from enterprise_discovery_targeted_sec_enrichment import enrich_active_candidates_with_sec_submissions
@@ -174,6 +175,20 @@ def main() -> int:
         alpha_vantage_api_key=os.environ.get("ALPHA_VANTAGE_API_KEY", "").strip(),
         market_snapshot=market,
     )
+
+    # Tier-1 official macro/regulatory feeds are collected separately at report level.
+    # They are deliberately non-scoring and have no symbol linkage here. A later
+    # governed layer must establish explicit relevance before they can affect a symbol.
+    official_config = load_json_if_present(root / "configs" / "enterprise_discovery_official_macro_sources.json") or {}
+    official_sources = official_config.get("sources", []) if isinstance(official_config, dict) else []
+    if official_sources:
+        macro_report = collect_official_macro_evidence(
+            official_sources,
+            as_of=generated_at,
+            user_agent=user_agent,
+        )
+        report = attach_official_macro_evidence(report, macro_report)
+
     service = MarketDataService(root_path=str(root))
     active_candidates = _active_candidates(root)
 
