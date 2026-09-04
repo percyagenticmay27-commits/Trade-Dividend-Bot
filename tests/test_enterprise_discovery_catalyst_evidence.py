@@ -250,6 +250,6 @@ def test_structured_events_raise_theme_strength_without_headline_inference():
     assert block is not None
     assert block["components"]["catalyst_support"] == 60.0
     assert block["evidence"]["confirmed_catalyst_families"] == [
-        "contracts_customer_wins",
         "product_innovation",
+        "contracts_customer_wins",
     ]
