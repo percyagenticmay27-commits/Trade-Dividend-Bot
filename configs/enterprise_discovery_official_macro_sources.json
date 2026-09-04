@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0",
+  "policy": "TIER_1_OFFICIAL_MACRO_EVIDENCE_NONSCORING_UNTIL_EXPLICIT_SYMBOL_LINKAGE",
+  "sources": [
+    {
+      "source_name": "Federal Reserve Board - All Press Releases",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "source_class": "GOVERNMENT_PRIMARY",
+      "roles": ["monetary_policy", "rates", "banking_regulation", "macro"],
+      "url": "https://www.federalreserve.gov/feeds/press_all.xml"
+    },
+    {
+      "source_name": "U.S. Bureau of Labor Statistics - Employment Situation",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "source_class": "GOVERNMENT_PRIMARY",
+      "roles": ["employment", "labor_market", "macro"],
+      "url": "https://www.bls.gov/feed/empsit.rss"
+    },
+    {
+      "source_name": "U.S. Bureau of Labor Statistics - Consumer Price Index",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "source_class": "GOVERNMENT_PRIMARY",
+      "roles": ["inflation", "consumer_prices", "macro"],
+      "url": "https://www.bls.gov/feed/cpi.rss"
+    },
+    {
+      "source_name": "U.S. Energy Information Administration - Press Releases",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "source_class": "GOVERNMENT_PRIMARY",
+      "roles": ["energy_prices", "supply_demand", "energy_sector", "macro"],
+      "url": "https://www.eia.gov/rss/press_rss.xml"
+    },
+    {
+      "source_name": "Federal Trade Commission - Competition Press Releases",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "source_class": "GOVERNMENT_PRIMARY",
+      "roles": ["competition", "mergers", "consumer_protection", "regulatory"],
+      "url": "https://www.ftc.gov/feeds/press-release-competition.xml"
+    },
+    {
+      "source_name": "U.S. Department of Justice Antitrust Division - Press Releases",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "source_class": "GOVERNMENT_PRIMARY",
+      "roles": ["antitrust", "mergers", "competition_enforcement", "regulatory"],
+      "url": "https://www.justice.gov/news/rss?field_component=376&require_all=0&search_api_language=en&show_public_archived=0&type%5B0%5D=image_gallery&type%5B1%5D=press_release&type%5B2%5D=speech&type%5B3%5D=youtube_video"
+    }
+  ]
+}
