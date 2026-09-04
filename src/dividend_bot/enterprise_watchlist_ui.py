@@ -228,13 +228,8 @@ def _gate_cell(readiness: Mapping[str, Any], key: str, *, mode: str) -> str:
     return _details(summary, _qa_rows(gate), label=f"Open {key.replace('_', ' ')} QA evidence")
 
 
-def _promotion_cell(readiness: Mapping[str, Any] | None) -> str:
-    if readiness is None:
-        summary = "<span class='watchlist-status watchlist-status-neutral'>PENDING</span>"
-        body = "<div class='watchlist-qa-note'>Authoritative Promotion Readiness evidence is unavailable.</div>"
-        return _details(summary, body, label="Open Promotion QA evidence")
-
-    if "promotion_ready" not in readiness or readiness.get("promotion_ready") is None:
+def _promotion_summary(readiness: Mapping[str, Any] | None, *, detail_id: str) -> str:
+    if readiness is None or "promotion_ready" not in readiness or readiness.get("promotion_ready") is None:
         promotion = "PENDING"
         status_class = "watchlist-status-neutral"
     elif readiness.get("promotion_ready") is True:
@@ -244,6 +239,29 @@ def _promotion_cell(readiness: Mapping[str, Any] | None) -> str:
         promotion = "NO"
         status_class = "watchlist-status-blocked"
 
+    unavailable_note = (
+        "<span class='watchlist-sr-only'>Authoritative Promotion Readiness evidence is unavailable.</span>"
+        if readiness is None else ""
+    )
+    return (
+        "<button type='button' class='watchlist-promotion-toggle' "
+        f"aria-expanded='false' aria-controls='{html.escape(detail_id, quote=True)}' "
+        "aria-label='Open Promotion QA evidence' title='Show Promotion Readiness details'>"
+        f"<span class='watchlist-status {status_class}'>{html.escape(promotion)}</span>"
+        f"{unavailable_note}"
+        "</button>"
+    )
+
+
+def _promotion_detail_body(readiness: Mapping[str, Any] | None) -> str:
+    if readiness is None:
+        return (
+            "<div class='watchlist-promotion-panel'>"
+            "<div class='watchlist-qa-note'>"
+            "Authoritative Promotion Readiness evidence is unavailable."
+            "</div></div>"
+        )
+
     gate_labels = (
         ("Trusted Sources", "trusted_sources"),
         ("Financial Health", "financial_health"),
@@ -252,60 +270,98 @@ def _promotion_cell(readiness: Mapping[str, Any] | None) -> str:
         ("Thesis Integrity", "thesis_integrity"),
         ("Entry Readiness", "entry"),
     )
-    gates = []
+
+    cards: list[str] = []
     for label, key in gate_labels:
         gate = readiness.get(key)
         status, gate_class = _gate_status(gate)
-        value = gate.get("value") if isinstance(gate, Mapping) else None
-        threshold = gate.get("threshold") if isinstance(gate, Mapping) else None
-        reason = gate.get("reason") if isinstance(gate, Mapping) else None
-        detail_parts = []
-        if value is not None:
-            detail_parts.append(f"value {_detail_value(value)}")
-        if threshold is not None:
-            detail_parts.append(f"threshold {_detail_value(threshold)}")
-        if reason not in (None, ""):
-            detail_parts.append(f"reason {_detail_value(reason)}")
-        evidence = ""
+        lines: list[str] = []
+
         if isinstance(gate, Mapping):
+            if "value" in gate:
+                value = gate.get("value")
+                lines.append(
+                    "<div><span>Value</span><strong>"
+                    + (_detail_value(value) if value is not None else "—")
+                    + "</strong></div>"
+                )
+            if "threshold" in gate:
+                threshold = gate.get("threshold")
+                lines.append(
+                    "<div><span>Threshold</span><strong>"
+                    + (_detail_value(threshold) if threshold is not None else "—")
+                    + "</strong></div>"
+                )
+            if gate.get("reason") not in (None, ""):
+                lines.append(
+                    "<div class='watchlist-promotion-reason'><span>Reason</span><strong>"
+                    + _detail_value(gate.get("reason"))
+                    + "</strong></div>"
+                )
             evidence_fields = _evidence_values(gate)
-            if evidence_fields:
-                evidence = "<div class='watchlist-qa-evidence'>" + " · ".join(
-                    f"{html.escape(name)}: {_detail_value(raw)}" for name, raw in evidence_fields
-                ) + "</div>"
-        gates.append(
-            "<li>"
+            for evidence_label, raw in evidence_fields:
+                lines.append(
+                    "<div class='watchlist-promotion-evidence'><span>"
+                    + html.escape(evidence_label)
+                    + "</span><strong>"
+                    + _detail_value(raw)
+                    + "</strong></div>"
+                )
+        else:
+            lines.append(
+                "<div class='watchlist-qa-note'>Authoritative gate evidence is unavailable.</div>"
+            )
+
+        cards.append(
+            "<article class='watchlist-promotion-gate-card'>"
+            "<header>"
             f"<strong>{html.escape(label)}</strong> "
             f"<span class='watchlist-status {gate_class}'>{html.escape(status)}</span>"
-            + (f"<div>{' · '.join(detail_parts)}</div>" if detail_parts else "")
-            + evidence
-            + "</li>"
+            "</header>"
+            f"<div class='watchlist-promotion-gate-content'>{''.join(lines)}</div>"
+            "</article>"
         )
 
     reasons = readiness.get("blocking_reasons")
-    if isinstance(reasons, list) and reasons:
-        blocking = "<ul class='watchlist-blocking-list'>" + "".join(
-            f"<li>{html.escape(str(reason))}</li>" for reason in reasons if str(reason).strip()
-        ) + "</ul>"
-        if blocking == "<ul class='watchlist-blocking-list'></ul>":
-            blocking = "<div class='watchlist-qa-note'>No blocking reasons were published.</div>"
-    elif promotion == "YES":
+    if isinstance(reasons, list) and any(str(reason).strip() for reason in reasons):
+        blocking = (
+            "<ul class='watchlist-blocking-list'>"
+            + "".join(
+                f"<li>{html.escape(str(reason))}</li>"
+                for reason in reasons
+                if str(reason).strip()
+            )
+            + "</ul>"
+        )
+    elif readiness.get("promotion_ready") is True:
         blocking = "<div class='watchlist-qa-note'>No blocking reasons were published.</div>"
     else:
-        blocking = "<div class='watchlist-qa-note'>No authoritative blocking reasons were published.</div>"
+        blocking = (
+            "<div class='watchlist-qa-note'>"
+            "No authoritative blocking reasons were published."
+            "</div>"
+        )
 
-    body = (
-        "<div class='watchlist-promotion-qa'><strong>Six-gate Promotion Readiness</strong>"
-        f"<ul class='watchlist-gate-summary'>{''.join(gates)}</ul>"
-        "<strong>Blocking reasons</strong>" + blocking + "</div>"
+    return (
+        "<div class='watchlist-promotion-panel'>"
+        "<div class='watchlist-promotion-panel-heading'>"
+        "<strong>Six-gate Promotion Readiness</strong>"
+        "<span>Click the Promotion value again to collapse.</span>"
+        "</div>"
+        "<div class='watchlist-promotion-gates-wrap'>"
+        f"<div class='watchlist-promotion-gates'>{''.join(cards)}</div>"
+        "</div>"
+        "<div class='watchlist-promotion-blockers'>"
+        "<strong>Blocking reasons</strong>"
+        f"{blocking}"
+        "</div>"
+        "</div>"
     )
-    summary = f"<span class='watchlist-status {status_class}'>{promotion}</span>"
-    return _details(summary, body, label="Open Promotion QA evidence")
 
 
 def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
     rows: list[str] = []
-    for item in items:
+    for index, item in enumerate(items, start=1):
         lifecycle = _lifecycle(item)
         _, status_class = _status({"status": lifecycle})
         if lifecycle == "WATCHLIST":
@@ -318,8 +374,10 @@ def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
         raw_readiness = item.get("promotion_readiness")
         readiness = raw_readiness if isinstance(raw_readiness, Mapping) else None
         gate_readiness: Mapping[str, Any] = readiness or {}
+        detail_id = f"watchlist-promotion-detail-{index}"
+
         rows.append(
-            "<tr>"
+            "<tr class='watchlist-candidate-row'>"
             f"<td class='num'>{html.escape(rank)}</td>"
             f"<td><strong>{html.escape(underlying)}</strong></td>"
             f"<td>{_pipeline_cell(leveraged)}</td>"
@@ -328,8 +386,12 @@ def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
             f"<td>{_gate_cell(gate_readiness, 'opportunity_quality', mode='oq')}</td>"
             f"<td>{_gate_cell(gate_readiness, 'thesis_integrity', mode='status')}</td>"
             f"<td>{_gate_cell(gate_readiness, 'entry', mode='entry')}</td>"
-            f"<td>{_promotion_cell(readiness)}</td>"
+            f"<td>{_promotion_summary(readiness, detail_id=detail_id)}</td>"
             "</tr>"
+            f"<tr id='{detail_id}' class='watchlist-promotion-detail-row' hidden>"
+            "<td colspan='9'>"
+            f"{_promotion_detail_body(readiness)}"
+            "</td></tr>"
         )
     return "".join(rows)
 
@@ -359,8 +421,32 @@ def _render_candidate_pipeline(row: Mapping[str, Any], items: list[Mapping[str, 
         "<th>OQ</th><th>Thesis</th><th>Entry</th><th>Promotion</th></tr></thead>"
         f"<tbody>{_pipeline_rows(items)}</tbody></table></div>"
     )
+    behavior = """
+<script>
+(function(){
+  const script = document.currentScript;
+  const root = script ? script.closest('.candidate-pipeline') : null;
+  if (!root) return;
+  root.addEventListener('click', function(event){
+    const toggle = event.target.closest('.watchlist-promotion-toggle');
+    if (!toggle || !root.contains(toggle)) return;
+    const targetId = toggle.getAttribute('aria-controls');
+    const detailRow = targetId ? document.getElementById(targetId) : null;
+    if (!detailRow) return;
+    const expanded = toggle.getAttribute('aria-expanded') === 'true';
+    toggle.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+    toggle.setAttribute(
+      'title',
+      expanded ? 'Show Promotion Readiness details' : 'Hide Promotion Readiness details'
+    );
+    detailRow.hidden = expanded;
+  });
+})();
+</script>
+"""
     return (
         "<section class='watchlist-pro candidate-pipeline'>" + heading + summary + table
+        + behavior
         + "<p class='watchlist-footnote'>Rows are rendered from SWING-001 authoritative published evidence. "
         "The Enterprise host preserves lifecycle states and does not infer candidates from the summary count.</p></section>"
     )
@@ -414,6 +500,6 @@ def render_watchlist_panel(row: Mapping[str, Any]) -> str:
 def watchlist_ui_css() -> str:
     return """
 <style>
-.watchlist-pro{color:#10213b}.watchlist-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.watchlist-heading h3{margin:0 0 5px;font-size:1.2rem}.watchlist-heading p{margin:0;color:#64748b}.watchlist-count{background:#eef2ff;color:#5b21b6;border:1px solid #d8ccff;border-radius:999px;padding:7px 11px;font-weight:800;white-space:nowrap}.watchlist-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}.watchlist-summary-card{background:linear-gradient(180deg,#fff,#f8faff);border:1px solid #dbe4f0;border-radius:12px;padding:13px 14px;box-shadow:0 5px 14px rgba(23,43,77,.06)}.watchlist-summary-card span{display:block;color:#64748b}.watchlist-summary-card strong{display:block;margin-top:5px;font-size:1.15rem}.watchlist-table-wrap{overflow-x:auto;border:1px solid #dbe4f0;border-radius:13px;background:#fff;box-shadow:0 7px 18px rgba(23,43,77,.06)}.watchlist-table{width:100%;min-width:1180px;border-collapse:collapse}.candidate-pipeline-table{min-width:880px}.watchlist-table th{padding:11px 12px;text-align:left;background:#f4f7fc;color:#53627a;font-size:.72rem;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid #dbe4f0;white-space:nowrap}.watchlist-table td{padding:12px;border-bottom:1px solid #edf1f6;vertical-align:middle;white-space:nowrap}.watchlist-table tbody tr:last-child td{border-bottom:0}.watchlist-table td.num{text-align:right;font-variant-numeric:tabular-nums}.watchlist-candidate-name{display:block;margin-top:4px;color:#64748b;white-space:normal}.watchlist-explanation{min-width:250px;max-width:360px;white-space:normal!important;line-height:1.35}.watchlist-explanation strong{color:#334155}.watchlist-status,.watchlist-not-reported{display:inline-block;border-radius:999px;padding:5px 8px;font-size:.75rem;font-weight:800}.watchlist-status-ready,.watchlist-market-fresh{background:#e9f9f0;color:#087443}.watchlist-status-watch{background:#fff7df;color:#8a4b08}.watchlist-status-blocked,.watchlist-market-stale{background:#fff0f0;color:#b42318}.watchlist-status-neutral,.watchlist-not-reported{background:#f1f5f9;color:#7a8798}.watchlist-source{color:#64748b;font-size:.82rem}.watchlist-empty{padding:24px;border:1px dashed #b9c7db;border-radius:12px;background:#f8fafc;text-align:center;color:#64748b}.watchlist-empty strong,.watchlist-empty span{display:block}.watchlist-empty strong{color:#334155;margin-bottom:7px}.watchlist-footnote{margin:12px 2px 0;color:#718096;font-size:.8rem}.watchlist-qa-details{position:relative}.watchlist-qa-details summary{cursor:pointer;list-style:none}.watchlist-qa-details summary::-webkit-details-marker{display:none}.watchlist-qa-details[open] .watchlist-qa-body{display:block}.watchlist-qa-body{min-width:260px;max-width:390px;margin-top:7px;padding:10px;border:1px solid #dbe4f0;border-radius:9px;background:#f8fafc;white-space:normal;line-height:1.35}.watchlist-qa-list{margin:0}.watchlist-qa-list div{display:grid;grid-template-columns:120px 1fr;gap:8px;padding:3px 0}.watchlist-qa-list dt{font-weight:700;color:#53627a}.watchlist-qa-list dd{margin:0;overflow-wrap:anywhere}.watchlist-qa-note{color:#64748b;white-space:normal}.watchlist-gate-summary,.watchlist-blocking-list{margin:7px 0 10px;padding-left:18px}.watchlist-gate-summary li,.watchlist-blocking-list li{margin:5px 0;white-space:normal}.watchlist-qa-evidence{color:#64748b;font-size:.78rem;overflow-wrap:anywhere}@media(max-width:900px){.watchlist-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.watchlist-heading{display:block}.watchlist-count{display:inline-block;margin-top:10px}.watchlist-summary-grid{grid-template-columns:1fr}}
+.watchlist-pro{color:#10213b}.watchlist-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.watchlist-heading h3{margin:0 0 5px;font-size:1.2rem}.watchlist-heading p{margin:0;color:#64748b}.watchlist-count{background:#eef2ff;color:#5b21b6;border:1px solid #d8ccff;border-radius:999px;padding:7px 11px;font-weight:800;white-space:nowrap}.watchlist-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}.watchlist-summary-card{background:linear-gradient(180deg,#fff,#f8faff);border:1px solid #dbe4f0;border-radius:12px;padding:13px 14px;box-shadow:0 5px 14px rgba(23,43,77,.06)}.watchlist-summary-card span{display:block;color:#64748b}.watchlist-summary-card strong{display:block;margin-top:5px;font-size:1.15rem}.watchlist-table-wrap{overflow-x:auto;border:1px solid #dbe4f0;border-radius:13px;background:#fff;box-shadow:0 7px 18px rgba(23,43,77,.06)}.watchlist-table{width:100%;min-width:1180px;border-collapse:collapse}.candidate-pipeline-table{min-width:880px}.watchlist-table th{padding:11px 12px;text-align:left;background:#f4f7fc;color:#53627a;font-size:.72rem;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid #dbe4f0;white-space:nowrap}.watchlist-table td{padding:12px;border-bottom:1px solid #edf1f6;vertical-align:middle;white-space:nowrap}.watchlist-table tbody tr:last-child td{border-bottom:0}.watchlist-table td.num{text-align:right;font-variant-numeric:tabular-nums}.watchlist-candidate-name{display:block;margin-top:4px;color:#64748b;white-space:normal}.watchlist-explanation{min-width:250px;max-width:360px;white-space:normal!important;line-height:1.35}.watchlist-explanation strong{color:#334155}.watchlist-status,.watchlist-not-reported{display:inline-block;border-radius:999px;padding:5px 8px;font-size:.75rem;font-weight:800}.watchlist-status-ready,.watchlist-market-fresh{background:#e9f9f0;color:#087443}.watchlist-status-watch{background:#fff7df;color:#8a4b08}.watchlist-status-blocked,.watchlist-market-stale{background:#fff0f0;color:#b42318}.watchlist-status-neutral,.watchlist-not-reported{background:#f1f5f9;color:#7a8798}.watchlist-source{color:#64748b;font-size:.82rem}.watchlist-empty{padding:24px;border:1px dashed #b9c7db;border-radius:12px;background:#f8fafc;text-align:center;color:#64748b}.watchlist-empty strong,.watchlist-empty span{display:block}.watchlist-empty strong{color:#334155;margin-bottom:7px}.watchlist-footnote{margin:12px 2px 0;color:#718096;font-size:.8rem}.watchlist-qa-details{position:relative}.watchlist-qa-details summary{cursor:pointer;list-style:none}.watchlist-qa-details summary::-webkit-details-marker{display:none}.watchlist-qa-details[open] .watchlist-qa-body{display:block}.watchlist-qa-body{min-width:260px;max-width:390px;margin-top:7px;padding:10px;border:1px solid #dbe4f0;border-radius:9px;background:#f8fafc;white-space:normal;line-height:1.35}.watchlist-qa-list{margin:0}.watchlist-qa-list div{display:grid;grid-template-columns:120px 1fr;gap:8px;padding:3px 0}.watchlist-qa-list dt{font-weight:700;color:#53627a}.watchlist-qa-list dd{margin:0;overflow-wrap:anywhere}.watchlist-qa-note{color:#64748b;white-space:normal}.watchlist-blocking-list{margin:7px 0 0;padding-left:18px}.watchlist-blocking-list li{margin:5px 0;white-space:normal}.watchlist-qa-evidence{color:#64748b;font-size:.78rem;overflow-wrap:anywhere}.watchlist-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}.watchlist-promotion-toggle{appearance:none;border:0;background:transparent;padding:0;margin:0;font:inherit;cursor:pointer}.watchlist-promotion-toggle:focus-visible{outline:2px solid #5925dc;outline-offset:3px;border-radius:999px}.watchlist-promotion-detail-row[hidden]{display:none}.watchlist-promotion-detail-row td{padding:0!important;background:#f8fbff;white-space:normal!important;border-bottom:1px solid #dbe4f0}.watchlist-promotion-panel{margin:8px 10px 14px;padding:14px;border:1px solid #cfe0f5;border-radius:12px;background:linear-gradient(180deg,#f8fbff,#fff);box-shadow:inset 0 1px 0 #fff}.watchlist-promotion-panel-heading{display:flex;justify-content:space-between;gap:16px;align-items:center;margin-bottom:10px}.watchlist-promotion-panel-heading>strong{font-size:.95rem;color:#10213b}.watchlist-promotion-panel-heading>span{font-size:.76rem;color:#64748b}.watchlist-promotion-gates-wrap{overflow-x:auto}.watchlist-promotion-gates{display:grid;grid-template-columns:repeat(6,minmax(190px,1fr));gap:9px;min-width:1190px}.watchlist-promotion-gate-card{border:1px solid #dbe4f0;border-radius:10px;background:#fff;padding:10px;min-width:0}.watchlist-promotion-gate-card header{display:flex;justify-content:space-between;gap:8px;align-items:flex-start;margin-bottom:8px}.watchlist-promotion-gate-card header>strong{font-size:.8rem;line-height:1.2}.watchlist-promotion-gate-content{display:grid;gap:6px}.watchlist-promotion-gate-content>div{display:grid;gap:2px;white-space:normal;overflow-wrap:anywhere}.watchlist-promotion-gate-content span{font-size:.7rem;color:#64748b}.watchlist-promotion-gate-content strong{font-size:.76rem;font-weight:600;color:#334155;line-height:1.35}.watchlist-promotion-reason,.watchlist-promotion-evidence{border-top:1px solid #edf1f6;padding-top:6px}.watchlist-promotion-blockers{margin-top:10px;padding:10px 12px;border-radius:9px;background:#fff4f2;border:1px solid #fee4e2}.watchlist-promotion-blockers>strong{color:#b42318;font-size:.8rem}@media(max-width:900px){.watchlist-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.watchlist-heading{display:block}.watchlist-count{display:inline-block;margin-top:10px}.watchlist-summary-grid{grid-template-columns:1fr}}
 </style>
 """
