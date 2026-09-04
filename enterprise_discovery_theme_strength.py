@@ -65,8 +65,15 @@ def build_theme_strength_block(
     market = row.get("market_evidence") if isinstance(row.get("market_evidence"), Mapping) else None
     financial = row.get("financial_health") if isinstance(row.get("financial_health"), Mapping) else None
     financial_components = financial.get("components") if isinstance(financial, Mapping) else None
+    financial_evidence = financial.get("evidence") if isinstance(financial, Mapping) else None
 
-    if not themes or not evidence or market is None or not isinstance(financial_components, Mapping):
+    if (
+        not themes
+        or not evidence
+        or market is None
+        or not isinstance(financial_components, Mapping)
+        or not isinstance(financial_evidence, Mapping)
+    ):
         return None
     if str(market.get("status") or "").upper() != "AVAILABLE" or market.get("is_stale"):
         return None
@@ -87,14 +94,37 @@ def build_theme_strength_block(
     relative_strength = _number(market.get("relative_strength_vs_benchmark_percent"))
     volume_ratio = _number(market.get("volume_expansion_ratio"))
     sector_confirmation = _number(financial_components.get("sector_strength"))
-    if relative_strength is None or volume_ratio is None or sector_confirmation is None:
+    revenue_growth = _number(financial_evidence.get("revenue_growth"))
+    eps_growth = _number(financial_evidence.get("eps_growth"))
+    analyst_upgrades = _number(financial_evidence.get("analyst_upgrades_90d"))
+    analyst_downgrades = _number(financial_evidence.get("analyst_downgrades_90d"))
+    if (
+        relative_strength is None
+        or volume_ratio is None
+        or sector_confirmation is None
+        or revenue_growth is None
+        or eps_growth is None
+        or analyst_upgrades is None
+        or analyst_downgrades is None
+    ):
         return None
 
     breadth_score = _clamp(min(len(producers), 4) / 4.0 * 100.0)
     diversity_score = _clamp(min(len(source_classes), 3) / 3.0 * 100.0)
-    earnings_catalyst = any(bool(item.get("earnings_growth_related")) for item in evidence)
-    analyst_catalyst = any(bool(item.get("analyst_upgrade_related")) for item in evidence)
+
+    # Catalyst support is confirmation, not headline classification. Reviewed source
+    # evidence may explicitly identify a catalyst, while the authoritative Financial
+    # Health block independently confirms whether earnings are actually growing and
+    # whether analyst revisions are net-positive. This prevents a generic "earnings"
+    # title from receiving catalyst credit without fundamental support.
+    source_earnings_catalyst = any(bool(item.get("earnings_growth_related")) for item in evidence)
+    source_analyst_catalyst = any(bool(item.get("analyst_upgrade_related")) for item in evidence)
+    fundamentals_earnings_catalyst = revenue_growth > 0.0 and eps_growth > 0.0
+    fundamentals_analyst_catalyst = analyst_upgrades > analyst_downgrades
+    earnings_catalyst = source_earnings_catalyst or fundamentals_earnings_catalyst
+    analyst_catalyst = source_analyst_catalyst or fundamentals_analyst_catalyst
     catalyst_score = float(50 * int(earnings_catalyst) + 50 * int(analyst_catalyst))
+
     relative_score = _linear(relative_strength, -5.0, 5.0)
     volume_score = _linear(volume_ratio, 0.5, 1.5)
     market_score = round((relative_score + volume_score) / 2.0, 2)
@@ -124,7 +154,7 @@ def build_theme_strength_block(
         "score": score,
         "components": components,
         "evidence_timestamp": timestamp,
-        "provenance": "AI_CIO_ENTERPRISE_DISCOVERY: reviewed source evidence + authoritative market evidence + Financial Health sector confirmation",
+        "provenance": "AI_CIO_ENTERPRISE_DISCOVERY: reviewed source evidence + authoritative market evidence + Financial Health fundamentals/sector confirmation",
         "evidence": {
             "underlying_symbol": str(row.get("underlying_symbol") or "").strip().upper(),
             "themes": themes,
@@ -133,6 +163,14 @@ def build_theme_strength_block(
             "source_classes": sorted(source_classes),
             "earnings_growth_catalyst": earnings_catalyst,
             "analyst_upgrade_catalyst": analyst_catalyst,
+            "source_earnings_growth_catalyst": source_earnings_catalyst,
+            "source_analyst_upgrade_catalyst": source_analyst_catalyst,
+            "fundamentals_earnings_growth_catalyst": fundamentals_earnings_catalyst,
+            "fundamentals_analyst_upgrade_catalyst": fundamentals_analyst_catalyst,
+            "revenue_growth": revenue_growth,
+            "eps_growth": eps_growth,
+            "analyst_upgrades_90d": analyst_upgrades,
+            "analyst_downgrades_90d": analyst_downgrades,
             "relative_strength_vs_benchmark_percent": relative_strength,
             "volume_expansion_ratio": volume_ratio,
             "sector_strength_component": sector_confirmation,
