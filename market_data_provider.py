@@ -14,7 +14,7 @@ from market_data_cache import MarketDataCache
 from yahoo_finance_provider import MarketDataProviderError, YahooFinanceProvider
 
 MODULE_NAME = "market_data_provider"
-MODULE_VERSION = "1.0.0"
+MODULE_VERSION = "1.1.0"
 SCHEMA_VERSION = "1.0"
 PAPER_TRADE_MODE = True
 LIVE_TRADING_ENABLED = False
@@ -24,6 +24,7 @@ READ_ONLY_MARKET_DATA = True
 DEFAULT_QUOTE_TTL_SECONDS = 300
 DEFAULT_HISTORY_TTL_SECONDS = 21600
 DEFAULT_DIVIDEND_TTL_SECONDS = 86400
+DEFAULT_FINANCIAL_HEALTH_TTL_SECONDS = 86400
 DEFAULT_MIN_REQUEST_INTERVAL_SECONDS = 0.25
 
 
@@ -34,6 +35,7 @@ class MarketDataService:
     quote_ttl_seconds: int = DEFAULT_QUOTE_TTL_SECONDS
     history_ttl_seconds: int = DEFAULT_HISTORY_TTL_SECONDS
     dividend_ttl_seconds: int = DEFAULT_DIVIDEND_TTL_SECONDS
+    financial_health_ttl_seconds: int = DEFAULT_FINANCIAL_HEALTH_TTL_SECONDS
     min_request_interval_seconds: float = DEFAULT_MIN_REQUEST_INTERVAL_SECONDS
 
     def __post_init__(self) -> None:
@@ -89,6 +91,18 @@ class MarketDataService:
             ticker,
             self.quote_ttl_seconds,
             lambda: self.provider.get_quote(ticker),
+            force_refresh,
+        )
+
+    def get_financial_health_inputs(self, symbol: str, force_refresh: bool = False) -> dict[str, Any]:
+        ticker = symbol.strip().upper()
+        if not ticker:
+            raise ValueError("symbol is required")
+        return self._fetch_with_cache(
+            "financial_health",
+            ticker,
+            self.financial_health_ttl_seconds,
+            lambda: self.provider.get_financial_health_inputs(ticker),
             force_refresh,
         )
 
