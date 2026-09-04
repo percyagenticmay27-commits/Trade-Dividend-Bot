@@ -113,6 +113,21 @@ def test_attach_refreshes_every_eligible_candidate_and_fails_closed_per_symbol()
     assert result["financial_health_policy"] == "ALL_SEVEN_COMPONENTS_REQUIRED_FAIL_CLOSED"
 
 
+def test_attach_refreshes_candidate_when_nomination_eligible_is_omitted():
+    report = {
+        "observations": [
+            {"underlying_symbol": "NVDA"},
+            {"underlying_symbol": "RESEARCH", "nomination_eligible": False},
+        ],
+        "warnings": [],
+    }
+    service = _FakeService()
+    result = attach_candidate_financial_health(report, service)
+    assert service.financial_calls == ["NVDA"]
+    assert "financial_health" in result["observations"][0]
+    assert "financial_health" not in result["observations"][1]
+
+
 def test_weekly_projection_preserves_complete_financial_health_block():
     block = build_financial_health_block(
         "NVDA",
