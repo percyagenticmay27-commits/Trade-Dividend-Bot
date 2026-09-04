@@ -15,6 +15,8 @@ if str(ROOT) not in sys.path:
 from enterprise_discovery_catalyst_extractor import enrich_observations_with_catalyst_events
 from enterprise_discovery_catalyst_evidence import attach_candidate_catalyst_classification
 from enterprise_discovery_financial_health import attach_candidate_financial_health
+from enterprise_discovery_issuer_evidence import collect_issuer_primary_evidence, attach_issuer_primary_evidence
+from enterprise_discovery_issuer_research import build_issuer_research_registry, attach_issuer_research_registry
 from enterprise_discovery_source_collector import collect_credential_free_observations, load_json_if_present
 from enterprise_discovery_market_evidence import attach_candidate_market_evidence
 from enterprise_discovery_official_macro_sources import collect_official_macro_evidence, attach_official_macro_evidence
@@ -191,6 +193,22 @@ def main() -> int:
 
     service = MarketDataService(root_path=str(root))
     active_candidates = _active_candidates(root)
+
+    # Verified issuer profiles and their first-party research pages are report-level
+    # primary evidence only. Collection proves reachability and explicit symbol linkage;
+    # it cannot create a catalyst, nomination, Theme Strength point, or favorable stance.
+    issuer_config = load_json_if_present(root / "configs" / "enterprise_discovery_issuer_research_profiles.json") or {}
+    issuer_profiles = issuer_config.get("profiles", []) if isinstance(issuer_config, dict) else []
+    if issuer_profiles:
+        issuer_registry = build_issuer_research_registry(issuer_profiles)
+        report = attach_issuer_research_registry(report, issuer_registry)
+        issuer_report = collect_issuer_primary_evidence(
+            issuer_registry.get("profiles", {}).values(),
+            active_symbols=set(active_candidates),
+            as_of=generated_at,
+            user_agent=user_agent,
+        )
+        report = attach_issuer_primary_evidence(report, issuer_report)
 
     # The daily SEC index remains broad discovery. Detailed submissions metadata is
     # fetched only for retained active candidates already present in this collection.
