@@ -4,6 +4,8 @@ from enterprise_discovery_financial_health import (
     build_financial_health_block,
 )
 from enterprise_weekly_market_discovery import build_swing_projection, build_weekly_discovery
+from scripts.collect_enterprise_discovery_sources import _refresh_financial_health_for_active_candidates
+from scripts.generate_enterprise_weekly_market_discovery import _merge_fresh_shared_evidence
 
 
 def _history(start: float, step: float, *, stale: bool = False):
@@ -126,6 +128,50 @@ def test_attach_refreshes_candidate_when_nomination_eligible_is_omitted():
     assert service.financial_calls == ["NVDA"]
     assert "financial_health" in result["observations"][0]
     assert "financial_health" not in result["observations"][1]
+
+
+def test_active_retained_candidate_refreshes_without_changing_nomination_state():
+    report = {
+        "observations": [
+            {"underlying_symbol": "NVDA", "nomination_eligible": False},
+            {"underlying_symbol": "RESEARCH", "nomination_eligible": False},
+        ],
+        "warnings": [],
+    }
+    service = _FakeService()
+    result = _refresh_financial_health_for_active_candidates(report, service, {"NVDA"})
+    assert service.financial_calls == ["NVDA"]
+    assert result["observations"][0]["nomination_eligible"] is False
+    assert "financial_health" in result["observations"][0]
+    assert "financial_health" not in result["observations"][1]
+
+
+def test_fresh_financial_health_is_merged_into_retained_candidate_before_publish():
+    block = build_financial_health_block(
+        "NVDA",
+        _fundamentals(),
+        _history(100.0, 1.0),
+        _history(100.0, 0.25),
+        sector_benchmark="XLK",
+    )
+    observations = [
+        {
+            "underlying_symbol": "NVDA",
+            "nomination_eligible": False,
+            "financial_health": block,
+        }
+    ]
+    previous = [
+        {
+            "underlying_symbol": "NVDA",
+            "discovery_status": "EMERGING",
+            "nomination_eligible": True,
+            "financial_health": None,
+        }
+    ]
+    _merge_fresh_shared_evidence(observations, previous)
+    assert previous[0]["financial_health"] == block
+    assert previous[0]["nomination_eligible"] is True
 
 
 def test_weekly_projection_preserves_complete_financial_health_block():
