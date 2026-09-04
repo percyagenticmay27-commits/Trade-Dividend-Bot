@@ -15,25 +15,32 @@ from enterprise_weekly_market_discovery import write_weekly_discovery
 
 
 def _merge_fresh_shared_evidence(observations: list[dict], previous: list[dict]) -> None:
-    """Refresh retained candidates without treating research-only evidence as a nomination."""
-    fresh_blocks = {
-        str(row.get("underlying_symbol") or "").strip().upper(): {
-            key: row.get(key)
-            for key in ("financial_health", "theme_strength")
-            if isinstance(row.get(key), dict)
-        }
+    """Refresh retained candidate context without reconfirming a research-only nomination."""
+    fresh_rows = {
+        str(row.get("underlying_symbol") or "").strip().upper(): row
         for row in observations
-        if isinstance(row, dict)
+        if isinstance(row, dict) and str(row.get("underlying_symbol") or "").strip()
     }
     for row in previous:
         if not isinstance(row, dict):
             continue
         symbol = str(row.get("underlying_symbol") or "").strip().upper()
-        blocks = fresh_blocks.get(symbol, {})
-        for key in ("financial_health", "theme_strength"):
-            block = blocks.get(key)
+        fresh = fresh_rows.get(symbol)
+        if not isinstance(fresh, dict):
+            continue
+        for key in ("financial_health", "theme_strength", "market_evidence"):
+            block = fresh.get(key)
             if isinstance(block, dict):
                 row[key] = block
+        fresh_themes = [str(value).strip() for value in fresh.get("themes", []) if str(value).strip()]
+        if fresh_themes:
+            row["themes"] = fresh_themes
+        fresh_evidence = fresh.get("source_evidence") or fresh.get("evidence_sources")
+        if isinstance(fresh_evidence, list) and fresh_evidence:
+            row["source_evidence"] = list(fresh_evidence)
+        # Deliberately do not copy nomination_eligible or discovery_status. A research-only
+        # observation may refresh evidence for an already-retained candidate, but it may not
+        # reconfirm the nomination or alter the retained lifecycle state.
 
 
 def main() -> int:
