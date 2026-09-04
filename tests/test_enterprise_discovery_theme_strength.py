@@ -52,6 +52,12 @@ def _row(**overrides):
         "financial_health": {
             "components": {"sector_strength": 70.0},
             "evidence_timestamp": "2026-09-04T16:35:35Z",
+            "evidence": {
+                "revenue_growth": 0.25,
+                "eps_growth": 0.30,
+                "analyst_upgrades_90d": 2.0,
+                "analyst_downgrades_90d": 1.0,
+            },
         },
     }
     payload.update(overrides)
@@ -78,6 +84,67 @@ def test_theme_strength_fails_closed_without_sector_confirmation():
     row = _row()
     row["financial_health"]["components"].pop("sector_strength")
     assert build_theme_strength_block(row, generated_at="2026-09-04T16:40:00Z") is None
+
+
+def test_theme_strength_fails_closed_without_fundamental_catalyst_inputs():
+    row = _row()
+    row["financial_health"]["evidence"].pop("eps_growth")
+    assert build_theme_strength_block(row, generated_at="2026-09-04T16:40:00Z") is None
+
+
+def test_fundamental_growth_confirms_earnings_catalyst_without_title_inference():
+    row = _row(
+        source_evidence=[
+            {
+                "source": "Reviewed Creator",
+                "producer": "Reviewed Creator",
+                "source_class": "CREATOR_INTELLIGENCE",
+                "mentioned_on": "2026-09-04",
+                "story_id": "creator-1",
+                "earnings_growth_related": False,
+                "analyst_upgrade_related": False,
+            }
+        ]
+    )
+    row["financial_health"]["evidence"].update({
+        "revenue_growth": 1.059,
+        "eps_growth": 1.278,
+        "analyst_upgrades_90d": 0.0,
+        "analyst_downgrades_90d": 0.0,
+    })
+    block = build_theme_strength_block(row, generated_at="2026-09-04T16:40:00Z")
+    assert block is not None
+    assert block["components"]["catalyst_support"] == 50.0
+    assert block["evidence"]["earnings_growth_catalyst"] is True
+    assert block["evidence"]["source_earnings_growth_catalyst"] is False
+    assert block["evidence"]["fundamentals_earnings_growth_catalyst"] is True
+    assert block["evidence"]["analyst_upgrade_catalyst"] is False
+
+
+def test_neutral_analyst_revision_evidence_does_not_create_upgrade_catalyst():
+    row = _row(
+        source_evidence=[
+            {
+                "source": "SEC EDGAR",
+                "producer": "U.S. Securities and Exchange Commission",
+                "source_class": "PRIMARY_COMPANY",
+                "mentioned_on": "2026-09-03",
+                "story_id": "sec-1",
+                "earnings_growth_related": False,
+                "analyst_upgrade_related": False,
+            }
+        ]
+    )
+    row["financial_health"]["evidence"].update({
+        "revenue_growth": 0.10,
+        "eps_growth": 0.20,
+        "analyst_upgrades_90d": 0.0,
+        "analyst_downgrades_90d": 0.0,
+    })
+    block = build_theme_strength_block(row, generated_at="2026-09-04T16:40:00Z")
+    assert block is not None
+    assert block["components"]["catalyst_support"] == 50.0
+    assert block["evidence"]["fundamentals_analyst_upgrade_catalyst"] is False
 
 
 def test_attach_adds_block_without_changing_nomination_state():
