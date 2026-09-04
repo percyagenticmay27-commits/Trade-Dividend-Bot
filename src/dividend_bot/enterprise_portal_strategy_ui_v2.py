@@ -29,6 +29,7 @@ from .enterprise_dividend_watchlist_ui import (
     dividend_watchlist_ui_css,
     render_dividend_watchlist_panel,
 )
+from .enterprise_dividend_promotion_readiness import enrich_dividend_watchlist_row
 from .enterprise_trade_analytics_ui import trade_analytics_ui_css, render_trade_analytics_panel
 from .enterprise_swing_alerts_ui import render_swing_alerts_panel, swing_alerts_ui_css
 from .enterprise_swing_decision_journal_ui import render_swing_decision_journal_panel, swing_decision_journal_ui_css
@@ -194,11 +195,12 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
         else:
             output = _replace_panel(output, sid=sid, tab="income", body=render_income_panel(row))
             if raw_sid.lower() in {"dividend", "dividend-001"}:
+                dividend_row = enrich_dividend_watchlist_row(row, ".")
                 output = _replace_panel(
                     output,
                     sid=sid,
                     tab="watchlist",
-                    body=render_dividend_watchlist_panel(row),
+                    body=render_dividend_watchlist_panel(dividend_row),
                 )
                 output = _insert_dividend_extension_tabs(
                     output,
