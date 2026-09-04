@@ -22,49 +22,25 @@ LEVERAGED_SUFFIXES = ("2X", "3X", "BULL", "BEAR")
 SYMBOL_PATTERN = re.compile(r"^[A-Z][A-Z0-9.-]{0,14}$")
 
 CATALYST_FLAG_FIELDS = (
-    "earnings_growth_related",
-    "analyst_upgrade_related",
-    "guidance_outlook_related",
-    "product_innovation_related",
-    "contracts_customer_wins_related",
-    "capex_infrastructure_demand_related",
-    "regulatory_government_related",
-    "ma_strategic_activity_related",
-    "sector_industry_tailwind_related",
+    "earnings_growth_related", "analyst_upgrade_related", "guidance_outlook_related",
+    "product_innovation_related", "contracts_customer_wins_related",
+    "capex_infrastructure_demand_related", "regulatory_government_related",
+    "ma_strategic_activity_related", "sector_industry_tailwind_related",
     "corporate_capital_catalyst_related",
 )
-
-# These fields are authoritative/review metadata used by the governed catalyst
-# classifier. Weekly normalization must not erase them before history recovery or
-# downstream strategy projection can consume the already-reviewed evidence.
 CATALYST_METADATA_FIELDS = (
-    "credibility_reviewed",
-    "authority",
-    "platform",
-    "catalyst_families",
-    "catalyst_events",
-    "catalyst_classification",
+    "credibility_reviewed", "authority", "platform", "catalyst_families",
+    "catalyst_events", "catalyst_classification",
 )
-
-# Source-specific provenance is retained for auditability. None of these fields
-# create catalyst claims by themselves; classification remains fail closed.
 EVIDENCE_PROVENANCE_FIELDS = (
-    "form",
-    "accession_number",
-    "primary_document",
-    "broad_discovery_source",
-    "channel_id",
-    "provider_sentiment_label",
-    "provider_relevance_score",
+    "form", "accession_number", "primary_document", "broad_discovery_source",
+    "channel_id", "provider_sentiment_label", "provider_relevance_score",
     "provider_sentiment_score",
 )
 
 
 def _utc(value: Any) -> datetime:
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
@@ -106,10 +82,47 @@ def _copy_optional_evidence_fields(raw: Mapping[str, Any], row: dict[str, Any]) 
         row[field] = bool(raw.get(field, False))
 
 
+def _merge_duplicate_evidence(previous: Mapping[str, Any], current: dict[str, Any]) -> dict[str, Any]:
+    """Enrich a duplicate story without erasing stronger prior semantics."""
+    merged = dict(current)
+    prior_stance = str(previous.get("stance") or "NEUTRAL").upper()
+    current_stance = str(current.get("stance") or "NEUTRAL").upper()
+    if current_stance in {"NEUTRAL", "UNSPECIFIED"} and prior_stance not in {"NEUTRAL", "UNSPECIFIED"}:
+        merged["stance"] = prior_stance
+    elif prior_stance not in {"NEUTRAL", "UNSPECIFIED"} and current_stance not in {"NEUTRAL", "UNSPECIFIED"} and prior_stance != current_stance:
+        merged["stance"] = "MIXED"
+
+    merged["themes"] = sorted({
+        str(value).strip()
+        for value in [*previous.get("themes", []), *current.get("themes", [])]
+        if str(value).strip()
+    })
+    for field in CATALYST_FLAG_FIELDS:
+        merged[field] = bool(previous.get(field, False) or current.get(field, False))
+
+    prior_families = previous.get("catalyst_families") or []
+    current_families = current.get("catalyst_families") or []
+    if prior_families or current_families:
+        merged["catalyst_families"] = list(dict.fromkeys([*prior_families, *current_families]))
+
+    prior_events = previous.get("catalyst_events") or []
+    current_events = current.get("catalyst_events") or []
+    if prior_events or current_events:
+        events: dict[str, Any] = {}
+        anonymous: list[Any] = []
+        for event in [*prior_events, *current_events]:
+            if isinstance(event, Mapping) and str(event.get("event_id") or "").strip():
+                events[str(event["event_id"]).strip()] = deepcopy(event)
+            else:
+                anonymous.append(deepcopy(event))
+        merged["catalyst_events"] = [*events.values(), *anonymous]
+
+    if previous.get("credibility_reviewed") is True or current.get("credibility_reviewed") is True:
+        merged["credibility_reviewed"] = True
+    return merged
+
+
 def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
-    # Last occurrence wins for the same independent story/producer/day. Merge callers
-    # intentionally order recovered -> retained -> fresh evidence, so a fresh reviewed
-    # record can enrich an older copy instead of being discarded by first-seen dedupe.
     rows_by_key: dict[tuple[str, str, str], dict[str, Any]] = {}
     for raw in items:
         source = str(raw.get("source") or raw.get("source_name") or "").strip()
@@ -134,39 +147,23 @@ def _normalize_evidence(items: Iterable[Mapping[str, Any]]) -> list[dict[str, An
             "stance": str(raw.get("stance") or "NEUTRAL").upper(),
         }
         _copy_optional_evidence_fields(raw, row)
-        rows_by_key[key] = row
-    rows = list(rows_by_key.values())
-    return sorted(rows, key=lambda row: (row["mentioned_on"], row["source"], row["story_id"]))
+        previous = rows_by_key.get(key)
+        rows_by_key[key] = _merge_duplicate_evidence(previous, row) if previous else row
+    return sorted(rows_by_key.values(), key=lambda row: (row["mentioned_on"], row["source"], row["story_id"]))
 
 
 def _evidence_analysis(evidence: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
     rows = list(evidence)
-    independent_stories = {
-        (
-            str(row.get("independent_story_id") or row.get("story_id") or "").lower(),
-            str(row.get("producer") or "").lower(),
-        )
-        for row in rows
-    }
+    independent_stories = {(str(row.get("independent_story_id") or row.get("story_id") or "").lower(), str(row.get("producer") or "").lower()) for row in rows}
     producers = {str(row.get("producer") or "").strip().lower() for row in rows if str(row.get("producer") or "").strip()}
-    source_classes = sorted({
-        str(row.get("source_class") or "UNCLASSIFIED").upper()
-        for row in rows
-    })
+    source_classes = sorted({str(row.get("source_class") or "UNCLASSIFIED").upper() for row in rows})
     stances = {"BULLISH": 0, "BEARISH": 0, "NEUTRAL": 0, "MIXED": 0, "UNSPECIFIED": 0}
     for row in rows:
         stance = str(row.get("stance") or "UNSPECIFIED").upper()
         stances[stance if stance in stances else "UNSPECIFIED"] += 1
     independent_count = len(independent_stories)
     class_count = len(source_classes)
-    if independent_count >= 3 and class_count >= 2:
-        level = "STRONG"
-    elif independent_count >= 2:
-        level = "CONFIRMED"
-    elif independent_count == 1:
-        level = "SINGLE_SOURCE"
-    else:
-        level = "NONE"
+    level = "STRONG" if independent_count >= 3 and class_count >= 2 else "CONFIRMED" if independent_count >= 2 else "SINGLE_SOURCE" if independent_count == 1 else "NONE"
     return {
         "independent_source_count": independent_count,
         "independent_producer_count": len(producers),
@@ -174,20 +171,12 @@ def _evidence_analysis(evidence: Iterable[Mapping[str, Any]]) -> dict[str, Any]:
         "source_classes": source_classes,
         "level": level,
         "syndicated_repeats_counted_separately": False,
-        "stance_summary": {
-            **stances,
-            "disagreement_present": stances["BULLISH"] > 0 and stances["BEARISH"] > 0,
-        },
+        "stance_summary": {**stances, "disagreement_present": stances["BULLISH"] > 0 and stances["BEARISH"] > 0},
         "inference_allowed": False,
     }
 
 
-def _attention_analysis(
-    current_count: int,
-    prior: Mapping[str, Any] | None,
-    *,
-    same_cycle: bool = False,
-) -> dict[str, Any]:
+def _attention_analysis(current_count: int, prior: Mapping[str, Any] | None, *, same_cycle: bool = False) -> dict[str, Any]:
     previous_count = None
     if prior and same_cycle and isinstance(prior.get("attention_acceleration"), Mapping):
         previous_count = prior["attention_acceleration"].get("previous_independent_evidence_count")
@@ -202,9 +191,7 @@ def _attention_analysis(
         except (TypeError, ValueError):
             previous_count = None
     if previous_count is None:
-        state = "NEW_BASELINE"
-        change = None
-        ratio = None
+        state, change, ratio = "NEW_BASELINE", None, None
     else:
         change = current_count - previous_count
         ratio = round(current_count / previous_count, 6) if previous_count > 0 else None
@@ -216,168 +203,81 @@ def _attention_analysis(
             state = "DECELERATING"
         else:
             state = "STABLE"
-    return {
-        "status": state,
-        "current_independent_evidence_count": current_count,
-        "previous_independent_evidence_count": previous_count,
-        "absolute_change": change,
-        "ratio": ratio,
-        "measurement": "WEEK_OVER_WEEK_INDEPENDENT_EVIDENCE",
-        "raw_mentions_used": False,
-        "inference_allowed": False,
-    }
+    return {"status": state, "current_independent_evidence_count": current_count, "previous_independent_evidence_count": previous_count, "absolute_change": change, "ratio": ratio, "measurement": "WEEK_OVER_WEEK_INDEPENDENT_EVIDENCE", "raw_mentions_used": False, "inference_allowed": False}
 
 
 def _retention_days(status: str) -> int:
-    if status == "EMERGING":
-        return 21
-    if status in {"COOLING", "DECLINING"}:
-        return 7
+    if status == "EMERGING": return 21
+    if status in {"COOLING", "DECLINING"}: return 7
     return 14
 
 
-def build_weekly_discovery(
-    observations: Iterable[Mapping[str, Any]],
-    previous_candidates: Iterable[Mapping[str, Any]] = (),
-    *,
-    generated_at: str | datetime,
-) -> dict[str, Any]:
+def build_weekly_discovery(observations: Iterable[Mapping[str, Any]], previous_candidates: Iterable[Mapping[str, Any]] = (), *, generated_at: str | datetime) -> dict[str, Any]:
     now = _utc(generated_at)
     previous = {_symbol(row.get("underlying_symbol")): dict(row) for row in previous_candidates}
-    candidates: list[dict[str, Any]] = []
-    research_evidence_pool: list[dict[str, Any]] = []
-    seen: set[str] = set()
-    confirmed_seen: set[str] = set()
+    candidates, research_evidence_pool = [], []
+    seen, confirmed_seen = set(), set()
     for raw in observations:
         symbol = _symbol(raw.get("underlying_symbol"))
-        if symbol in seen:
-            raise ValueError(f"duplicate underlying_symbol: {symbol}")
+        if symbol in seen: raise ValueError(f"duplicate underlying_symbol: {symbol}")
         seen.add(symbol)
         requested = str(raw.get("discovery_status") or "NEW").upper()
-        if requested not in ACTIVE_STATUSES:
-            raise ValueError(f"unsupported discovery_status: {requested}")
+        if requested not in ACTIVE_STATUSES: raise ValueError(f"unsupported discovery_status: {requested}")
         prior = previous.get(symbol)
         prior_confirmed = _utc(prior.get("last_confirmed_at")) if prior and prior.get("last_confirmed_at") else None
         same_cycle = bool(prior_confirmed and prior_confirmed.isocalendar()[:2] == now.isocalendar()[:2])
         first = _utc(prior.get("first_discovered_at")) if prior and prior.get("first_discovered_at") else now
         first_seen_this_cycle = first.isocalendar()[:2] == now.isocalendar()[:2]
-        weeks = (
-            1 if same_cycle and first_seen_this_cycle
-            else int(prior.get("consecutive_weeks_detected", 1))
-            if same_cycle else int(prior.get("consecutive_weeks_detected", 0)) + 1
-        ) if prior else 1
+        weeks = (1 if same_cycle and first_seen_this_cycle else int(prior.get("consecutive_weeks_detected", 1)) if same_cycle else int(prior.get("consecutive_weeks_detected", 0)) + 1) if prior else 1
         current_evidence = list(raw.get("source_evidence") or raw.get("evidence_sources") or [])
-        if prior and same_cycle:
-            evidence = _normalize_evidence([*list(prior.get("source_evidence") or []), *current_evidence])
-        else:
-            evidence = _normalize_evidence(current_evidence)
+        evidence = _normalize_evidence([*list(prior.get("source_evidence") or []), *current_evidence]) if prior and same_cycle else _normalize_evidence(current_evidence)
         evidence_analysis = _evidence_analysis(evidence)
         independent = evidence_analysis["independent_source_count"]
-        attention_prior = None if same_cycle and first_seen_this_cycle else prior
-        attention = _attention_analysis(independent, attention_prior, same_cycle=same_cycle)
-        expires = now + timedelta(days=_retention_days(requested))
+        attention = _attention_analysis(independent, None if same_cycle and first_seen_this_cycle else prior, same_cycle=same_cycle)
         candidate = {
-            "underlying_symbol": symbol,
-            "company_name": str(raw.get("company_name") or "").strip() or None,
+            "underlying_symbol": symbol, "company_name": str(raw.get("company_name") or "").strip() or None,
             "discovery_status": requested,
-            "previous_status": (
-                "ABSENT" if same_cycle and first_seen_this_cycle
-                else str(prior.get("previous_status") or "ABSENT")
-                if same_cycle else str(prior.get("discovery_status") or "ABSENT")
-            ) if prior else "ABSENT",
-            "first_discovered_at": _iso(first),
-            "last_confirmed_at": _iso(now),
-            "expires_at": _iso(expires),
-            "consecutive_weeks_detected": weeks,
-            "themes": sorted({str(v).strip() for v in raw.get("themes", []) if str(v).strip()}),
-            "sector": str(raw.get("sector") or "").strip() or None,
-            "catalysts": list(raw.get("catalysts") or []),
-            "risks": list(raw.get("risks") or []),
-            "bullish_thesis": raw.get("bullish_thesis"),
-            "bearish_thesis": raw.get("bearish_thesis"),
-            "source_evidence": evidence,
-            "independent_source_count": independent,
-            "source_confluence": evidence_analysis,
-            "evidence_stance_summary": evidence_analysis["stance_summary"],
-            "attention_acceleration": attention,
-            "market_evidence": raw.get("market_evidence"),
+            "previous_status": ("ABSENT" if same_cycle and first_seen_this_cycle else str(prior.get("previous_status") or "ABSENT") if same_cycle else str(prior.get("discovery_status") or "ABSENT")) if prior else "ABSENT",
+            "first_discovered_at": _iso(first), "last_confirmed_at": _iso(now), "expires_at": _iso(now + timedelta(days=_retention_days(requested))),
+            "consecutive_weeks_detected": weeks, "themes": sorted({str(v).strip() for v in raw.get("themes", []) if str(v).strip()}),
+            "sector": str(raw.get("sector") or "").strip() or None, "catalysts": list(raw.get("catalysts") or []), "risks": list(raw.get("risks") or []),
+            "bullish_thesis": raw.get("bullish_thesis"), "bearish_thesis": raw.get("bearish_thesis"), "source_evidence": evidence,
+            "independent_source_count": independent, "source_confluence": evidence_analysis, "evidence_stance_summary": evidence_analysis["stance_summary"],
+            "attention_acceleration": attention, "market_evidence": raw.get("market_evidence"),
             "financial_health": dict(raw["financial_health"]) if isinstance(raw.get("financial_health"), Mapping) else None,
             "theme_strength": dict(raw["theme_strength"]) if isinstance(raw.get("theme_strength"), Mapping) else None,
-            "discovery_confidence": raw.get("discovery_confidence"),
-            "nomination_eligible": bool(raw.get("nomination_eligible", True)),
+            "discovery_confidence": raw.get("discovery_confidence"), "nomination_eligible": bool(raw.get("nomination_eligible", True)),
         }
         if candidate["nomination_eligible"]:
-            candidates.append(candidate)
-            confirmed_seen.add(symbol)
+            candidates.append(candidate); confirmed_seen.add(symbol)
         else:
-            candidate["record_type"] = "RESEARCH_EVIDENCE_ONLY"
-            research_evidence_pool.append(candidate)
-    expired_candidates: list[dict[str, Any]] = []
+            candidate["record_type"] = "RESEARCH_EVIDENCE_ONLY"; research_evidence_pool.append(candidate)
+    expired_candidates = []
     for symbol, prior in previous.items():
-        if symbol in confirmed_seen:
-            continue
+        if symbol in confirmed_seen: continue
         expires_at = prior.get("expires_at")
-        if expires_at and now <= _utc(expires_at):
-            candidates.append(dict(prior))
-            continue
-        stale = dict(prior)
-        stale["previous_status"] = prior.get("discovery_status") or prior.get("previous_status") or "NOT_REPORTED"
-        stale["discovery_status"] = "STALE"
-        stale["expired_at"] = _iso(now)
-        expired_candidates.append(stale)
-    return {
-        "schema_version": SCHEMA_VERSION,
-        "generated_at": _iso(now),
-        "schedule": "Saturday 20:00 America/Chicago",
-        "paper_trade_mode": True,
-        "advisory_only": True,
-        "live_trading_enabled": False,
-        "broker_execution_enabled": False,
-        "order_placement_enabled": False,
-        "capital_movement_enabled": False,
-        "candidates": sorted(candidates, key=lambda row: row["underlying_symbol"]),
-        "research_evidence_pool": sorted(research_evidence_pool, key=lambda row: row["underlying_symbol"]),
-        "expired_candidates": sorted(expired_candidates, key=lambda row: row["underlying_symbol"]),
-    }
+        if expires_at and now <= _utc(expires_at): candidates.append(dict(prior)); continue
+        stale = dict(prior); stale["previous_status"] = prior.get("discovery_status") or prior.get("previous_status") or "NOT_REPORTED"; stale["discovery_status"] = "STALE"; stale["expired_at"] = _iso(now); expired_candidates.append(stale)
+    return {"schema_version": SCHEMA_VERSION, "generated_at": _iso(now), "schedule": "Saturday 20:00 America/Chicago", "paper_trade_mode": True, "advisory_only": True, "live_trading_enabled": False, "broker_execution_enabled": False, "order_placement_enabled": False, "capital_movement_enabled": False, "candidates": sorted(candidates, key=lambda row: row["underlying_symbol"]), "research_evidence_pool": sorted(research_evidence_pool, key=lambda row: row["underlying_symbol"]), "expired_candidates": sorted(expired_candidates, key=lambda row: row["underlying_symbol"])}
 
 
 def _strategy_evidence_projection(evidence: Mapping[str, Any]) -> dict[str, Any]:
-    projected = {
-        "source": evidence["source"],
-        "mentioned_on": evidence["mentioned_on"],
-        "themes": list(evidence.get("themes", [])),
-    }
+    projected = {"source": evidence["source"], "mentioned_on": evidence["mentioned_on"], "themes": list(evidence.get("themes", []))}
     for field in (*CATALYST_FLAG_FIELDS, *CATALYST_METADATA_FIELDS):
-        if field in evidence:
-            projected[field] = deepcopy(evidence[field])
+        if field in evidence: projected[field] = deepcopy(evidence[field])
     return projected
 
 
 def build_swing_projection(report: Mapping[str, Any]) -> dict[str, Any]:
     candidates = []
     for row in report.get("candidates", []):
-        if row.get("nomination_eligible") is False:
-            continue
+        if row.get("nomination_eligible") is False: continue
         status = str(row.get("discovery_status") or "").upper()
-        if status == "NEW":
-            status = "EMERGING"
-        if status not in SWING_STATUSES:
-            continue
-        candidate = {
-            "underlying_symbol": _symbol(row.get("underlying_symbol")),
-            "discovery_status": status,
-            "weekly_lifecycle_status": row.get("discovery_status"),
-            "themes": list(row.get("themes") or []),
-            "evidence_sources": [
-                _strategy_evidence_projection(evidence)
-                for evidence in row.get("source_evidence", [])
-                if isinstance(evidence, Mapping)
-            ],
-        }
-        if isinstance(row.get("financial_health"), Mapping):
-            candidate["financial_health"] = dict(row["financial_health"])
-        if isinstance(row.get("theme_strength"), Mapping):
-            candidate["theme_strength"] = dict(row["theme_strength"])
+        if status == "NEW": status = "EMERGING"
+        if status not in SWING_STATUSES: continue
+        candidate = {"underlying_symbol": _symbol(row.get("underlying_symbol")), "discovery_status": status, "weekly_lifecycle_status": row.get("discovery_status"), "themes": list(row.get("themes") or []), "evidence_sources": [_strategy_evidence_projection(e) for e in row.get("source_evidence", []) if isinstance(e, Mapping)]}
+        if isinstance(row.get("financial_health"), Mapping): candidate["financial_health"] = dict(row["financial_health"])
+        if isinstance(row.get("theme_strength"), Mapping): candidate["theme_strength"] = dict(row["theme_strength"])
         candidates.append(candidate)
     return {"schema_version": "1.0", "strategy_id": SWING_STRATEGY_ID, "candidates": candidates}
 
@@ -385,53 +285,19 @@ def build_swing_projection(report: Mapping[str, Any]) -> dict[str, Any]:
 def build_dividend_projection(report: Mapping[str, Any]) -> dict[str, Any]:
     candidates = []
     for row in report.get("candidates", []):
-        if row.get("discovery_status") not in ACTIVE_STATUSES:
-            continue
-        candidate = {
-            "underlying_symbol": _symbol(row.get("underlying_symbol")),
-            "discovery_status": row.get("discovery_status"),
-            "themes": list(row.get("themes") or []),
-            "sector": row.get("sector"),
-            "requires_dividend_income_mapping": True,
-            "promotion_authority": DIVIDEND_STRATEGY_ID,
-            "nomination_eligible": bool(row.get("nomination_eligible", True)),
-            "source_evidence": list(row.get("source_evidence") or []),
-        }
-        if isinstance(row.get("financial_health"), Mapping):
-            candidate["financial_health"] = dict(row["financial_health"])
-        if isinstance(row.get("theme_strength"), Mapping):
-            candidate["theme_strength"] = dict(row["theme_strength"])
+        if row.get("discovery_status") not in ACTIVE_STATUSES: continue
+        candidate = {"underlying_symbol": _symbol(row.get("underlying_symbol")), "discovery_status": row.get("discovery_status"), "themes": list(row.get("themes") or []), "sector": row.get("sector"), "requires_dividend_income_mapping": True, "promotion_authority": DIVIDEND_STRATEGY_ID, "nomination_eligible": bool(row.get("nomination_eligible", True)), "source_evidence": list(row.get("source_evidence") or [])}
+        if isinstance(row.get("financial_health"), Mapping): candidate["financial_health"] = dict(row["financial_health"])
+        if isinstance(row.get("theme_strength"), Mapping): candidate["theme_strength"] = dict(row["theme_strength"])
         candidates.append(candidate)
-    return {
-        "schema_version": "1.0",
-        "strategy_id": DIVIDEND_STRATEGY_ID,
-        "paper_trade_mode": True,
-        "advisory_only": True,
-        "candidates": candidates,
-    }
+    return {"schema_version": "1.0", "strategy_id": DIVIDEND_STRATEGY_ID, "paper_trade_mode": True, "advisory_only": True, "candidates": candidates}
 
 
-def write_weekly_discovery(
-    root: str | Path,
-    observations: Iterable[Mapping[str, Any]],
-    previous_candidates: Iterable[Mapping[str, Any]] = (),
-    *,
-    generated_at: str | datetime,
-) -> dict[str, Any]:
-    root_path = Path(root)
-    results = root_path / "results"
-    state = root_path / "state"
-    results.mkdir(parents=True, exist_ok=True)
-    state.mkdir(parents=True, exist_ok=True)
+def write_weekly_discovery(root: str | Path, observations: Iterable[Mapping[str, Any]], previous_candidates: Iterable[Mapping[str, Any]] = (), *, generated_at: str | datetime) -> dict[str, Any]:
+    root_path = Path(root); results = root_path / "results"; state = root_path / "state"; results.mkdir(parents=True, exist_ok=True); state.mkdir(parents=True, exist_ok=True)
     report = build_weekly_discovery(observations, previous_candidates, generated_at=generated_at)
-    outputs = {
-        results / "enterprise_weekly_market_discovery.json": report,
-        results / "enterprise_swing_discovery_bucket.json": build_swing_projection(report),
-        results / "enterprise_dividend_discovery_bucket.json": build_dividend_projection(report),
-    }
-    for path, payload in outputs.items():
-        path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    outputs = {results / "enterprise_weekly_market_discovery.json": report, results / "enterprise_swing_discovery_bucket.json": build_swing_projection(report), results / "enterprise_dividend_discovery_bucket.json": build_dividend_projection(report)}
+    for path, payload in outputs.items(): path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     with (state / "enterprise_market_discovery_history.jsonl").open("a", encoding="utf-8") as handle:
-        for candidate in [*report["candidates"], *report["research_evidence_pool"], *report["expired_candidates"]]:
-            handle.write(json.dumps({"observed_at": report["generated_at"], **candidate}, sort_keys=True) + "\n")
+        for candidate in [*report["candidates"], *report["research_evidence_pool"], *report["expired_candidates"]]: handle.write(json.dumps({"observed_at": report["generated_at"], **candidate}, sort_keys=True) + "\n")
     return report
