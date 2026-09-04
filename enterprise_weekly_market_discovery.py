@@ -254,6 +254,7 @@ def build_weekly_discovery(
             "evidence_stance_summary": evidence_analysis["stance_summary"],
             "attention_acceleration": attention,
             "market_evidence": raw.get("market_evidence"),
+            "financial_health": dict(raw["financial_health"]) if isinstance(raw.get("financial_health"), Mapping) else None,
             "discovery_confidence": raw.get("discovery_confidence"),
             "nomination_eligible": bool(raw.get("nomination_eligible", True)),
         }
@@ -302,7 +303,7 @@ def build_swing_projection(report: Mapping[str, Any]) -> dict[str, Any]:
             status = "EMERGING"
         if status not in SWING_STATUSES:
             continue
-        candidates.append({
+        candidate = {
             "underlying_symbol": _symbol(row.get("underlying_symbol")),
             "discovery_status": status,
             "weekly_lifecycle_status": row.get("discovery_status"),
@@ -317,7 +318,10 @@ def build_swing_projection(report: Mapping[str, Any]) -> dict[str, Any]:
                 }
                 for evidence in row.get("source_evidence", [])
             ],
-        })
+        }
+        if isinstance(row.get("financial_health"), Mapping):
+            candidate["financial_health"] = dict(row["financial_health"])
+        candidates.append(candidate)
     return {"schema_version": "1.0", "strategy_id": SWING_STRATEGY_ID, "candidates": candidates}
 
 
@@ -326,7 +330,7 @@ def build_dividend_projection(report: Mapping[str, Any]) -> dict[str, Any]:
     for row in report.get("candidates", []):
         if row.get("discovery_status") not in ACTIVE_STATUSES:
             continue
-        candidates.append({
+        candidate = {
             "underlying_symbol": _symbol(row.get("underlying_symbol")),
             "discovery_status": row.get("discovery_status"),
             "themes": list(row.get("themes") or []),
@@ -335,7 +339,10 @@ def build_dividend_projection(report: Mapping[str, Any]) -> dict[str, Any]:
             "promotion_authority": DIVIDEND_STRATEGY_ID,
             "nomination_eligible": bool(row.get("nomination_eligible", True)),
             "source_evidence": list(row.get("source_evidence") or []),
-        })
+        }
+        if isinstance(row.get("financial_health"), Mapping):
+            candidate["financial_health"] = dict(row["financial_health"])
+        candidates.append(candidate)
     return {
         "schema_version": "1.0",
         "strategy_id": DIVIDEND_STRATEGY_ID,
