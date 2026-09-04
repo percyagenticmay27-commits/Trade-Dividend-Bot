@@ -112,13 +112,31 @@ def _detail_value(value: Any) -> str:
 
 
 def _gate_card(label: str, gate: Mapping[str, Any]) -> str:
+    """Render with the exact Swing Promotion Readiness card structure/classes."""
     status, css = _gate_status(gate)
     lines: list[str] = []
     if gate:
-        for field_label, keys in (
-            ("Value", ("value",)),
-            ("Threshold", ("threshold",)),
-            ("Reason", ("reason",)),
+        if "value" in gate:
+            value = gate.get("value")
+            lines.append(
+                "<div class='watchlist-promotion-line'><span>Value:</span> <strong>"
+                + (_detail_value(value) if value is not None else "—")
+                + "</strong></div>"
+            )
+        if "threshold" in gate:
+            threshold = gate.get("threshold")
+            lines.append(
+                "<div class='watchlist-promotion-line'><span>Threshold:</span> <strong>"
+                + (_detail_value(threshold) if threshold is not None else "—")
+                + "</strong></div>"
+            )
+        if gate.get("reason") not in (None, ""):
+            lines.append(
+                "<div class='watchlist-promotion-line watchlist-promotion-reason'><span>Reason:</span> "
+                + _detail_value(gate.get("reason"))
+                + "</div>"
+            )
+        for evidence_label, keys in (
             ("Evidence source", ("evidence_source", "source", "source_path")),
             ("Provenance", ("provenance", "evidence_provenance")),
             ("As-of", ("generated_at", "generated_at_utc", "as_of")),
@@ -126,25 +144,27 @@ def _gate_card(label: str, gate: Mapping[str, Any]) -> str:
             raw = next((gate.get(key) for key in keys if gate.get(key) not in (None, "", [], {})), None)
             if raw is not None:
                 lines.append(
-                    "<div class='dividend-promotion-line'><span>"
-                    + html.escape(field_label)
-                    + ":</span> <strong>"
+                    "<div class='watchlist-promotion-line watchlist-promotion-evidence'><span>"
+                    + html.escape(evidence_label)
+                    + ":</span> "
                     + _detail_value(raw)
-                    + "</strong></div>"
+                    + "</div>"
                 )
     if not lines:
-        lines.append("<div class='dividend-promotion-note'>Authoritative gate evidence is unavailable.</div>")
+        lines.append("<div class='watchlist-qa-note'>Authoritative gate evidence is unavailable.</div>")
     return (
-        "<article class='dividend-promotion-gate-card'>"
-        "<div class='dividend-promotion-gate-header'>"
-        f"<strong>{html.escape(label)}</strong><span class='watchlist-status {css}'>{html.escape(status)}</span>"
+        "<article class='watchlist-promotion-gate-card'>"
+        "<div class='watchlist-promotion-gate-header'>"
+        f"<strong>{html.escape(label)}</strong> "
+        f"<span class='watchlist-status {css}'>{html.escape(status)}</span>"
         "</div>"
-        f"<div class='dividend-promotion-gate-content'>{''.join(lines)}</div>"
+        f"<div class='watchlist-promotion-gate-content'>{''.join(lines)}</div>"
         "</article>"
     )
 
 
 def _promotion_detail_body(item: Mapping[str, Any], symbol: str) -> str:
+    """Match the Swing collapsible Promotion Readiness panel visual specification."""
     readiness = _mapping(item.get("promotion_readiness"))
     gates = (
         ("Trusted Sources / Evidence", _gate(item, readiness, "trusted_sources", "source_trust", "evidence_quality")),
@@ -162,18 +182,20 @@ def _promotion_detail_body(item: Mapping[str, Any], symbol: str) -> str:
             f"<li>{html.escape(str(reason))}</li>" for reason in blockers if str(reason).strip()
         ) + "</ul>"
     elif readiness.get("promotion_ready") is True:
-        blocking = "<div class='dividend-promotion-note'>No blocking reasons were published.</div>"
+        blocking = "<div class='watchlist-qa-note'>No blocking reasons were published.</div>"
     else:
-        blocking = "<div class='dividend-promotion-note'>No authoritative blocking reasons were published.</div>"
+        blocking = "<div class='watchlist-qa-note'>No authoritative blocking reasons were published.</div>"
     return (
-        "<div class='dividend-promotion-panel'>"
-        "<div class='dividend-promotion-panel-heading'>"
+        "<div class='watchlist-promotion-panel dividend-promotion-spec'>"
+        "<div class='watchlist-promotion-panel-heading'>"
         f"<strong>Promotion Readiness — {html.escape(symbol)}</strong>"
-        "<span>Click the candidate, Entry Status, or Entry Score value to collapse.</span>"
+        "<span>Click Candidate, Entry Status, or Entry Score to collapse.</span>"
         "</div>"
-        "<div class='dividend-promotion-section-title'>Dividend pre-trade Promotion Readiness</div>"
-        f"<div class='dividend-promotion-gates'>{cards}</div>"
-        "<div class='dividend-promotion-blockers'><strong>Blocking reasons</strong>"
+        "<div class='watchlist-promotion-section-title'>Seven-gate Promotion Readiness</div>"
+        "<div class='watchlist-promotion-gates-wrap'>"
+        f"<div class='watchlist-promotion-gates'>{cards}</div>"
+        "</div>"
+        "<div class='watchlist-promotion-blockers'><strong>Blocking reasons</strong>"
         f"{blocking}</div></div>"
     )
 
@@ -313,6 +335,6 @@ def render_dividend_watchlist_panel(row: Mapping[str, Any]) -> str:
 def dividend_watchlist_ui_css() -> str:
     return """
 <style>
-.dividend-watch-detail-toggle{appearance:none;border:0;background:transparent;padding:0;margin:0;font:inherit;color:inherit;text-align:inherit;cursor:pointer}.dividend-watch-detail-toggle:focus-visible{outline:2px solid #5925dc;outline-offset:2px;border-radius:6px}.dividend-watch-detail-toggle .watchlist-candidate-name{display:block}.dividend-watch-detail-row[hidden]{display:none}.dividend-watch-detail-row td{padding:0!important;background:#f8fbff;white-space:normal!important;border-bottom:1px solid #dbe4f0}.dividend-promotion-panel{margin:8px 10px 12px;padding:12px;border:1px solid #cfe0f5;border-radius:10px;background:linear-gradient(180deg,#f8fbff,#fff);box-shadow:inset 0 1px 0 #fff;font-size:.76rem}.dividend-promotion-panel-heading{display:flex;justify-content:space-between;gap:14px;align-items:center;padding-bottom:8px;margin-bottom:8px;border-bottom:1px solid #dbe4f0}.dividend-promotion-panel-heading>strong{font-size:.92rem;color:#10213b}.dividend-promotion-panel-heading>span{font-size:.70rem;color:#64748b}.dividend-promotion-section-title{font-size:.78rem;font-weight:800;color:#10213b;margin:0 0 8px}.dividend-promotion-gates{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:8px;width:100%;min-width:0}.dividend-promotion-gate-card{border:1px solid #dbe4f0;border-radius:8px;background:#fff;padding:9px;min-width:0}.dividend-promotion-gate-header{display:flex;justify-content:space-between;gap:5px;align-items:flex-start;margin-bottom:7px}.dividend-promotion-gate-header>strong{font-size:.72rem;line-height:1.2}.dividend-promotion-gate-card .watchlist-status{padding:3px 6px;font-size:.64rem}.dividend-promotion-gate-content{display:grid;gap:4px;color:#334155}.dividend-promotion-line{font-size:.69rem;line-height:1.28;white-space:normal;overflow-wrap:anywhere}.dividend-promotion-line>span{color:#64748b;font-weight:600}.dividend-promotion-line>strong{font-weight:600;color:#334155}.dividend-promotion-note{color:#64748b;white-space:normal}.dividend-promotion-blockers{margin-top:8px;padding:8px 10px;border-radius:7px;background:#fff4f2;border:1px solid #fee4e2}.dividend-promotion-blockers>strong{color:#b42318;font-size:.72rem}@media(max-width:1200px){.dividend-promotion-gates{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:800px){.dividend-promotion-gates{grid-template-columns:repeat(2,minmax(0,1fr))}.dividend-promotion-panel-heading{display:block}}@media(max-width:520px){.dividend-promotion-gates{grid-template-columns:1fr}}
+.dividend-watch-detail-toggle{appearance:none;border:0;background:transparent;padding:0;margin:0;font:inherit;color:inherit;text-align:inherit;cursor:pointer}.dividend-watch-detail-toggle:focus-visible{outline:2px solid #5925dc;outline-offset:2px;border-radius:6px}.dividend-watch-detail-toggle .watchlist-candidate-name{display:block}.dividend-watch-detail-row[hidden]{display:none}.dividend-watch-detail-row td{padding:0!important;background:#f8fbff;white-space:normal!important;border-bottom:1px solid #dbe4f0}.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:repeat(7,minmax(0,1fr))}.dividend-watchlist .watchlist-promotion-gate-header>strong{font-size:.70rem}.dividend-watchlist .watchlist-promotion-panel{margin:8px 10px 12px}.dividend-watchlist .watchlist-promotion-blockers{margin-top:8px}@media(max-width:1400px){.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:900px){.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:1fr}}
 </style>
 """
