@@ -52,12 +52,11 @@ def _merge_fresh_shared_evidence(
         if retained_themes or fresh_themes:
             row["themes"] = sorted(set(retained_themes + fresh_themes))
 
-        retained_evidence = row.get("source_evidence") or row.get("evidence_sources") or []
-        fresh_evidence = fresh.get("source_evidence") or fresh.get("evidence_sources") or []
-        merged_evidence = _normalize_evidence([
-            *retained_evidence if isinstance(retained_evidence, list) else [],
-            *fresh_evidence if isinstance(fresh_evidence, list) else [],
-        ])
+        retained_evidence_raw = row.get("source_evidence") or row.get("evidence_sources") or []
+        fresh_evidence_raw = fresh.get("source_evidence") or fresh.get("evidence_sources") or []
+        retained_evidence = retained_evidence_raw if isinstance(retained_evidence_raw, list) else []
+        fresh_evidence = fresh_evidence_raw if isinstance(fresh_evidence_raw, list) else []
+        merged_evidence = _normalize_evidence([*retained_evidence, *fresh_evidence])
         if merged_evidence:
             row["source_evidence"] = merged_evidence
             analysis = _evidence_analysis(merged_evidence)
