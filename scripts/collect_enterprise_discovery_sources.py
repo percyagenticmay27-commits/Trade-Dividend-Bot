@@ -17,6 +17,7 @@ from enterprise_discovery_catalyst_evidence import attach_candidate_catalyst_cla
 from enterprise_discovery_financial_health import attach_candidate_financial_health
 from enterprise_discovery_source_collector import collect_credential_free_observations, load_json_if_present
 from enterprise_discovery_market_evidence import attach_candidate_market_evidence
+from enterprise_discovery_sec_catalyst_events import enrich_report_with_sec_reviewed_events
 from enterprise_discovery_theme_strength import attach_candidate_theme_strength
 from market_data_provider import MarketDataService
 
@@ -91,6 +92,11 @@ def _hydrate_retained_theme_context(
     return report
 
 
+def _active_candidate_symbols(root: Path) -> set[str]:
+    """Backward-compatible symbol-only view of retained active candidates."""
+    return set(_active_candidates(root))
+
+
 def _refresh_financial_health_for_active_candidates(
     report: dict,
     service: MarketDataService,
@@ -141,11 +147,12 @@ def _refresh_shared_evidence_for_active_candidates(
         for row, original in original_states:
             row["nomination_eligible"] = original
 
-    # Source-specific extraction is deliberately fail-closed: only explicit,
-    # reviewed structured metadata can create catalyst_events. Headline text,
-    # broad provider topics, forms, and sentiment labels never create a confirmed
-    # catalyst by themselves. The governed classifier remains the final scoring
-    # gate before Theme Strength consumes the evidence.
+    # SEC evidence first passes a source-specific producer. Generic forms do not
+    # create events: only explicit reviewed SEC event metadata can populate the
+    # reviewed_catalyst_events contract. The generic structured extractor and the
+    # governed classifier then independently validate those events before Theme
+    # Strength can consume them.
+    report = enrich_report_with_sec_reviewed_events(report)
     report = enrich_observations_with_catalyst_events(report)
     report = attach_candidate_catalyst_classification(report)
     return attach_candidate_theme_strength(report, generated_at=generated_at)
