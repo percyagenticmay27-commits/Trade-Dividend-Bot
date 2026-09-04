@@ -18,6 +18,7 @@ from enterprise_discovery_financial_health import attach_candidate_financial_hea
 from enterprise_discovery_source_collector import collect_credential_free_observations, load_json_if_present
 from enterprise_discovery_market_evidence import attach_candidate_market_evidence
 from enterprise_discovery_sec_catalyst_events import enrich_report_with_sec_reviewed_events
+from enterprise_discovery_sec_event_review_candidates import enrich_report_with_sec_event_review_candidates
 from enterprise_discovery_targeted_sec_enrichment import enrich_active_candidates_with_sec_submissions
 from enterprise_discovery_theme_strength import attach_candidate_theme_strength
 from market_data_provider import MarketDataService
@@ -143,9 +144,10 @@ def _refresh_shared_evidence_for_active_candidates(
         for row, original in original_states:
             row["nomination_eligible"] = original
 
-    # SEC evidence first passes a source-specific producer. Generic forms and SEC
-    # item codes do not create events. Only explicit reviewed SEC event metadata can
-    # populate reviewed_catalyst_events; downstream layers independently validate it.
+    # SEC item codes first become non-scoring REVIEW_REQUIRED research candidates.
+    # They still cannot create reviewed/scored events. Only explicit reviewed SEC
+    # event metadata can cross the existing producer/extractor/classifier boundary.
+    report = enrich_report_with_sec_event_review_candidates(report)
     report = enrich_report_with_sec_reviewed_events(report)
     report = enrich_observations_with_catalyst_events(report)
     report = attach_candidate_catalyst_classification(report)
