@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from enterprise_discovery_catalyst_evidence import attach_candidate_catalyst_classification
 from enterprise_discovery_financial_health import attach_candidate_financial_health
 from enterprise_discovery_source_collector import collect_credential_free_observations, load_json_if_present
 from enterprise_discovery_market_evidence import attach_candidate_market_evidence
@@ -138,6 +139,10 @@ def _refresh_shared_evidence_for_active_candidates(
     finally:
         for row, original in original_states:
             row["nomination_eligible"] = original
+
+    # Catalyst metadata is governed before Theme Strength consumes it. This layer
+    # strips unreviewed claims and never infers a catalyst from headline text.
+    report = attach_candidate_catalyst_classification(report)
     return attach_candidate_theme_strength(report, generated_at=generated_at)
 
 
