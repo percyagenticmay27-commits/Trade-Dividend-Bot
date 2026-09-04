@@ -49,8 +49,8 @@ def _clamp(value: float) -> float:
 
 
 def _linear(value: float, low: float, high: float) -> float:
-    if high <= low:
-        raise ValueError("high must be greater than low")
+    if high == low:
+        raise ValueError("high and low must differ")
     return _clamp((value - low) * 100.0 / (high - low))
 
 
