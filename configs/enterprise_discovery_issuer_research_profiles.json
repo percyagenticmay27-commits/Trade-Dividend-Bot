@@ -1,0 +1,49 @@
+{
+  "schema_version": "1.0",
+  "policy": "VERIFIED_ISSUER_PRIMARY_SOURCES_NONSCORING_UNTIL_EXPLICIT_REVIEW",
+  "auto_discover_unverified_sources": false,
+  "profiles": [
+    {
+      "symbol": "NVDA",
+      "issuer_name": "NVIDIA Corporation",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "status": "VERIFIED_ACTIVE",
+      "verified_domains": ["investor.nvidia.com", "nvidianews.nvidia.com", "nvidia.com"],
+      "research_pages": [
+        {"role": "investor_relations", "url": "https://investor.nvidia.com/"},
+        {"role": "rss_directory", "url": "https://investor.nvidia.com/investor-resources/rss/default.aspx"},
+        {"role": "official_newsroom", "url": "https://nvidianews.nvidia.com/"},
+        {"role": "newsroom_rss_directory", "url": "https://nvidianews.nvidia.com/rss"}
+      ],
+      "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "presentation", "product_announcement", "company_news", "sec_filing"],
+      "scoring_eligible": false,
+      "activation_note": "Official NVIDIA investor/newsroom sources verified; evidence remains non-scoring until explicit governed review."
+    },
+    {
+      "symbol": "NFLX",
+      "issuer_name": "Netflix, Inc.",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "status": "VERIFIED_ACTIVE",
+      "verified_domains": ["ir.netflix.net", "netflix.net", "s22.q4cdn.com"],
+      "research_pages": [
+        {"role": "investor_relations", "url": "https://ir.netflix.net/"},
+        {"role": "financial_releases", "url": "https://ir.netflix.net/investor-news-and-events/financial-releases/default.aspx"},
+        {"role": "investor_events", "url": "https://ir.netflix.net/investor-news-and-events/investor-events/default.aspx"},
+        {"role": "sec_filings", "url": "https://ir.netflix.net/financials/sec-filings/default.aspx"}
+      ],
+      "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "shareholder_letter", "financial_statement", "company_news", "sec_filing"],
+      "scoring_eligible": false,
+      "activation_note": "Official Netflix investor relations sources verified; evidence remains non-scoring until explicit governed review."
+    }
+  ],
+  "discovery_requirements": {
+    "official_issuer_identity_required": true,
+    "https_required": true,
+    "verified_domain_required": true,
+    "published_timestamp_required_for_evidence": true,
+    "explicit_symbol_mapping_required": true,
+    "headline_alone_never_confirms_favorable_event": true,
+    "issuer_publication_alone_does_not_make_event_favorable": true,
+    "new_profiles_require_verification_before_activation": true
+  }
+}
