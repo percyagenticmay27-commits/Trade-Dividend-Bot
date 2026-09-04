@@ -94,11 +94,7 @@ def _rows(items: list[Mapping[str, Any]]) -> str:
         if isinstance(source_value, list):
             evidence_sources = ", ".join(str(value) for value in source_value if value)
         else:
-            evidence_sources = _first(
-                item,
-                ("evidence_source", "source", "source_path"),
-                "",
-            )
+            evidence_sources = _first(item, ("evidence_source", "source", "source_path"), "")
         evidence_parts = [value for value in (evidence_sources, evidence_at) if value]
         evidence = " · ".join(evidence_parts) if evidence_parts else "Not reported"
         result.append(
@@ -119,207 +115,226 @@ def _rows(items: list[Mapping[str, Any]]) -> str:
     return "".join(result)
 
 
-
 def _lifecycle(item: Mapping[str, Any]) -> str:
-    return _first(
-        item,
-        ("lifecycle_status", "lifecycle_state", "watchlist_status", "status"),
-        "Not reported",
-    ).upper()
+    return _first(item, ("lifecycle_status", "lifecycle_state", "watchlist_status", "status"), "Not reported").upper()
 
 
-def _pipeline_cell(value: Any) -> str:
+def _pipeline_cell(value: Any, *, missing: str = "—") -> str:
     if value in (None, "", [], {}):
-        return _missing("Not reported")
+        return html.escape(missing)
     if isinstance(value, bool):
         return "YES" if value else "NO"
     return html.escape(str(value))
 
 
-def _readiness_gate(
-    readiness: Mapping[str, Any],
-    key: str,
-) -> str:
-    gate = readiness.get(key)
+def _gate_status(gate: Any) -> tuple[str, str]:
     if not isinstance(gate, Mapping):
-        return (
-            "<span class='watchlist-status watchlist-status-neutral'>PENDING</span>"
-            "<div class='watchlist-not-reported'>Not reported</div>"
-        )
-
+        return "PENDING", "watchlist-status-neutral"
     status = str(gate.get("status") or "PENDING").strip().upper()
     if status == "PASS":
-        status_class = "watchlist-status-ready"
-    elif status == "FAIL":
-        status_class = "watchlist-status-blocked"
+        return status, "watchlist-status-ready"
+    if status == "FAIL":
+        return status, "watchlist-status-blocked"
+    return "PENDING", "watchlist-status-neutral"
+
+
+def _exact_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
+
+
+def _compact_number(value: Any, *, one_decimal: bool = False) -> str | None:
+    number = _number(value)
+    if number is None:
+        return None
+    if one_decimal:
+        return f"{number:,.1f}"
+    if float(number).is_integer():
+        return f"{int(number):,}"
+    return f"{number:g}"
+
+
+def _evidence_values(gate: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    fields: list[tuple[str, Any]] = []
+    for label, keys in (
+        ("Evidence availability", ("evidence_availability", "evidence_available", "evidence_status")),
+        ("Evidence source", ("evidence_source", "source", "source_path")),
+        ("Provenance", ("provenance", "evidence_provenance")),
+        ("Sources", ("sources", "source_names", "source_details")),
+    ):
+        for key in keys:
+            value = gate.get(key)
+            if value not in (None, "", [], {}):
+                fields.append((label, value))
+                break
+    return fields
+
+
+def _detail_value(value: Any) -> str:
+    if isinstance(value, (list, tuple)):
+        return ", ".join(html.escape(str(item)) for item in value if item not in (None, "")) or "—"
+    if isinstance(value, Mapping):
+        return "; ".join(
+            f"{html.escape(str(key))}: {html.escape(str(item))}"
+            for key, item in value.items()
+            if item not in (None, "", [], {})
+        ) or "—"
+    return html.escape(_exact_value(value))
+
+
+def _qa_rows(gate: Any, *, include_evidence: bool = True) -> str:
+    if not isinstance(gate, Mapping):
+        return "<div class='watchlist-qa-note'>Authoritative gate evidence is unavailable.</div>"
+    status, _ = _gate_status(gate)
+    rows: list[tuple[str, Any]] = [("Status", status)]
+    if "value" in gate:
+        rows.append(("Exact value", gate.get("value")))
+    if "threshold" in gate:
+        rows.append(("Threshold", gate.get("threshold")))
+    if gate.get("reason") not in (None, ""):
+        rows.append(("Reason", gate.get("reason")))
+    if include_evidence:
+        rows.extend(_evidence_values(gate))
+    return "<dl class='watchlist-qa-list'>" + "".join(
+        f"<div><dt>{html.escape(label)}</dt><dd>{_detail_value(value) if value is not None else '—'}</dd></div>"
+        for label, value in rows
+    ) + "</dl>"
+
+
+def _details(summary_html: str, body_html: str, *, label: str) -> str:
+    return (
+        "<details class='watchlist-qa-details'>"
+        f"<summary aria-label='{html.escape(label, quote=True)}'>{summary_html}</summary>"
+        f"<div class='watchlist-qa-body'>{body_html}</div></details>"
+    )
+
+
+def _gate_cell(readiness: Mapping[str, Any], key: str, *, mode: str) -> str:
+    gate = readiness.get(key)
+    status, status_class = _gate_status(gate)
+    if isinstance(gate, Mapping):
+        value = gate.get("value")
     else:
-        status = "PENDING"
+        value = None
+    if status == "PENDING":
+        summary = f"<span class='watchlist-status {status_class}'>PENDING</span>"
+    elif mode == "status":
+        summary = f"<span class='watchlist-status {status_class}'>{html.escape(status)}</span>"
+    else:
+        compact = _compact_number(value, one_decimal=(mode == "oq"))
+        prefix = f"{html.escape(compact)} " if compact is not None else ""
+        summary = f"<span class='watchlist-status {status_class}'>{prefix}{html.escape(status)}</span>"
+    return _details(summary, _qa_rows(gate), label=f"Open {key.replace('_', ' ')} QA evidence")
+
+
+def _promotion_cell(readiness: Mapping[str, Any] | None) -> str:
+    if readiness is None:
+        summary = "<span class='watchlist-status watchlist-status-neutral'>PENDING</span>"
+        body = "<div class='watchlist-qa-note'>Authoritative Promotion Readiness evidence is unavailable.</div>"
+        return _details(summary, body, label="Open Promotion QA evidence")
+
+    if "promotion_ready" not in readiness or readiness.get("promotion_ready") is None:
+        promotion = "PENDING"
         status_class = "watchlist-status-neutral"
-
-    value = gate.get("value")
-    threshold = gate.get("threshold")
-    reason = str(gate.get("reason") or "").strip()
-
-    detail = ""
-    if value is not None:
-        if isinstance(value, bool):
-            value_text = "true" if value else "false"
-        else:
-            value_text = str(value)
-
-        if threshold is not None and not isinstance(threshold, bool):
-            detail = (
-                "<div class='watchlist-gate-value'>"
-                f"{html.escape(value_text)} / {html.escape(str(threshold))}"
-                "</div>"
-            )
-        else:
-            detail = (
-                "<div class='watchlist-gate-value'>"
-                f"{html.escape(value_text)}"
-                "</div>"
-            )
+    elif readiness.get("promotion_ready") is True:
+        promotion = "YES"
+        status_class = "watchlist-status-ready"
     else:
-        detail = "<div class='watchlist-not-reported'>Not reported</div>"
+        promotion = "NO"
+        status_class = "watchlist-status-blocked"
 
-    title = f" title='{html.escape(reason, quote=True)}'" if reason else ""
-
-    return (
-        f"<span class='watchlist-status {status_class}'{title}>"
-        f"{html.escape(status)}</span>"
-        + detail
+    gate_labels = (
+        ("Trusted Sources", "trusted_sources"),
+        ("Financial Health", "financial_health"),
+        ("Theme Strength", "theme_strength"),
+        ("Opportunity Quality", "opportunity_quality"),
+        ("Thesis Integrity", "thesis_integrity"),
+        ("Entry Readiness", "entry"),
     )
-
-
-def _promotion_ready_cell(readiness: Mapping[str, Any]) -> str:
-    if "promotion_ready" not in readiness:
-        return (
-            "<span class='watchlist-status watchlist-status-neutral'>PENDING</span>"
-            "<div class='watchlist-not-reported'>Not reported</div>"
+    gates = []
+    for label, key in gate_labels:
+        gate = readiness.get(key)
+        status, gate_class = _gate_status(gate)
+        value = gate.get("value") if isinstance(gate, Mapping) else None
+        threshold = gate.get("threshold") if isinstance(gate, Mapping) else None
+        reason = gate.get("reason") if isinstance(gate, Mapping) else None
+        detail_parts = []
+        if value is not None:
+            detail_parts.append(f"value {_detail_value(value)}")
+        if threshold is not None:
+            detail_parts.append(f"threshold {_detail_value(threshold)}")
+        if reason not in (None, ""):
+            detail_parts.append(f"reason {_detail_value(reason)}")
+        evidence = ""
+        if isinstance(gate, Mapping):
+            evidence_fields = _evidence_values(gate)
+            if evidence_fields:
+                evidence = "<div class='watchlist-qa-evidence'>" + " · ".join(
+                    f"{html.escape(name)}: {_detail_value(raw)}" for name, raw in evidence_fields
+                ) + "</div>"
+        gates.append(
+            "<li>"
+            f"<strong>{html.escape(label)}</strong> "
+            f"<span class='watchlist-status {gate_class}'>{html.escape(status)}</span>"
+            + (f"<div>{' · '.join(detail_parts)}</div>" if detail_parts else "")
+            + evidence
+            + "</li>"
         )
 
-    ready = readiness.get("promotion_ready")
-    if ready is True:
-        return (
-            "<span class='watchlist-status watchlist-status-ready'>YES</span>"
-        )
-    if ready is False:
-        return (
-            "<span class='watchlist-status watchlist-status-blocked'>NO</span>"
-        )
-
-    return (
-        "<span class='watchlist-status watchlist-status-neutral'>PENDING</span>"
-        "<div class='watchlist-not-reported'>Not reported</div>"
-    )
-
-
-def _blocking_gates_cell(readiness: Mapping[str, Any]) -> str:
     reasons = readiness.get("blocking_reasons")
-    if not isinstance(reasons, list) or not reasons:
-        if readiness.get("promotion_ready") is True:
-            return "None"
-        return _missing("Not reported")
+    if isinstance(reasons, list) and reasons:
+        blocking = "<ul class='watchlist-blocking-list'>" + "".join(
+            f"<li>{html.escape(str(reason))}</li>" for reason in reasons if str(reason).strip()
+        ) + "</ul>"
+        if blocking == "<ul class='watchlist-blocking-list'></ul>":
+            blocking = "<div class='watchlist-qa-note'>No blocking reasons were published.</div>"
+    elif promotion == "YES":
+        blocking = "<div class='watchlist-qa-note'>No blocking reasons were published.</div>"
+    else:
+        blocking = "<div class='watchlist-qa-note'>No authoritative blocking reasons were published.</div>"
 
-    safe_reasons = [
-        html.escape(str(reason))
-        for reason in reasons
-        if str(reason).strip()
-    ]
-    if not safe_reasons:
-        return _missing("Not reported")
-
-    return "<br>".join(safe_reasons)
+    body = (
+        "<div class='watchlist-promotion-qa'><strong>Six-gate Promotion Readiness</strong>"
+        f"<ul class='watchlist-gate-summary'>{''.join(gates)}</ul>"
+        "<strong>Blocking reasons</strong>" + blocking + "</div>"
+    )
+    summary = f"<span class='watchlist-status {status_class}'>{promotion}</span>"
+    return _details(summary, body, label="Open Promotion QA evidence")
 
 
 def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
     rows: list[str] = []
-
-    for index, item in enumerate(items, start=1):
+    for item in items:
         lifecycle = _lifecycle(item)
         _, status_class = _status({"status": lifecycle})
-
-        rank = _first(
-            item,
-            ("watchlist_rank", "rank", "candidate_rank"),
-            "Not reported",
-        )
-        underlying = _first(
-            item,
-            ("underlying_symbol", "symbol", "underlying", "ticker"),
-            "UNKNOWN",
-        )
-        leveraged = _first(
-            item,
-            ("leveraged_symbol", "leveraged_ticker", "paired_symbol"),
-            "Not reported",
-        )
-        capacity = _first(
-            item,
-            ("capacity_status", "capacity", "allocation_capacity_status"),
-            "Not reported",
-        )
-
-        composite = _score(_first(
-            item,
-            ("composite_score", "opportunity_quality", "opportunity_quality_score"),
-            "",
-        ))
-
-        theme = _first(
-            item,
-            ("theme", "themes", "theme_name", "sector_theme"),
-            "Not reported",
-        )
-
-        win_rate = _percent(_first(
-            item,
-            ("win_rate", "win_rate_percent", "win_rate_pct"),
-            "",
-        ))
-        paper_return = _percent(_first(
-            item,
-            (
-                "paper_return",
-                "paper_return_percent",
-                "paper_return_pct",
-                "total_return_percent",
-            ),
-            "",
-        ))
-
+        if lifecycle == "WATCHLIST":
+            rank = _first(item, ("watchlist_rank", "rank", "candidate_rank"), "—")
+        else:
+            rank = "—"
+        underlying = _first(item, ("underlying_symbol", "symbol", "underlying", "ticker"), "UNKNOWN")
+        leveraged = _first(item, ("leveraged_symbol", "leveraged_ticker", "paired_symbol"), "—")
+        theme = _first(item, ("theme", "themes", "theme_name", "sector_theme"), "—")
         raw_readiness = item.get("promotion_readiness")
-        readiness = raw_readiness if isinstance(raw_readiness, Mapping) else {}
-
+        readiness = raw_readiness if isinstance(raw_readiness, Mapping) else None
+        gate_readiness: Mapping[str, Any] = readiness or {}
         rows.append(
             "<tr>"
             f"<td class='num'>{html.escape(rank)}</td>"
             f"<td><strong>{html.escape(underlying)}</strong></td>"
             f"<td>{_pipeline_cell(leveraged)}</td>"
             f"<td><span class='watchlist-status {status_class}'>{html.escape(lifecycle)}</span></td>"
-            f"<td>{_pipeline_cell(capacity)}</td>"
-            f"<td>{_readiness_gate(readiness, 'trusted_sources')}</td>"
-            f"<td>{_readiness_gate(readiness, 'financial_health')}</td>"
             f"<td>{_pipeline_cell(theme)}</td>"
-            f"<td>{_readiness_gate(readiness, 'theme_strength')}</td>"
-            f"<td>{_readiness_gate(readiness, 'opportunity_quality')}</td>"
-            f"<td>{_readiness_gate(readiness, 'thesis_integrity')}</td>"
-            f"<td>{_readiness_gate(readiness, 'entry')}</td>"
-            f"<td>{_promotion_ready_cell(readiness)}</td>"
-            f"<td class='watchlist-blocking-gates'>{_blocking_gates_cell(readiness)}</td>"
-            f"<td class='num'>{_missing(composite)}</td>"
-            f"<td class='num'>{_missing(win_rate)}</td>"
-            f"<td class='num'>{_missing(paper_return)}</td>"
+            f"<td>{_gate_cell(gate_readiness, 'opportunity_quality', mode='oq')}</td>"
+            f"<td>{_gate_cell(gate_readiness, 'thesis_integrity', mode='status')}</td>"
+            f"<td>{_gate_cell(gate_readiness, 'entry', mode='entry')}</td>"
+            f"<td>{_promotion_cell(readiness)}</td>"
             "</tr>"
         )
-
     return "".join(rows)
 
 
-def _render_candidate_pipeline(
-    row: Mapping[str, Any],
-    items: list[Mapping[str, Any]],
-) -> str:
+def _render_candidate_pipeline(row: Mapping[str, Any], items: list[Mapping[str, Any]]) -> str:
     count_value = _number(row.get("watchlist_count"))
     total = int(count_value) if count_value is not None else len(items)
     active = sum(_lifecycle(item) == "WATCHLIST" for item in items)
@@ -340,12 +355,8 @@ def _render_candidate_pipeline(
     )
     table = (
         "<div class='watchlist-table-wrap'><table class='watchlist-table candidate-pipeline-table'>"
-        "<thead><tr><th>Watchlist Rank</th><th>Underlying Symbol</th><th>Leveraged Symbol</th>"
-        "<th>Lifecycle Status</th><th>Capacity Status</th>"
-        "<th>Trusted Sources</th><th>Financial Health</th><th>Theme</th>"
-        "<th>Theme Strength</th><th>Opportunity Quality</th><th>Thesis Integrity</th>"
-        "<th>Entry Readiness</th><th>Promotion Ready</th><th>Blocking Gates</th>"
-        "<th>Composite Score</th><th>Win Rate</th><th>Paper Return</th></tr></thead>"
+        "<thead><tr><th>Rank</th><th>Symbol</th><th>Vehicle</th><th>Status</th><th>Theme</th>"
+        "<th>OQ</th><th>Thesis</th><th>Entry</th><th>Promotion</th></tr></thead>"
         f"<tbody>{_pipeline_rows(items)}</tbody></table></div>"
     )
     return (
@@ -380,11 +391,8 @@ def render_watchlist_panel(row: Mapping[str, Any]) -> str:
     )
     if not items:
         explanation = (
-            f"The strategy reports {count} candidate records, but no detailed strategy-owned rows are available. "
-            "Candidate rows are never fabricated from the summary count."
-            if count
-            else "The strategy currently reports a watchlist count of 0. Candidates will appear here only when "
-            "the strategy explicitly marks them for watchlist monitoring."
+            f"The strategy reports {count} candidate records, but no detailed strategy-owned rows are available. Candidate rows are never fabricated from the summary count."
+            if count else "The strategy currently reports a watchlist count of 0. Candidates will appear here only when the strategy explicitly marks them for watchlist monitoring."
         )
         return (
             "<section class='watchlist-pro'>" + heading + summary +
@@ -406,6 +414,6 @@ def render_watchlist_panel(row: Mapping[str, Any]) -> str:
 def watchlist_ui_css() -> str:
     return """
 <style>
-.watchlist-pro{color:#10213b}.watchlist-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.watchlist-heading h3{margin:0 0 5px;font-size:1.2rem}.watchlist-heading p{margin:0;color:#64748b}.watchlist-count{background:#eef2ff;color:#5b21b6;border:1px solid #d8ccff;border-radius:999px;padding:7px 11px;font-weight:800;white-space:nowrap}.watchlist-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}.watchlist-summary-card{background:linear-gradient(180deg,#fff,#f8faff);border:1px solid #dbe4f0;border-radius:12px;padding:13px 14px;box-shadow:0 5px 14px rgba(23,43,77,.06)}.watchlist-summary-card span{display:block;color:#64748b}.watchlist-summary-card strong{display:block;margin-top:5px;font-size:1.15rem}.watchlist-table-wrap{overflow-x:auto;border:1px solid #dbe4f0;border-radius:13px;background:#fff;box-shadow:0 7px 18px rgba(23,43,77,.06)}.watchlist-table{width:100%;min-width:1180px;border-collapse:collapse}.candidate-pipeline-table{min-width:1450px}.watchlist-table th{padding:11px 12px;text-align:left;background:#f4f7fc;color:#53627a;font-size:.72rem;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid #dbe4f0;white-space:nowrap}.watchlist-table td{padding:12px;border-bottom:1px solid #edf1f6;vertical-align:middle;white-space:nowrap}.watchlist-table tbody tr:last-child td{border-bottom:0}.watchlist-table td.num{text-align:right;font-variant-numeric:tabular-nums}.watchlist-candidate-name{display:block;margin-top:4px;color:#64748b;white-space:normal}.watchlist-explanation{min-width:250px;max-width:360px;white-space:normal!important;line-height:1.35}.watchlist-explanation strong{color:#334155}.watchlist-status,.watchlist-not-reported{display:inline-block;border-radius:999px;padding:5px 8px;font-size:.75rem;font-weight:800}.watchlist-status-ready,.watchlist-market-fresh{background:#e9f9f0;color:#087443}.watchlist-status-watch{background:#fff7df;color:#8a4b08}.watchlist-status-blocked,.watchlist-market-stale{background:#fff0f0;color:#b42318}.watchlist-status-neutral,.watchlist-not-reported{background:#f1f5f9;color:#7a8798}.watchlist-source{color:#64748b;font-size:.82rem}.watchlist-empty{padding:24px;border:1px dashed #b9c7db;border-radius:12px;background:#f8fafc;text-align:center;color:#64748b}.watchlist-empty strong,.watchlist-empty span{display:block}.watchlist-empty strong{color:#334155;margin-bottom:7px}.watchlist-footnote{margin:12px 2px 0;color:#718096;font-size:.8rem}@media(max-width:900px){.watchlist-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.watchlist-heading{display:block}.watchlist-count{display:inline-block;margin-top:10px}.watchlist-summary-grid{grid-template-columns:1fr}}
+.watchlist-pro{color:#10213b}.watchlist-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}.watchlist-heading h3{margin:0 0 5px;font-size:1.2rem}.watchlist-heading p{margin:0;color:#64748b}.watchlist-count{background:#eef2ff;color:#5b21b6;border:1px solid #d8ccff;border-radius:999px;padding:7px 11px;font-weight:800;white-space:nowrap}.watchlist-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:16px}.watchlist-summary-card{background:linear-gradient(180deg,#fff,#f8faff);border:1px solid #dbe4f0;border-radius:12px;padding:13px 14px;box-shadow:0 5px 14px rgba(23,43,77,.06)}.watchlist-summary-card span{display:block;color:#64748b}.watchlist-summary-card strong{display:block;margin-top:5px;font-size:1.15rem}.watchlist-table-wrap{overflow-x:auto;border:1px solid #dbe4f0;border-radius:13px;background:#fff;box-shadow:0 7px 18px rgba(23,43,77,.06)}.watchlist-table{width:100%;min-width:1180px;border-collapse:collapse}.candidate-pipeline-table{min-width:880px}.watchlist-table th{padding:11px 12px;text-align:left;background:#f4f7fc;color:#53627a;font-size:.72rem;text-transform:uppercase;letter-spacing:.035em;border-bottom:1px solid #dbe4f0;white-space:nowrap}.watchlist-table td{padding:12px;border-bottom:1px solid #edf1f6;vertical-align:middle;white-space:nowrap}.watchlist-table tbody tr:last-child td{border-bottom:0}.watchlist-table td.num{text-align:right;font-variant-numeric:tabular-nums}.watchlist-candidate-name{display:block;margin-top:4px;color:#64748b;white-space:normal}.watchlist-explanation{min-width:250px;max-width:360px;white-space:normal!important;line-height:1.35}.watchlist-explanation strong{color:#334155}.watchlist-status,.watchlist-not-reported{display:inline-block;border-radius:999px;padding:5px 8px;font-size:.75rem;font-weight:800}.watchlist-status-ready,.watchlist-market-fresh{background:#e9f9f0;color:#087443}.watchlist-status-watch{background:#fff7df;color:#8a4b08}.watchlist-status-blocked,.watchlist-market-stale{background:#fff0f0;color:#b42318}.watchlist-status-neutral,.watchlist-not-reported{background:#f1f5f9;color:#7a8798}.watchlist-source{color:#64748b;font-size:.82rem}.watchlist-empty{padding:24px;border:1px dashed #b9c7db;border-radius:12px;background:#f8fafc;text-align:center;color:#64748b}.watchlist-empty strong,.watchlist-empty span{display:block}.watchlist-empty strong{color:#334155;margin-bottom:7px}.watchlist-footnote{margin:12px 2px 0;color:#718096;font-size:.8rem}.watchlist-qa-details{position:relative}.watchlist-qa-details summary{cursor:pointer;list-style:none}.watchlist-qa-details summary::-webkit-details-marker{display:none}.watchlist-qa-details[open] .watchlist-qa-body{display:block}.watchlist-qa-body{min-width:260px;max-width:390px;margin-top:7px;padding:10px;border:1px solid #dbe4f0;border-radius:9px;background:#f8fafc;white-space:normal;line-height:1.35}.watchlist-qa-list{margin:0}.watchlist-qa-list div{display:grid;grid-template-columns:120px 1fr;gap:8px;padding:3px 0}.watchlist-qa-list dt{font-weight:700;color:#53627a}.watchlist-qa-list dd{margin:0;overflow-wrap:anywhere}.watchlist-qa-note{color:#64748b;white-space:normal}.watchlist-gate-summary,.watchlist-blocking-list{margin:7px 0 10px;padding-left:18px}.watchlist-gate-summary li,.watchlist-blocking-list li{margin:5px 0;white-space:normal}.watchlist-qa-evidence{color:#64748b;font-size:.78rem;overflow-wrap:anywhere}@media(max-width:900px){.watchlist-summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.watchlist-heading{display:block}.watchlist-count{display:inline-block;margin-top:10px}.watchlist-summary-grid{grid-template-columns:1fr}}
 </style>
 """
