@@ -160,7 +160,6 @@ def test_same_week_regeneration_repairs_polluted_first_cycle_baseline():
     assert row["previous_status"] == "ABSENT"
 
 
-
 def test_same_week_research_only_refresh_does_not_drop_confirmed_candidate():
     first = build_weekly_discovery(
         [_observation("AMAT", status="NEW")],
@@ -307,3 +306,109 @@ def test_company_name_is_preserved_in_rich_weekly_report():
     observation["company_name"] = "Advanced Micro Devices, Inc."
     report = build_weekly_discovery([observation], generated_at="2026-08-18T16:00:00Z")
     assert report["candidates"][0]["company_name"] == "Advanced Micro Devices, Inc."
+
+
+def _governed_event_evidence():
+    return {
+        "source": "Reuters",
+        "producer": "Reuters",
+        "source_class": "PROFESSIONAL_MEDIA",
+        "mentioned_on": "2026-08-16",
+        "story_id": "catalyst-story-1",
+        "source_url": "https://example.test/catalyst-story-1",
+        "credibility_reviewed": True,
+        "authority": "PROFESSIONAL_MEDIA",
+        "platform": "ALPHA_VANTAGE_NEWS_SENTIMENT",
+        "catalyst_families": ["product_innovation", "contracts_customer_wins"],
+        "catalyst_events": [
+            {
+                "event_id": "product-1",
+                "family": "product_innovation",
+                "status": "CONFIRMED",
+                "event_date": "2026-08-16T00:00:00Z",
+                "reason": "Reviewed provider evidence confirms a company-specific product event.",
+                "favorable": True,
+                "company_specific": True,
+                "source": "Reuters",
+                "source_url": "https://example.test/catalyst-story-1",
+                "provenance": "PROFESSIONAL_MEDIA",
+            },
+            {
+                "event_id": "contract-1",
+                "family": "contracts_customer_wins",
+                "status": "CONFIRMED",
+                "event_date": "2026-08-16T00:00:00Z",
+                "reason": "Reviewed provider evidence confirms a company-specific customer win.",
+                "favorable": True,
+                "company_specific": True,
+                "source": "Reuters",
+                "source_url": "https://example.test/catalyst-story-1",
+                "provenance": "PROFESSIONAL_MEDIA",
+            },
+        ],
+        "catalyst_classification": {
+            "version": "1.1",
+            "policy": "EXPLICIT_REVIEWED_CLASSIFICATION_ONLY",
+            "source_eligible": True,
+            "accepted_event_count": 2,
+        },
+        "product_innovation_related": True,
+        "contracts_customer_wins_related": True,
+    }
+
+
+def test_weekly_normalization_preserves_governed_catalyst_metadata():
+    observation = _observation(status="NEW")
+    observation["source_evidence"] = [_governed_event_evidence()]
+    report = build_weekly_discovery([observation], generated_at="2026-08-16T01:00:00Z")
+    evidence = report["candidates"][0]["source_evidence"][0]
+    assert evidence["credibility_reviewed"] is True
+    assert evidence["authority"] == "PROFESSIONAL_MEDIA"
+    assert evidence["catalyst_families"] == ["product_innovation", "contracts_customer_wins"]
+    assert [event["event_id"] for event in evidence["catalyst_events"]] == ["product-1", "contract-1"]
+    assert evidence["product_innovation_related"] is True
+    assert evidence["contracts_customer_wins_related"] is True
+    assert evidence["catalyst_classification"]["accepted_event_count"] == 2
+
+
+def test_same_story_fresh_reviewed_evidence_enriches_prior_copy():
+    first_observation = _observation(status="NEW")
+    first_observation["source_evidence"] = [{
+        "source": "Reuters",
+        "producer": "Reuters",
+        "source_class": "PROFESSIONAL_MEDIA",
+        "mentioned_on": "2026-08-16",
+        "story_id": "catalyst-story-1",
+    }]
+    first = build_weekly_discovery([first_observation], generated_at="2026-08-16T01:00:00Z")
+
+    refreshed = _observation(status="NEW")
+    refreshed["source_evidence"] = [_governed_event_evidence()]
+    repeated = build_weekly_discovery(
+        [refreshed],
+        first["candidates"],
+        generated_at="2026-08-16T04:00:00Z",
+    )
+    evidence = repeated["candidates"][0]["source_evidence"][0]
+    assert len(repeated["candidates"][0]["source_evidence"]) == 1
+    assert evidence["credibility_reviewed"] is True
+    assert evidence["catalyst_events"][0]["event_id"] == "product-1"
+
+
+def test_governed_catalyst_metadata_persists_to_history_and_swing_projection(tmp_path):
+    observation = _observation(status="NEW")
+    observation["source_evidence"] = [_governed_event_evidence()]
+    write_weekly_discovery(tmp_path, [observation], generated_at="2026-08-16T01:00:00Z")
+
+    history_row = json.loads(
+        (tmp_path / "state/enterprise_market_discovery_history.jsonl").read_text().splitlines()[0]
+    )
+    history_evidence = history_row["source_evidence"][0]
+    assert history_evidence["catalyst_events"][1]["event_id"] == "contract-1"
+    assert history_evidence["authority"] == "PROFESSIONAL_MEDIA"
+
+    swing = json.loads((tmp_path / "results/enterprise_swing_discovery_bucket.json").read_text())
+    swing_evidence = swing["candidates"][0]["evidence_sources"][0]
+    assert swing_evidence["catalyst_families"] == ["product_innovation", "contracts_customer_wins"]
+    assert swing_evidence["catalyst_events"][0]["event_id"] == "product-1"
+    assert swing_evidence["product_innovation_related"] is True
