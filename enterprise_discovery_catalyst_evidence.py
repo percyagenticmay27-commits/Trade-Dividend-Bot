@@ -13,7 +13,7 @@ from typing import Any
 
 from enterprise_discovery_theme_strength import CATALYST_EVIDENCE_FLAGS, CATALYST_FAMILIES
 
-CATALYST_CLASSIFICATION_VERSION = "1.1"
+CATALYST_CLASSIFICATION_VERSION = "1.2"
 CATALYST_EVIDENCE_POLICY = "EXPLICIT_REVIEWED_CLASSIFICATION_ONLY"
 CATALYST_EVENT_POLICY = "CONFIRMED_FAVORABLE_COMPANY_SPECIFIC_EXPLICIT_EVENTS_ONLY"
 
@@ -32,9 +32,6 @@ def _source_is_authoritative_or_reviewed(item: Mapping[str, Any]) -> bool:
     authority = _text(item.get("authority")).upper()
     reviewed = item.get("credibility_reviewed") is True
 
-    # Primary-company/regulatory records are authoritative by source class. Other
-    # classes require explicit review/authority metadata; historical creator rows
-    # without those fields are therefore unable to create a new catalyst claim.
     if source_class in {"PRIMARY_COMPANY", "PRIMARY_GOVERNMENT", "REGULATORY"}:
         return True
     if source_class == "PROFESSIONAL_MEDIA":
@@ -86,14 +83,7 @@ def _valid_event_date(value: Any) -> str | None:
 def _normalize_catalyst_events(
     item: Mapping[str, Any], *, trusted: bool, identity: str
 ) -> tuple[list[dict[str, Any]], set[str], list[str]]:
-    """Validate explicit event metadata and return deduplicated scoring events.
-
-    No free-text classification occurs here. An event can contribute a catalyst
-    family only when the source itself is eligible and the event explicitly says it
-    is CONFIRMED, favorable, company-specific, dated, and identified by event_id.
-    Freshness expiration remains governed by the discovery evidence lifecycle; this
-    validator deliberately does not invent a second lookback window.
-    """
+    """Validate explicit event metadata and return item-level deduplicated events."""
     raw_events = item.get("catalyst_events")
     if raw_events is None:
         return [], set(), []
@@ -166,6 +156,93 @@ def _normalize_catalyst_events(
     return accepted, families, warnings
 
 
+def _event_signature(event: Mapping[str, Any]) -> tuple[Any, ...]:
+    """Return the governed semantic identity for cross-evidence duplicate checks."""
+    return (
+        event.get("family"),
+        event.get("status"),
+        event.get("event_date"),
+        event.get("reason"),
+        event.get("favorable"),
+        event.get("company_specific"),
+        event.get("source"),
+        event.get("source_url"),
+        event.get("provenance"),
+    )
+
+
+def _rebuild_classified_item(item: dict[str, Any]) -> None:
+    """Recompute accepted families after report-level event governance mutates events."""
+    classification = item.get("catalyst_classification")
+    explicit = set()
+    if isinstance(classification, Mapping):
+        raw_explicit = classification.get("accepted_explicit_families")
+        if isinstance(raw_explicit, list):
+            explicit = {str(value) for value in raw_explicit if str(value) in CATALYST_FAMILIES}
+    event_families = {
+        str(event.get("family"))
+        for event in item.get("catalyst_events", [])
+        if isinstance(event, Mapping) and str(event.get("family")) in CATALYST_FAMILIES
+    }
+    accepted = explicit | event_families
+    item["catalyst_families"] = sorted(accepted)
+    for family, flag in CATALYST_EVIDENCE_FLAGS.items():
+        item[flag] = family in accepted
+    for family, flag in LEGACY_FLAGS.items():
+        item[flag] = family in accepted
+    if isinstance(classification, dict):
+        classification["accepted_family_count"] = len(accepted)
+        classification["accepted_families"] = sorted(accepted)
+        classification["accepted_event_count"] = len(item.get("catalyst_events", []))
+        classification["accepted_event_ids"] = [
+            event["event_id"] for event in item.get("catalyst_events", []) if isinstance(event, Mapping)
+        ]
+
+
+def _govern_event_ids_across_evidence(
+    classified: list[dict[str, Any]], warnings: list[str]
+) -> None:
+    """Deduplicate event IDs across evidence and fail closed on conflicting reuse.
+
+    Identical duplicates retain the first deterministic copy. If the same event_id
+    carries conflicting governed semantics or provenance, every copy of that ID is
+    removed from scoring rather than choosing a winner.
+    """
+    occurrences: dict[str, list[tuple[int, int, tuple[Any, ...]]]] = {}
+    for item_index, item in enumerate(classified):
+        events = item.get("catalyst_events")
+        if not isinstance(events, list):
+            continue
+        for event_index, event in enumerate(events):
+            if not isinstance(event, Mapping):
+                continue
+            event_id = _text(event.get("event_id"))
+            if event_id:
+                occurrences.setdefault(event_id, []).append((item_index, event_index, _event_signature(event)))
+
+    removals: dict[int, set[int]] = {}
+    for event_id, refs in occurrences.items():
+        if len(refs) <= 1:
+            continue
+        signatures = {ref[2] for ref in refs}
+        if len(signatures) == 1:
+            for item_index, event_index, _ in refs[1:]:
+                removals.setdefault(item_index, set()).add(event_index)
+            warnings.append(f"DUPLICATE_CATALYST_EVENT_ACROSS_EVIDENCE:{event_id}")
+        else:
+            for item_index, event_index, _ in refs:
+                removals.setdefault(item_index, set()).add(event_index)
+            warnings.append(f"CONFLICTING_CATALYST_EVENT_ID:{event_id}")
+
+    for item_index, indexes in removals.items():
+        events = classified[item_index].get("catalyst_events", [])
+        classified[item_index]["catalyst_events"] = [
+            event for index, event in enumerate(events) if index not in indexes
+        ]
+    for item in classified:
+        _rebuild_classified_item(item)
+
+
 def classify_evidence_item(item: Mapping[str, Any]) -> tuple[dict[str, Any], list[str]]:
     """Normalize one evidence item and fail closed on unsupported catalyst claims."""
     normalized = dict(item)
@@ -176,9 +253,8 @@ def classify_evidence_item(item: Mapping[str, Any]) -> tuple[dict[str, Any], lis
         item, trusted=trusted, identity=identity
     )
 
-    # Existing explicit flags remain supported for backwards compatibility. New
-    # structured events add families only after the stricter event validation above.
-    accepted = (requested if trusted else set()) | event_families
+    accepted_explicit = requested if trusted else set()
+    accepted = accepted_explicit | event_families
 
     normalized["catalyst_events"] = events
     normalized["catalyst_families"] = sorted(accepted)
@@ -193,6 +269,7 @@ def classify_evidence_item(item: Mapping[str, Any]) -> tuple[dict[str, Any], lis
         "event_policy": CATALYST_EVENT_POLICY,
         "source_eligible": trusted,
         "explicit_family_count": len(requested),
+        "accepted_explicit_families": sorted(accepted_explicit),
         "accepted_family_count": len(accepted),
         "accepted_families": sorted(accepted),
         "accepted_event_count": len(events),
@@ -222,13 +299,16 @@ def attach_candidate_catalyst_classification(report: dict[str, Any]) -> dict[str
         if not isinstance(evidence, list):
             continue
         classified: list[dict[str, Any]] = []
+        row_warnings: list[str] = []
         for item in evidence:
             if not isinstance(item, Mapping):
                 continue
             normalized, item_warnings = classify_evidence_item(item)
             classified.append(normalized)
-            warnings.extend(item_warnings)
+            row_warnings.extend(item_warnings)
+        _govern_event_ids_across_evidence(classified, row_warnings)
         row[key] = classified
+        warnings.extend(row_warnings)
 
     report["catalyst_classification_version"] = CATALYST_CLASSIFICATION_VERSION
     report["catalyst_evidence_policy"] = CATALYST_EVIDENCE_POLICY
