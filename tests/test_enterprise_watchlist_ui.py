@@ -190,37 +190,53 @@ def test_missing_theme_renders_em_dash():
 def test_oq_uses_authoritative_nested_score_status_and_expandable_detail():
     page = render_watchlist_panel(_swing_row())
     assert "82.9 PASS" in page
-    assert "Open opportunity quality QA evidence" in page
-    assert "Exact value</dt><dd>82.854" in page
-    assert "Threshold</dt><dd>70" in page
-    assert "OQ &lt;strong&gt; good" in page
-    assert "oq.json" in page
-    assert "Swing runtime" in page
+    oq_main = page.split("<strong>NVDA</strong>", 1)[1].split("</tr>", 1)[0]
+    assert "aria-controls='watchlist-promotion-detail-1'" in oq_main
+    assert "Open opportunity quality details" in oq_main
+    detail = page.split("id='watchlist-promotion-detail-1'", 1)[1].split("</tr>", 1)[0]
+    assert "Opportunity Quality" in detail
+    assert "82.854" in detail
+    assert "70" in detail
+    assert "OQ &lt;strong&gt; good" in detail
+    assert "oq.json" in detail
+    assert "Swing runtime" in detail
 
 
 def test_thesis_uses_authoritative_status_and_expandable_detail():
     page = render_watchlist_panel(_swing_row())
-    assert "Open thesis integrity QA evidence" in page
-    assert ">PASS</span>" in page
-    assert "Exact value</dt><dd>true" in page
-    assert "Evidence availability</dt><dd>true" in page
-    assert "thesis.json" in page
+    nvda_main = page.split("<strong>NVDA</strong>", 1)[1].split("</tr>", 1)[0]
+    assert "Open thesis integrity details" in nvda_main
+    assert "aria-controls='watchlist-promotion-detail-1'" in nvda_main
+    assert ">PASS</span>" in nvda_main
+    detail = page.split("id='watchlist-promotion-detail-1'", 1)[1].split("</tr>", 1)[0]
+    assert "Thesis Integrity" in detail
+    assert ">true<" in detail
+    assert "thesis.json" in detail
 
 
 def test_entry_uses_authoritative_score_status_and_expandable_detail():
     page = render_watchlist_panel(_swing_row())
-    assert "70 PASS" in page
-    assert "Open entry QA evidence" in page
-    assert "Exact value</dt><dd>70.0" in page
-    assert "entry.json" in page
+    nvda_main = page.split("<strong>NVDA</strong>", 1)[1].split("</tr>", 1)[0]
+    assert "70 PASS" in nvda_main
+    assert "Open entry details" in nvda_main
+    assert "aria-controls='watchlist-promotion-detail-1'" in nvda_main
+    detail = page.split("id='watchlist-promotion-detail-1'", 1)[1].split("</tr>", 1)[0]
+    assert "Entry Readiness" in detail
+    assert "70.0" in detail
+    assert "entry.json" in detail
 
 
 def test_promotion_no_has_six_gate_detail_and_blocking_reasons():
     page = render_watchlist_panel(_swing_row())
     assert ">NO</span>" in page
-    assert "Open Promotion QA evidence" in page
+    assert "class='watchlist-promotion-toggle'" in page
+    assert "aria-expanded='false'" in page
+    assert "aria-controls='watchlist-promotion-detail-1'" in page
+    assert "id='watchlist-promotion-detail-1' class='watchlist-promotion-detail-row' hidden" in page
+    assert "<td colspan='9'>" in page
     for gate in ("Trusted Sources", "Financial Health", "Theme Strength", "Opportunity Quality", "Thesis Integrity", "Entry Readiness"):
         assert f"<strong>{gate}</strong>" in page
+    assert page.count("class='watchlist-promotion-gate-card'") >= 6
     assert "trusted_sources: &lt;blocked&gt;" in page
     assert "SEC, Reuters" in page
 
@@ -233,10 +249,12 @@ def test_promotion_yes_only_from_authoritative_true():
 
 def test_missing_promotion_readiness_is_pending_not_legacy_inference():
     page = render_watchlist_panel(_swing_row())
-    amzn = page.split("<strong>AMZN</strong>", 1)[1].split("</tr>", 1)[0]
-    assert "PENDING" in amzn
-    assert ">YES</span>" not in amzn
-    assert "Authoritative Promotion Readiness evidence is unavailable." in amzn
+    amzn_main = page.split("<strong>AMZN</strong>", 1)[1].split("</tr>", 1)[0]
+    assert "PENDING" in amzn_main
+    assert ">YES</span>" not in amzn_main
+    assert "aria-controls='watchlist-promotion-detail-4'" in amzn_main
+    amzn_detail = page.split("id='watchlist-promotion-detail-4'", 1)[1].split("</tr>", 1)[0]
+    assert "Authoritative Promotion Readiness evidence is unavailable." in amzn_detail
 
 
 def test_pending_financial_health_and_theme_strength_remain_pending_not_zero():
@@ -244,7 +262,7 @@ def test_pending_financial_health_and_theme_strength_remain_pending_not_zero():
     promo = page.split("Six-gate Promotion Readiness", 1)[1].split("Blocking reasons", 1)[0]
     assert "<strong>Financial Health</strong> <span class='watchlist-status watchlist-status-neutral'>PENDING</span>" in promo
     assert "<strong>Theme Strength</strong> <span class='watchlist-status watchlist-status-neutral'>PENDING</span>" in promo
-    assert "value 0" not in promo
+    assert "Value</span><strong>0" not in promo
 
 
 def test_html_escaping_for_reasons_and_evidence():
@@ -268,4 +286,18 @@ def test_css_supports_native_details_drilldowns():
     css = watchlist_ui_css()
     assert ".watchlist-qa-details" in css
     assert ".watchlist-qa-body" in css
-    assert ".candidate-pipeline-table{min-width:880px}" in css
+    assert ".candidate-pipeline-table{min-width:0;table-layout:fixed" in css
+    assert ".watchlist-promotion-detail-row[hidden]{display:none}" in css
+    assert ".watchlist-promotion-gates{display:grid;grid-template-columns:repeat(6,minmax(0,1fr))" in css
+    assert ".watchlist-promotion-gates-wrap{overflow:visible}" in css
+    assert "main:has(.candidate-pipeline){max-width:1760px" in css
+
+
+def test_promotion_toggle_script_controls_only_its_detail_row():
+    page = render_watchlist_panel(_swing_row())
+    assert "watchlist-detail-toggle" in page
+    assert "watchlist-promotion-toggle" in page
+    assert "toggle.getAttribute('aria-controls')" in page
+    assert "root.querySelectorAll('[aria-controls=" in page
+    assert "detailRow.hidden = !nextExpanded" in page
+    assert page.count("aria-controls='watchlist-promotion-detail-1'") == 4
