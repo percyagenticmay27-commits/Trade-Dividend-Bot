@@ -1,0 +1,69 @@
+{
+  "schema_version": "1.0",
+  "policy": "FAIL_CLOSED_CONTINUOUS_SOURCE_DISCOVERY_NO_AUTO_ACTIVATION",
+  "continuous_source_discovery": true,
+  "auto_activate_new_sources": false,
+  "tiers": {
+    "TIER_1_PRIMARY_OFFICIAL": {
+      "description": "Issuer, regulator, exchange, central-bank, or government primary-source evidence.",
+      "may_support_primary_facts": true,
+      "may_independently_create_favorable_catalyst": false
+    },
+    "TIER_2_PROFESSIONAL_NEWS": {
+      "description": "Established professional newsroom or structured professional-news provider with identifiable publisher and provenance.",
+      "may_support_primary_facts": false,
+      "may_independently_create_favorable_catalyst": false
+    },
+    "TIER_3_REVIEWED_SPECIALIST": {
+      "description": "Named analyst, educator, specialist, or creator explicitly reviewed for credibility and identity.",
+      "may_support_primary_facts": false,
+      "may_independently_create_favorable_catalyst": false
+    },
+    "TIER_4_DISCOVERY_ONLY": {
+      "description": "Useful lead-generation source that cannot confirm a thesis, nomination, or favorable catalyst.",
+      "may_support_primary_facts": false,
+      "may_independently_create_favorable_catalyst": false
+    }
+  },
+  "admission_requirements": {
+    "https_required": true,
+    "identifiable_publisher_required": true,
+    "stable_provenance_required": true,
+    "published_timestamp_required": true,
+    "source_class_required": true,
+    "symbol_identity_must_be_explicit_or_authoritatively_mapped": true,
+    "reposts_without_original_provenance_rejected": true,
+    "anonymous_social_sources_rejected": true,
+    "popularity_alone_never_confirms": true,
+    "item_code_or_headline_alone_never_confirms_favorable_event": true,
+    "new_sources_require_review_before_activation": true,
+    "periodic_revalidation_required": true
+  },
+  "active_sources": [
+    {"name": "SEC EDGAR", "tier": "TIER_1_PRIMARY_OFFICIAL", "roles": ["filings", "structured_disclosure", "company_primary_evidence"]},
+    {"name": "Alpha Vantage News & Sentiment", "tier": "TIER_2_PROFESSIONAL_NEWS", "roles": ["professional_news", "ticker_sentiment", "symbol_relevance"]},
+    {"name": "Let's Talk Money! with Joseph Hogue, CFA", "tier": "TIER_3_REVIEWED_SPECIALIST", "roles": ["creator_intelligence", "discovery"]},
+    {"name": "Earn Your Leisure", "tier": "TIER_3_REVIEWED_SPECIALIST", "roles": ["creator_intelligence", "discovery"]},
+    {"name": "BWB - Business With Brian", "tier": "TIER_3_REVIEWED_SPECIALIST", "roles": ["creator_intelligence", "discovery"]},
+    {"name": "CBS News", "tier": "TIER_2_PROFESSIONAL_NEWS", "roles": ["professional_media", "business_news"]},
+    {"name": "Ticker Symbol: YOU", "tier": "TIER_3_REVIEWED_SPECIALIST", "roles": ["creator_intelligence", "discovery"]},
+    {"name": "Yahoo Finance provider", "tier": "TIER_2_PROFESSIONAL_NEWS", "roles": ["financial_fundamentals", "market_metadata"]}
+  ],
+  "trusted_expansion_queue": [
+    {"name": "Federal Reserve Board", "tier": "TIER_1_PRIMARY_OFFICIAL", "status": "VETTED_NOT_ACTIVE", "roles": ["monetary_policy", "rates", "banking_regulation"], "domain": "federalreserve.gov"},
+    {"name": "U.S. Bureau of Labor Statistics", "tier": "TIER_1_PRIMARY_OFFICIAL", "status": "VETTED_NOT_ACTIVE", "roles": ["employment", "inflation", "wages", "labor_market"], "domain": "bls.gov"},
+    {"name": "U.S. Energy Information Administration", "tier": "TIER_1_PRIMARY_OFFICIAL", "status": "VETTED_NOT_ACTIVE", "roles": ["energy_prices", "supply_demand", "sector_context"], "domain": "eia.gov"},
+    {"name": "Federal Trade Commission", "tier": "TIER_1_PRIMARY_OFFICIAL", "status": "VETTED_NOT_ACTIVE", "roles": ["competition", "consumer_protection", "merger_regulation"], "domain": "ftc.gov"},
+    {"name": "U.S. Department of Justice Antitrust Division", "tier": "TIER_1_PRIMARY_OFFICIAL", "status": "VETTED_NOT_ACTIVE", "roles": ["antitrust", "mergers", "competition_enforcement"], "domain": "justice.gov"},
+    {"name": "Reuters", "tier": "TIER_2_PROFESSIONAL_NEWS", "status": "VETTED_INTEGRATION_REQUIRED", "roles": ["company_news", "markets", "macro"], "domain": "reuters.com", "activation_note": "Use only through a lawful stable feed/API or direct licensed access; do not scrape around access controls."}
+  ],
+  "source_expansion_rules": {
+    "prefer_primary_official_before_secondary": true,
+    "prefer_original_reporting_over_aggregators": true,
+    "require_independent_producer_identity": true,
+    "new_creator_sources_start_discovery_only": true,
+    "promotion_to_reviewed_specialist_requires_manual_credibility_review": true,
+    "broken_or_stale_sources_are_demoted_or_disabled": true,
+    "source_discovery_output_is_candidate_only_until_reviewed": true
+  }
+}
