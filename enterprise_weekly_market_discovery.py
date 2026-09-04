@@ -255,6 +255,7 @@ def build_weekly_discovery(
             "attention_acceleration": attention,
             "market_evidence": raw.get("market_evidence"),
             "financial_health": dict(raw["financial_health"]) if isinstance(raw.get("financial_health"), Mapping) else None,
+            "theme_strength": dict(raw["theme_strength"]) if isinstance(raw.get("theme_strength"), Mapping) else None,
             "discovery_confidence": raw.get("discovery_confidence"),
             "nomination_eligible": bool(raw.get("nomination_eligible", True)),
         }
@@ -321,6 +322,8 @@ def build_swing_projection(report: Mapping[str, Any]) -> dict[str, Any]:
         }
         if isinstance(row.get("financial_health"), Mapping):
             candidate["financial_health"] = dict(row["financial_health"])
+        if isinstance(row.get("theme_strength"), Mapping):
+            candidate["theme_strength"] = dict(row["theme_strength"])
         candidates.append(candidate)
     return {"schema_version": "1.0", "strategy_id": SWING_STRATEGY_ID, "candidates": candidates}
 
@@ -342,6 +345,8 @@ def build_dividend_projection(report: Mapping[str, Any]) -> dict[str, Any]:
         }
         if isinstance(row.get("financial_health"), Mapping):
             candidate["financial_health"] = dict(row["financial_health"])
+        if isinstance(row.get("theme_strength"), Mapping):
+            candidate["theme_strength"] = dict(row["theme_strength"])
         candidates.append(candidate)
     return {
         "schema_version": "1.0",
