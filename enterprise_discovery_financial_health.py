@@ -189,8 +189,12 @@ def attach_candidate_financial_health(
     *,
     force_refresh: bool = False,
 ) -> dict[str, Any]:
-    """Refresh Financial Health evidence for every eligible Enterprise candidate."""
-    eligible = [row for row in report.get("observations", []) if row.get("nomination_eligible") is True]
+    """Refresh Financial Health evidence for every Enterprise candidate not explicitly rejected."""
+    eligible = [
+        row
+        for row in report.get("observations", [])
+        if row.get("nomination_eligible", True) is not False
+    ]
     if not eligible:
         return report
     try:
