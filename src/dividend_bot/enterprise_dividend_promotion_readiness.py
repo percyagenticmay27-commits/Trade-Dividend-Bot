@@ -13,6 +13,15 @@ from statistics import mean
 from typing import Any, Mapping
 
 FINANCIAL_HEALTH_THRESHOLD = 70.0
+FINANCIAL_HEALTH_COMPONENTS = (
+    "revenue_growth",
+    "eps_growth",
+    "operating_cash_flow",
+    "gross_margin_trend",
+    "debt_health",
+    "analyst_revisions",
+    "sector_strength",
+)
 
 _DISCOVERY_PATH = Path("results/enterprise_dividend_discovery_bucket.json")
 _SUITABILITY_PATH = Path("results/enterprise_dividend_suitability.json")
@@ -60,19 +69,39 @@ def _financial_health_gate(discovery: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(block, Mapping):
         return {"status": "PENDING", "reason": "Authoritative Financial Health evidence is unavailable."}
 
-    score = _numeric(block.get("score"))
     components = block.get("components")
-    if score is None and isinstance(components, Mapping):
-        values = [_numeric(value) for value in components.values()]
-        if values and all(value is not None for value in values):
-            score = mean(value for value in values if value is not None)
+    component_values: list[float] = []
+    complete = isinstance(components, Mapping)
+    if complete:
+        for name in FINANCIAL_HEALTH_COMPONENTS:
+            number = _numeric(components.get(name))
+            if number is None:
+                complete = False
+                break
+            component_values.append(number)
+
+    score = _numeric(block.get("score"))
+    if score is None and complete:
+        score = mean(component_values)
+
+    if not complete:
+        status = "PENDING"
+        reason = "Financial Health requires all seven governed components."
+    elif score is None:
+        status = "PENDING"
+        reason = "Complete Financial Health components are present but no score could be resolved."
+    else:
+        status = "PASS" if score >= FINANCIAL_HEALTH_THRESHOLD else "FAIL"
+        reason = None
 
     gate: dict[str, Any] = {
-        "status": "PASS" if score is not None and score >= FINANCIAL_HEALTH_THRESHOLD else "FAIL" if score is not None else "PENDING",
-        "value": round(score, 2) if score is not None else None,
+        "status": status,
+        "value": round(score, 2) if score is not None and complete else None,
         "threshold": FINANCIAL_HEALTH_THRESHOLD,
         "evidence_source": str(_DISCOVERY_PATH),
     }
+    if reason:
+        gate["reason"] = reason
     if block.get("provenance") not in (None, ""):
         gate["provenance"] = block.get("provenance")
     if block.get("evidence_timestamp") not in (None, ""):
