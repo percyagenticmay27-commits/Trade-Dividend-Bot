@@ -148,15 +148,22 @@ def test_swing_candidate_pipeline_renders_all_published_lifecycle_rows():
         "Lifecycle Status",
         "Capacity Status",
         "Watchlist Rank",
-        "Composite Score",
+        "Trusted Sources",
         "Financial Health",
         "Theme",
-        "Promotion Eligible",
-        "Source Count",
+        "Theme Strength",
+        "Opportunity Quality",
+        "Thesis Integrity",
+        "Entry Readiness",
+        "Promotion Ready",
+        "Blocking Gates",
+        "Composite Score",
         "Win Rate",
         "Paper Return",
     ):
         assert heading in page
+
+    assert "Promotion Eligible" not in page
 
 
 def test_watchlist_count_never_fabricates_candidate_rows():
@@ -200,9 +207,123 @@ def test_swing_candidate_pipeline_supports_exact_published_field_names():
 
     assert "AI Infrastructure;Data Centers" in page
     assert "Clean Energy" in page
-    assert "77.29" in page
-    assert page.count(">NO<") == 2
+
+    # Legacy financial_health_score and promotion_eligible remain source fields,
+    # but they are not authoritative Promotion Readiness evidence.
+    assert "77.29" not in page
+    assert ">NO<" not in page
+    assert "Promotion Eligible" not in page
+
+    # Missing authoritative Promotion Readiness renders unavailable/PENDING.
+    assert "PENDING" in page
     assert "watchlist-not-reported'>Not reported" in page
     assert ">WATCHLIST<" in page
     assert ">REMOVED<" in page
 
+
+
+def test_swing_candidate_pipeline_renders_authoritative_promotion_readiness():
+    page = render_watchlist_panel({
+        "strategy_id": "SWING-001",
+        "watchlist_count": 1,
+        "watchlist": [
+            {
+                "underlying_symbol": "NVDA",
+                "leveraged_symbol": "NVDX",
+                "lifecycle_status": "WATCHLIST",
+                "capacity_status": "ACTIVE",
+                "watchlist_rank": 1,
+                "theme": "AI Infrastructure",
+                "promotion_eligible": True,
+                "promotion_readiness": {
+                    "trusted_sources": {
+                        "status": "FAIL",
+                        "value": 4.0,
+                        "threshold": 5.0,
+                        "reason": "Source Confluence 4 is below threshold 5",
+                    },
+                    "financial_health": {
+                        "status": "PENDING",
+                        "value": None,
+                        "threshold": 70.0,
+                        "reason": "Financial Health evidence is unavailable",
+                    },
+                    "theme_strength": {
+                        "status": "PENDING",
+                        "value": None,
+                        "threshold": 70.0,
+                        "reason": "Theme Momentum evidence is unavailable",
+                    },
+                    "opportunity_quality": {
+                        "status": "PASS",
+                        "value": 82.854,
+                        "threshold": 70.0,
+                        "reason": "Opportunity Quality 82.854 meets threshold 70",
+                    },
+                    "thesis_integrity": {
+                        "status": "PASS",
+                        "value": True,
+                        "threshold": True,
+                        "reason": "Thesis integrity passed",
+                    },
+                    "entry": {
+                        "status": "PASS",
+                        "value": 70.0,
+                        "threshold": 70.0,
+                        "reason": "Entry Score 70 meets threshold 70",
+                    },
+                    "promotion_ready": False,
+                    "blocking_reasons": [
+                        "trusted_sources: Source Confluence 4 is below threshold 5"
+                    ],
+                },
+            }
+        ],
+    })
+
+    for heading in (
+        "Trusted Sources",
+        "Financial Health",
+        "Theme Strength",
+        "Opportunity Quality",
+        "Thesis Integrity",
+        "Entry Readiness",
+        "Promotion Ready",
+        "Blocking Gates",
+    ):
+        assert heading in page
+
+    assert "AI Infrastructure" in page
+    assert "82.854" in page
+    assert "70" in page
+    assert "Source Confluence 4 is below threshold 5" in page
+
+    # Legacy promotion_eligible=True must not override authoritative readiness.
+    assert "Promotion Eligible" not in page
+    assert "Promotion Ready" in page
+    assert ">NO<" in page
+
+
+def test_swing_candidate_pipeline_does_not_infer_missing_promotion_readiness():
+    page = render_watchlist_panel({
+        "strategy_id": "SWING-001",
+        "watchlist_count": 1,
+        "watchlist": [
+            {
+                "underlying_symbol": "AMZN",
+                "leveraged_symbol": "AMZU",
+                "lifecycle_status": "WATCHLIST",
+                "capacity_status": "ACTIVE",
+                "watchlist_rank": 1,
+                "promotion_eligible": True,
+            }
+        ],
+    })
+
+    assert "Promotion Ready" in page
+    assert "Promotion Eligible" not in page
+
+    # The legacy True value must not produce a readiness YES.
+    assert ">YES<" not in page
+    assert "PENDING" in page
+    assert "Not reported" in page

@@ -348,6 +348,91 @@ def _strategy_metric_value(
     return None
 
 
+def _strategy_promotion_readiness(
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> dict[str, dict[str, Any]]:
+    """Index authoritative Swing Promotion Readiness evidence by symbol.
+
+    The Enterprise host consumes the published Swing report as read-only
+    evidence. It does not recalculate gates, alter lifecycle state, or infer
+    Promotion Readiness from legacy promotion_eligible fields.
+    """
+    if strategy_id != "SWING-001":
+        return {}
+
+    required_result_keys = {
+        "underlying_symbol",
+        "trusted_sources",
+        "financial_health",
+        "theme_strength",
+        "opportunity_quality",
+        "thesis_integrity",
+        "entry",
+        "promotion_ready",
+        "blocking_reasons",
+    }
+
+    for payload in _strategy_owned_payloads(payloads, strategy_id):
+        if not isinstance(payload, Mapping):
+            continue
+
+        # Promotion Readiness is a paper-only advisory report. These fields
+        # distinguish it from unrelated payloads that may also publish results.
+        if payload.get("paper_trade_mode") is not True:
+            continue
+        if payload.get("advisory_only") is not True:
+            continue
+
+        results = payload.get("results")
+        if not isinstance(results, list):
+            continue
+
+        indexed: dict[str, dict[str, Any]] = {}
+        report_matches_contract = False
+
+        for item in results:
+            if not isinstance(item, Mapping):
+                continue
+            if not required_result_keys.issubset(item.keys()):
+                continue
+
+            report_matches_contract = True
+            symbol = str(item.get("underlying_symbol") or "").strip().upper()
+            if not symbol:
+                continue
+
+            indexed[symbol] = dict(item)
+
+        if report_matches_contract:
+            return indexed
+
+    return {}
+
+
+def _enrich_swing_watchlist_with_promotion_readiness(
+    watchlist: Sequence[Mapping[str, Any]],
+    payloads: Sequence[Any],
+    strategy_id: str,
+) -> list[dict[str, Any]]:
+    """Attach exact Promotion Readiness rows without changing candidate authority."""
+    if strategy_id != "SWING-001":
+        return [dict(item) for item in watchlist]
+
+    readiness_by_symbol = _strategy_promotion_readiness(payloads, strategy_id)
+    enriched: list[dict[str, Any]] = []
+
+    for item in watchlist:
+        candidate = dict(item)
+        symbol = str(candidate.get("underlying_symbol") or "").strip().upper()
+        readiness = readiness_by_symbol.get(symbol)
+        if readiness is not None:
+            candidate["promotion_readiness"] = dict(readiness)
+        enriched.append(candidate)
+
+    return enriched
+
+
 def _strategy_holdings_detail(
     payloads: Sequence[Any],
     strategy_id: str,
@@ -814,6 +899,17 @@ def build_strategy_kpis(
         watchlist_detail = _detail_list(dashboard_evidence, "watchlist")
         if not watchlist_detail and strategy_id != "DIVIDEND-001":
             watchlist_detail = _strategy_watchlist_detail(payloads, strategy_id)
+
+        if (
+            strategy_id == "SWING-001"
+            and "promotion_readiness" in capability_names
+            and watchlist_detail
+        ):
+            watchlist_detail = _enrich_swing_watchlist_with_promotion_readiness(
+                watchlist_detail,
+                payloads,
+                strategy_id,
+            )
         income_events = _detail_list(dashboard_evidence, "income_events")
         alerts = _detail_list(dashboard_evidence, "alerts")
         alert_evidence_warnings: list[str] = []

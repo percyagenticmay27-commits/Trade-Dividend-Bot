@@ -136,12 +136,114 @@ def _pipeline_cell(value: Any) -> str:
     return html.escape(str(value))
 
 
+def _readiness_gate(
+    readiness: Mapping[str, Any],
+    key: str,
+) -> str:
+    gate = readiness.get(key)
+    if not isinstance(gate, Mapping):
+        return (
+            "<span class='watchlist-status watchlist-status-neutral'>PENDING</span>"
+            "<div class='watchlist-not-reported'>Not reported</div>"
+        )
+
+    status = str(gate.get("status") or "PENDING").strip().upper()
+    if status == "PASS":
+        status_class = "watchlist-status-ready"
+    elif status == "FAIL":
+        status_class = "watchlist-status-blocked"
+    else:
+        status = "PENDING"
+        status_class = "watchlist-status-neutral"
+
+    value = gate.get("value")
+    threshold = gate.get("threshold")
+    reason = str(gate.get("reason") or "").strip()
+
+    detail = ""
+    if value is not None:
+        if isinstance(value, bool):
+            value_text = "true" if value else "false"
+        else:
+            value_text = str(value)
+
+        if threshold is not None and not isinstance(threshold, bool):
+            detail = (
+                "<div class='watchlist-gate-value'>"
+                f"{html.escape(value_text)} / {html.escape(str(threshold))}"
+                "</div>"
+            )
+        else:
+            detail = (
+                "<div class='watchlist-gate-value'>"
+                f"{html.escape(value_text)}"
+                "</div>"
+            )
+    else:
+        detail = "<div class='watchlist-not-reported'>Not reported</div>"
+
+    title = f" title='{html.escape(reason, quote=True)}'" if reason else ""
+
+    return (
+        f"<span class='watchlist-status {status_class}'{title}>"
+        f"{html.escape(status)}</span>"
+        + detail
+    )
+
+
+def _promotion_ready_cell(readiness: Mapping[str, Any]) -> str:
+    if "promotion_ready" not in readiness:
+        return (
+            "<span class='watchlist-status watchlist-status-neutral'>PENDING</span>"
+            "<div class='watchlist-not-reported'>Not reported</div>"
+        )
+
+    ready = readiness.get("promotion_ready")
+    if ready is True:
+        return (
+            "<span class='watchlist-status watchlist-status-ready'>YES</span>"
+        )
+    if ready is False:
+        return (
+            "<span class='watchlist-status watchlist-status-blocked'>NO</span>"
+        )
+
+    return (
+        "<span class='watchlist-status watchlist-status-neutral'>PENDING</span>"
+        "<div class='watchlist-not-reported'>Not reported</div>"
+    )
+
+
+def _blocking_gates_cell(readiness: Mapping[str, Any]) -> str:
+    reasons = readiness.get("blocking_reasons")
+    if not isinstance(reasons, list) or not reasons:
+        if readiness.get("promotion_ready") is True:
+            return "None"
+        return _missing("Not reported")
+
+    safe_reasons = [
+        html.escape(str(reason))
+        for reason in reasons
+        if str(reason).strip()
+    ]
+    if not safe_reasons:
+        return _missing("Not reported")
+
+    return "<br>".join(safe_reasons)
+
+
 def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
     rows: list[str] = []
+
     for index, item in enumerate(items, start=1):
         lifecycle = _lifecycle(item)
         _, status_class = _status({"status": lifecycle})
-        rank = _first(item, ("watchlist_rank", "rank", "candidate_rank"), "Not reported")
+
+        rank = _first(
+            item,
+            ("watchlist_rank", "rank", "candidate_rank"),
+            "Not reported",
+        )
         underlying = _first(
             item,
             ("underlying_symbol", "symbol", "underlying", "ticker"),
@@ -157,38 +259,19 @@ def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
             ("capacity_status", "capacity", "allocation_capacity_status"),
             "Not reported",
         )
+
         composite = _score(_first(
             item,
             ("composite_score", "opportunity_quality", "opportunity_quality_score"),
             "",
         ))
-        financial = _first(
-            item,
-            ("financial_health", "financial_health_score", "financial_status"),
-            "Not reported",
-        )
+
         theme = _first(
             item,
             ("theme", "themes", "theme_name", "sector_theme"),
             "Not reported",
         )
-        promotion = next(
-            (
-                item.get(key)
-                for key in (
-                    "promotion_eligible",
-                    "eligible_for_promotion",
-                    "promotion_status",
-                )
-                if item.get(key) not in (None, "", [], {})
-            ),
-            "Not reported",
-        )
-        sources = _first(
-            item,
-            ("source_count", "evidence_source_count", "sources_count"),
-            "Not reported",
-        )
+
         win_rate = _percent(_first(
             item,
             ("win_rate", "win_rate_percent", "win_rate_pct"),
@@ -196,9 +279,18 @@ def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
         ))
         paper_return = _percent(_first(
             item,
-            ("paper_return", "paper_return_percent", "paper_return_pct", "total_return_percent"),
+            (
+                "paper_return",
+                "paper_return_percent",
+                "paper_return_pct",
+                "total_return_percent",
+            ),
             "",
         ))
+
+        raw_readiness = item.get("promotion_readiness")
+        readiness = raw_readiness if isinstance(raw_readiness, Mapping) else {}
+
         rows.append(
             "<tr>"
             f"<td class='num'>{html.escape(rank)}</td>"
@@ -206,15 +298,21 @@ def _pipeline_rows(items: list[Mapping[str, Any]]) -> str:
             f"<td>{_pipeline_cell(leveraged)}</td>"
             f"<td><span class='watchlist-status {status_class}'>{html.escape(lifecycle)}</span></td>"
             f"<td>{_pipeline_cell(capacity)}</td>"
-            f"<td class='num'>{_missing(composite)}</td>"
-            f"<td>{_pipeline_cell(financial)}</td>"
+            f"<td>{_readiness_gate(readiness, 'trusted_sources')}</td>"
+            f"<td>{_readiness_gate(readiness, 'financial_health')}</td>"
             f"<td>{_pipeline_cell(theme)}</td>"
-            f"<td>{_pipeline_cell(promotion)}</td>"
-            f"<td class='num'>{_pipeline_cell(sources)}</td>"
+            f"<td>{_readiness_gate(readiness, 'theme_strength')}</td>"
+            f"<td>{_readiness_gate(readiness, 'opportunity_quality')}</td>"
+            f"<td>{_readiness_gate(readiness, 'thesis_integrity')}</td>"
+            f"<td>{_readiness_gate(readiness, 'entry')}</td>"
+            f"<td>{_promotion_ready_cell(readiness)}</td>"
+            f"<td class='watchlist-blocking-gates'>{_blocking_gates_cell(readiness)}</td>"
+            f"<td class='num'>{_missing(composite)}</td>"
             f"<td class='num'>{_missing(win_rate)}</td>"
             f"<td class='num'>{_missing(paper_return)}</td>"
             "</tr>"
         )
+
     return "".join(rows)
 
 
@@ -243,9 +341,11 @@ def _render_candidate_pipeline(
     table = (
         "<div class='watchlist-table-wrap'><table class='watchlist-table candidate-pipeline-table'>"
         "<thead><tr><th>Watchlist Rank</th><th>Underlying Symbol</th><th>Leveraged Symbol</th>"
-        "<th>Lifecycle Status</th><th>Capacity Status</th><th>Composite Score</th>"
-        "<th>Financial Health</th><th>Theme</th><th>Promotion Eligible</th>"
-        "<th>Source Count</th><th>Win Rate</th><th>Paper Return</th></tr></thead>"
+        "<th>Lifecycle Status</th><th>Capacity Status</th>"
+        "<th>Trusted Sources</th><th>Financial Health</th><th>Theme</th>"
+        "<th>Theme Strength</th><th>Opportunity Quality</th><th>Thesis Integrity</th>"
+        "<th>Entry Readiness</th><th>Promotion Ready</th><th>Blocking Gates</th>"
+        "<th>Composite Score</th><th>Win Rate</th><th>Paper Return</th></tr></thead>"
         f"<tbody>{_pipeline_rows(items)}</tbody></table></div>"
     )
     return (

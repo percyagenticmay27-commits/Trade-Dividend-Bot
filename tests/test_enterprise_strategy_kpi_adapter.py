@@ -1200,3 +1200,142 @@ def test_swing_decision_journal_requires_registered_capability(
     assert rows[0]["decision_journal_status"] == "NOT_REPORTED"
     assert rows[0]["decision_journal"] is None
     assert rows[0]["allocated_capital"] == 4500.0
+
+
+def test_swing_watchlist_rows_include_authoritative_promotion_readiness(
+    tmp_path: Path,
+) -> None:
+    swing_root = tmp_path / "swing"
+    results = swing_root / "results"
+    results.mkdir(parents=True)
+
+    kpi_path = results / "enterprise_strategy_kpis.json"
+    readiness_path = results / "promotion_readiness_report.json"
+
+    kpi_path.write_text(json.dumps({
+        "strategy_id": "SWING-001",
+        "dashboard_sections": {
+            "watchlist": {
+                "count": 2,
+                "evidence": {
+                    "rows": [
+                        {
+                            "underlying_symbol": "NVDA",
+                            "leveraged_symbol": "NVDX",
+                            "lifecycle_status": "WATCHLIST",
+                            "promotion_eligible": True,
+                        },
+                        {
+                            "underlying_symbol": "AMZN",
+                            "leveraged_symbol": "AMZU",
+                            "lifecycle_status": "WATCHLIST",
+                            "promotion_eligible": True,
+                        },
+                    ]
+                },
+            }
+        },
+    }), encoding="utf-8")
+
+    readiness_path.write_text(json.dumps({
+        "schema_version": "1.0",
+        "paper_trade_mode": True,
+        "advisory_only": True,
+        "results": [
+            {
+                "underlying_symbol": "NVDA",
+                "leveraged_symbol": "NVDX",
+                "lifecycle_status": "WATCHLIST",
+                "trusted_sources": {
+                    "status": "FAIL",
+                    "value": 4.0,
+                    "threshold": 5.0,
+                    "reason": "Source Confluence 4 is below threshold 5",
+                    "evidence_source": "results/watchlist_report.json",
+                },
+                "financial_health": {
+                    "status": "PENDING",
+                    "value": None,
+                    "threshold": 70.0,
+                    "reason": "Financial Health evidence is unavailable",
+                    "evidence_source": "results/watchlist_report.json",
+                },
+                "theme_strength": {
+                    "status": "PENDING",
+                    "value": None,
+                    "threshold": 70.0,
+                    "reason": "Theme Momentum evidence is unavailable",
+                    "evidence_source": "results/watchlist_report.json",
+                },
+                "opportunity_quality": {
+                    "status": "PASS",
+                    "value": 82.854,
+                    "threshold": 70.0,
+                    "reason": "Opportunity Quality 82.854 meets threshold 70",
+                    "evidence_source": "results/opportunity_quality_report.json",
+                },
+                "thesis_integrity": {
+                    "status": "PASS",
+                    "value": True,
+                    "threshold": True,
+                    "reason": "Thesis integrity passed",
+                    "evidence_source": "results/thesis_monitor_v2_report.json",
+                },
+                "entry": {
+                    "status": "PASS",
+                    "value": 70.0,
+                    "threshold": 70.0,
+                    "reason": "Entry Score 70 meets threshold 70",
+                    "evidence_source": "results/entry_score_report.json",
+                },
+                "promotion_ready": False,
+                "blocking_reasons": [
+                    "trusted_sources: Source Confluence 4 is below threshold 5"
+                ],
+            }
+        ],
+    }), encoding="utf-8")
+
+    plugin = _plugin(
+        "SWING-001",
+        "Trade Swing Bot",
+        "results/enterprise_strategy_kpis.json",
+    )
+    plugin["repository_root"] = str(swing_root)
+    plugin["capabilities"].append("promotion_readiness")
+    plugin["dashboard_artifacts"].append({
+        "artifact_id": "promotion_readiness",
+        "artifact_type": "promotion_readiness",
+        "path": "results/promotion_readiness_report.json",
+        "format": "json",
+        "authoritative": True,
+        "required": False,
+    })
+
+    rows, warnings = build_strategy_kpis(
+        registry={"strategy_plugins": [plugin]},
+        root_dir=tmp_path,
+    )
+
+    assert warnings == []
+
+    watchlist = rows[0]["watchlist"]
+    nvda = next(item for item in watchlist if item["underlying_symbol"] == "NVDA")
+    amzn = next(item for item in watchlist if item["underlying_symbol"] == "AMZN")
+
+    readiness = nvda["promotion_readiness"]
+    assert readiness["trusted_sources"]["status"] == "FAIL"
+    assert readiness["opportunity_quality"]["value"] == 82.854
+    assert readiness["thesis_integrity"]["status"] == "PASS"
+    assert readiness["entry"]["status"] == "PASS"
+    assert readiness["promotion_ready"] is False
+    assert readiness["blocking_reasons"] == [
+        "trusted_sources: Source Confluence 4 is below threshold 5"
+    ]
+
+    # Legacy promotion_eligible must not become the readiness authority.
+    assert nvda["promotion_eligible"] is True
+    assert readiness["promotion_ready"] is False
+
+    # Missing readiness evidence remains unavailable rather than inferred.
+    assert "promotion_readiness" not in amzn
