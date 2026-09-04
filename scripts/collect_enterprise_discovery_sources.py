@@ -92,11 +92,6 @@ def _hydrate_retained_theme_context(
     return report
 
 
-def _active_candidate_symbols(root: Path) -> set[str]:
-    """Backward-compatible symbol-only view of retained active candidates."""
-    return set(_active_candidates(root))
-
-
 def _refresh_financial_health_for_active_candidates(
     report: dict,
     service: MarketDataService,
