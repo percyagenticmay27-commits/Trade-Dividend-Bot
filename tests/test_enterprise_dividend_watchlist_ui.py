@@ -71,14 +71,26 @@ def test_dividend_watchlist_preserves_original_columns_and_values():
     assert "2026-09-04T12:00:00Z" in output
 
 
-def test_dividend_watchlist_adds_only_collapsible_record_below_symbol_row():
+def test_dividend_watchlist_collapsible_record_matches_swing_promotion_spec():
     output = render_dividend_watchlist_panel(_dividend_row())
 
     assert "dividend-watch-detail-toggle" in output
     assert "dividend-watch-detail-1" in output
     assert "colspan='11'" in output
     assert "Promotion Readiness — DG" in output
-    assert "Dividend pre-trade Promotion Readiness" in output
+    assert "Seven-gate Promotion Readiness" in output
+
+    # Exact shared Swing Promotion Readiness visual structure/classes.
+    assert "watchlist-promotion-panel dividend-promotion-spec" in output
+    assert "watchlist-promotion-panel-heading" in output
+    assert "watchlist-promotion-section-title" in output
+    assert "watchlist-promotion-gates-wrap" in output
+    assert "watchlist-promotion-gates" in output
+    assert output.count("watchlist-promotion-gate-card") == 7
+    assert "watchlist-promotion-gate-header" in output
+    assert "watchlist-promotion-gate-content" in output
+    assert "watchlist-promotion-blockers" in output
+
     assert "Trusted Sources / Evidence" in output
     assert "Financial Health" in output
     assert "Dividend / Income Suitability" in output
@@ -88,7 +100,7 @@ def test_dividend_watchlist_adds_only_collapsible_record_below_symbol_row():
     assert "Entry Readiness" in output
     assert "ENTRY_READINESS" in output
 
-    # No replacement summary columns were introduced.
+    # Original Dividend table remains untouched.
     assert "<th>Promotion</th>" not in output
     assert "<th>Status</th>" not in output
 
@@ -130,4 +142,5 @@ def test_dividend_workspace_keeps_original_watchlist_and_adds_collapsible_detail
     assert "Why It Has Not Progressed" in output
     assert "What Happens Next" in output
     assert "Promotion Readiness — DG" in output
+    assert "Seven-gate Promotion Readiness" in output
     assert "without changing the original Watchlist columns or published values" in output
