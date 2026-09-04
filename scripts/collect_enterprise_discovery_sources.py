@@ -18,6 +18,23 @@ from enterprise_discovery_market_evidence import attach_candidate_market_evidenc
 from enterprise_discovery_theme_strength import attach_candidate_theme_strength
 from market_data_provider import MarketDataService
 
+APPROVED_THEME_CONTEXT = {
+    "AI INFRASTRUCTURE",
+    "DATA CENTERS",
+    "SEMICONDUCTORS",
+    "NUCLEAR POWER",
+    "ENERGY STORAGE",
+    "ROBOTICS",
+    "QUANTUM COMPUTING",
+    "CYBERSECURITY",
+    "BITCOIN MINING",
+    "CLOUD COMPUTING",
+    "DEFENSE TECH",
+    "CLEAN ENERGY",
+    "HYDROGEN",
+    "ELECTRIC VEHICLES",
+}
+
 
 def _active_candidates(root: Path) -> dict[str, dict]:
     """Return retained active candidate context keyed by underlying symbol."""
@@ -42,12 +59,12 @@ def _hydrate_retained_theme_context(
     report: dict,
     active_candidates: Mapping[str, Mapping[str, object]],
 ) -> dict:
-    """Carry retained authoritative theme labels into same-symbol research refreshes.
+    """Carry authoritative theme context into same-symbol research refreshes.
 
-    A current discovery observation can be research-only and therefore omit theme
-    labels even while the symbol remains an active retained candidate. Reusing the
-    retained label does not reconfirm nomination and does not fabricate a new theme;
-    it only lets current shared evidence refresh the already-retained theme context.
+    Prefer the retained active-candidate theme label. If legacy retention has already
+    lost that label, allow only an exact match between the current authoritative
+    market industry classification and Swing's approved theme vocabulary. This is
+    evidence-backed classification reuse, not a new inferred theme or nomination.
     """
     for row in report.get("observations", []):
         if not isinstance(row, dict):
@@ -57,9 +74,18 @@ def _hydrate_retained_theme_context(
         if not isinstance(retained, Mapping):
             continue
         current_themes = [str(value).strip() for value in row.get("themes", []) if str(value).strip()]
+        if current_themes:
+            continue
         retained_themes = [str(value).strip() for value in retained.get("themes", []) if str(value).strip()]
-        if not current_themes and retained_themes:
+        if retained_themes:
             row["themes"] = retained_themes
+            continue
+        market = row.get("market_evidence")
+        if not isinstance(market, Mapping):
+            continue
+        industry = str(market.get("industry") or "").strip()
+        if industry and industry.upper() in APPROVED_THEME_CONTEXT:
+            row["themes"] = [industry]
     return report
 
 
@@ -106,6 +132,8 @@ def _refresh_shared_evidence_for_active_candidates(
             row["nomination_eligible"] = True
     try:
         report = attach_candidate_market_evidence(report, service)
+        if active_candidates:
+            report = _hydrate_retained_theme_context(report, active_candidates)
         report = attach_candidate_financial_health(report, service)
     finally:
         for row, original in original_states:
