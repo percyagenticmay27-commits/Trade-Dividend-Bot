@@ -95,235 +95,177 @@ def test_watchlist_css_is_self_contained_and_responsive():
     assert "@media(max-width:520px)" in css
 
 
-def test_swing_candidate_pipeline_renders_all_published_lifecycle_rows():
-    page = render_watchlist_panel({
-        "strategy_id": "SWING-001",
-        "watchlist_count": 3,
-        "watchlist": [
-            {
-                "underlying_symbol": "NBIS",
-                "leveraged_symbol": "NEBX",
-                "lifecycle_status": "WATCHLIST",
-                "capacity_status": "ACTIVE",
-                "watchlist_rank": 1,
-                "composite_score": 91.2,
-                "financial_health": "STRONG",
-                "theme": "AI Infrastructure",
-                "promotion_eligible": True,
-                "source_count": 5,
-                "win_rate": 62.5,
-                "paper_return": 8.4,
-            },
-            {
-                "underlying_symbol": "IREN",
-                "leveraged_symbol": "IREL",
-                "lifecycle_status": "DISCOVERY",
-                "capacity_status": "ACTIVE",
-                "watchlist_rank": 2,
-            },
-            {
-                "underlying_symbol": "BE",
-                "leveraged_symbol": None,
-                "lifecycle_status": "REMOVED",
-                "capacity_status": "REMOVED",
-                "watchlist_rank": 3,
-            },
-        ],
-    })
-
-    assert "Candidate Pipeline" in page
-    assert "Total Candidate Records</span><strong>3" in page
-    assert "Active Watchlist</span><strong>1" in page
-    assert "Discovery</span><strong>1" in page
-    assert "Removed</span><strong>1" in page
-    assert "NBIS" in page and "NEBX" in page
-    assert "IREN" in page and "IREL" in page
-    assert ">BE<" in page
-    assert ">WATCHLIST<" in page
-    assert ">DISCOVERY<" in page
-    assert ">REMOVED<" in page
-    for heading in (
-        "Underlying Symbol",
-        "Leveraged Symbol",
-        "Lifecycle Status",
-        "Capacity Status",
-        "Watchlist Rank",
-        "Trusted Sources",
-        "Financial Health",
-        "Theme",
-        "Theme Strength",
-        "Opportunity Quality",
-        "Thesis Integrity",
-        "Entry Readiness",
-        "Promotion Ready",
-        "Blocking Gates",
-        "Composite Score",
-        "Win Rate",
-        "Paper Return",
-    ):
-        assert heading in page
-
-    assert "Promotion Eligible" not in page
-
-
 def test_watchlist_count_never_fabricates_candidate_rows():
     page = render_watchlist_panel({
         "strategy_id": "SWING-001",
         "watchlist_count": 3,
         "watchlist": [],
     })
-
     assert "3 candidates" in page
     assert "reports 3 candidate records" in page
     assert "Candidate rows are never fabricated" in page
     assert "<tbody>" not in page
 
-def test_swing_candidate_pipeline_supports_exact_published_field_names():
-    page = render_watchlist_panel({
+
+def _swing_row():
+    return {
         "strategy_id": "SWING-001",
-        "watchlist_count": 2,
-        "watchlist": [
-            {
-                "underlying_symbol": "NBIS",
-                "leveraged_symbol": "NEBX",
-                "watchlist_status": "WATCHLIST",
-                "capacity_status": "ACTIVE",
-                "watchlist_rank": 1,
-                "financial_health_score": 77.29,
-                "themes": "AI Infrastructure;Data Centers",
-                "promotion_eligible": False,
-            },
-            {
-                "underlying_symbol": "BE",
-                "leveraged_symbol": "",
-                "watchlist_status": "REMOVED",
-                "capacity_status": "REMOVED",
-                "watchlist_rank": None,
-                "themes": "Clean Energy",
-                "promotion_eligible": False,
-            },
-        ],
-    })
-
-    assert "AI Infrastructure;Data Centers" in page
-    assert "Clean Energy" in page
-
-    # Legacy financial_health_score and promotion_eligible remain source fields,
-    # but they are not authoritative Promotion Readiness evidence.
-    assert "77.29" not in page
-    assert ">NO<" not in page
-    assert "Promotion Eligible" not in page
-
-    # Missing authoritative Promotion Readiness renders unavailable/PENDING.
-    assert "PENDING" in page
-    assert "watchlist-not-reported'>Not reported" in page
-    assert ">WATCHLIST<" in page
-    assert ">REMOVED<" in page
-
-
-
-def test_swing_candidate_pipeline_renders_authoritative_promotion_readiness():
-    page = render_watchlist_panel({
-        "strategy_id": "SWING-001",
-        "watchlist_count": 1,
+        "watchlist_count": 4,
         "watchlist": [
             {
                 "underlying_symbol": "NVDA",
                 "leveraged_symbol": "NVDX",
                 "lifecycle_status": "WATCHLIST",
-                "capacity_status": "ACTIVE",
                 "watchlist_rank": 1,
                 "theme": "AI Infrastructure",
                 "promotion_eligible": True,
                 "promotion_readiness": {
-                    "trusted_sources": {
-                        "status": "FAIL",
-                        "value": 4.0,
-                        "threshold": 5.0,
-                        "reason": "Source Confluence 4 is below threshold 5",
-                    },
-                    "financial_health": {
-                        "status": "PENDING",
-                        "value": None,
-                        "threshold": 70.0,
-                        "reason": "Financial Health evidence is unavailable",
-                    },
-                    "theme_strength": {
-                        "status": "PENDING",
-                        "value": None,
-                        "threshold": 70.0,
-                        "reason": "Theme Momentum evidence is unavailable",
-                    },
-                    "opportunity_quality": {
-                        "status": "PASS",
-                        "value": 82.854,
-                        "threshold": 70.0,
-                        "reason": "Opportunity Quality 82.854 meets threshold 70",
-                    },
-                    "thesis_integrity": {
-                        "status": "PASS",
-                        "value": True,
-                        "threshold": True,
-                        "reason": "Thesis integrity passed",
-                    },
-                    "entry": {
-                        "status": "PASS",
-                        "value": 70.0,
-                        "threshold": 70.0,
-                        "reason": "Entry Score 70 meets threshold 70",
-                    },
+                    "trusted_sources": {"status": "FAIL", "value": 4, "threshold": 5, "reason": "Need <five> sources", "sources": ["SEC", "Reuters"]},
+                    "financial_health": {"status": "PENDING", "value": None, "threshold": 70, "reason": "Financial <health> unavailable"},
+                    "theme_strength": {"status": "PENDING", "value": None, "threshold": 70, "reason": "Theme <strength> unavailable"},
+                    "opportunity_quality": {"status": "PASS", "value": 82.854, "threshold": 70, "reason": "OQ <strong> good", "evidence_source": "oq.json", "provenance": "Swing runtime"},
+                    "thesis_integrity": {"status": "PASS", "value": True, "reason": "Thesis <ok>", "evidence_available": True, "source": "thesis.json"},
+                    "entry": {"status": "PASS", "value": 70.0, "threshold": 70, "reason": "Entry <ready>", "source_path": "entry.json"},
                     "promotion_ready": False,
-                    "blocking_reasons": [
-                        "trusted_sources: Source Confluence 4 is below threshold 5"
-                    ],
+                    "blocking_reasons": ["trusted_sources: <blocked>"],
                 },
-            }
-        ],
-    })
-
-    for heading in (
-        "Trusted Sources",
-        "Financial Health",
-        "Theme Strength",
-        "Opportunity Quality",
-        "Thesis Integrity",
-        "Entry Readiness",
-        "Promotion Ready",
-        "Blocking Gates",
-    ):
-        assert heading in page
-
-    assert "AI Infrastructure" in page
-    assert "82.854" in page
-    assert "70" in page
-    assert "Source Confluence 4 is below threshold 5" in page
-
-    # Legacy promotion_eligible=True must not override authoritative readiness.
-    assert "Promotion Eligible" not in page
-    assert "Promotion Ready" in page
-    assert ">NO<" in page
-
-
-def test_swing_candidate_pipeline_does_not_infer_missing_promotion_readiness():
-    page = render_watchlist_panel({
-        "strategy_id": "SWING-001",
-        "watchlist_count": 1,
-        "watchlist": [
+            },
+            {
+                "underlying_symbol": "IREN",
+                "leveraged_symbol": "IREL",
+                "lifecycle_status": "DISCOVERY",
+                "watchlist_rank": 2,
+                "theme": None,
+            },
+            {
+                "underlying_symbol": "BE",
+                "leveraged_symbol": None,
+                "lifecycle_status": "MONITOR",
+                "watchlist_rank": 3,
+                "theme": "Clean Energy",
+                "promotion_readiness": {"promotion_ready": True},
+            },
             {
                 "underlying_symbol": "AMZN",
                 "leveraged_symbol": "AMZU",
                 "lifecycle_status": "WATCHLIST",
-                "capacity_status": "ACTIVE",
-                "watchlist_rank": 1,
+                "watchlist_rank": 4,
                 "promotion_eligible": True,
-            }
+            },
         ],
-    })
+    }
 
-    assert "Promotion Ready" in page
-    assert "Promotion Eligible" not in page
 
-    # The legacy True value must not produce a readiness YES.
-    assert ">YES<" not in page
-    assert "PENDING" in page
-    assert "Not reported" in page
+def _swing_table(page: str) -> str:
+    start = page.index("<table class='watchlist-table candidate-pipeline-table'>")
+    end = page.index("</table>", start) + len("</table>")
+    return page[start:end]
+
+
+def test_swing_main_table_has_exact_compact_headings():
+    table = _swing_table(render_watchlist_panel(_swing_row()))
+    assert "<thead><tr><th>Rank</th><th>Symbol</th><th>Vehicle</th><th>Status</th><th>Theme</th><th>OQ</th><th>Thesis</th><th>Entry</th><th>Promotion</th></tr></thead>" in table
+
+
+def test_old_oversized_headings_absent_from_swing_main_table():
+    table = _swing_table(render_watchlist_panel(_swing_row()))
+    for heading in ("Capacity Status", "Trusted Sources", "Theme Strength", "Blocking Gates", "Composite Score", "Win Rate", "Paper Return"):
+        assert f"<th>{heading}</th>" not in table
+
+
+def test_watchlist_rank_renders_only_for_watchlist_records():
+    table = _swing_table(render_watchlist_panel(_swing_row()))
+    assert "<td class='num'>1</td>" in table
+    assert table.count("<td class='num'>—</td>") == 2
+    assert "Not reported" not in table.split("<tbody>", 1)[1].split("</tbody>", 1)[0].split("<td class='num'>", 1)[1].split("</td>", 1)[0]
+
+
+def test_missing_theme_renders_em_dash():
+    table = _swing_table(render_watchlist_panel(_swing_row()))
+    assert "<strong>IREN</strong>" in table
+    iren = table.split("<strong>IREN</strong>", 1)[1].split("</tr>", 1)[0]
+    assert "<td>—</td>" in iren
+
+
+def test_oq_uses_authoritative_nested_score_status_and_expandable_detail():
+    page = render_watchlist_panel(_swing_row())
+    assert "82.9 PASS" in page
+    assert "Open opportunity quality QA evidence" in page
+    assert "Exact value</dt><dd>82.854" in page
+    assert "Threshold</dt><dd>70" in page
+    assert "OQ &lt;strong&gt; good" in page
+    assert "oq.json" in page
+    assert "Swing runtime" in page
+
+
+def test_thesis_uses_authoritative_status_and_expandable_detail():
+    page = render_watchlist_panel(_swing_row())
+    assert "Open thesis integrity QA evidence" in page
+    assert ">PASS</span>" in page
+    assert "Exact value</dt><dd>true" in page
+    assert "Evidence availability</dt><dd>true" in page
+    assert "thesis.json" in page
+
+
+def test_entry_uses_authoritative_score_status_and_expandable_detail():
+    page = render_watchlist_panel(_swing_row())
+    assert "70 PASS" in page
+    assert "Open entry QA evidence" in page
+    assert "Exact value</dt><dd>70.0" in page
+    assert "entry.json" in page
+
+
+def test_promotion_no_has_six_gate_detail_and_blocking_reasons():
+    page = render_watchlist_panel(_swing_row())
+    assert ">NO</span>" in page
+    assert "Open Promotion QA evidence" in page
+    for gate in ("Trusted Sources", "Financial Health", "Theme Strength", "Opportunity Quality", "Thesis Integrity", "Entry Readiness"):
+        assert f"<strong>{gate}</strong>" in page
+    assert "trusted_sources: &lt;blocked&gt;" in page
+    assert "SEC, Reuters" in page
+
+
+def test_promotion_yes_only_from_authoritative_true():
+    page = render_watchlist_panel(_swing_row())
+    assert page.count(">YES</span>") == 1
+    assert page.count(">NO</span>") == 1
+
+
+def test_missing_promotion_readiness_is_pending_not_legacy_inference():
+    page = render_watchlist_panel(_swing_row())
+    amzn = page.split("<strong>AMZN</strong>", 1)[1].split("</tr>", 1)[0]
+    assert "PENDING" in amzn
+    assert ">YES</span>" not in amzn
+    assert "Authoritative Promotion Readiness evidence is unavailable." in amzn
+
+
+def test_pending_financial_health_and_theme_strength_remain_pending_not_zero():
+    page = render_watchlist_panel(_swing_row())
+    promo = page.split("Six-gate Promotion Readiness", 1)[1].split("Blocking reasons", 1)[0]
+    assert "<strong>Financial Health</strong> <span class='watchlist-status watchlist-status-neutral'>PENDING</span>" in promo
+    assert "<strong>Theme Strength</strong> <span class='watchlist-status watchlist-status-neutral'>PENDING</span>" in promo
+    assert "value 0" not in promo
+
+
+def test_html_escaping_for_reasons_and_evidence():
+    page = render_watchlist_panel(_swing_row())
+    for raw in ("<five>", "<health>", "<strength>", "<ok>", "<ready>", "<blocked>"):
+        assert raw not in page
+    assert "&lt;five&gt;" in page
+    assert "&lt;blocked&gt;" in page
+
+
+def test_non_swing_behavior_remains_compatible():
+    page = render_watchlist_panel({"strategy_id": "DIVIDEND-001", "watchlist_count": 1, "watchlist": [{"symbol": "AAA", "rank": 1, "status": "WATCH", "entry_score": 82.5, "entry_confidence": 77, "entry_confidence_level": "HIGH", "market_data_stale": False, "currently_held": False}]})
+    assert "<th>Candidate</th>" in page
+    assert "Entry Score" in page
+    assert "Confidence" in page
+    assert "82.5" in page
+    assert "77.0 (High)" in page
+
+
+def test_css_supports_native_details_drilldowns():
+    css = watchlist_ui_css()
+    assert ".watchlist-qa-details" in css
+    assert ".watchlist-qa-body" in css
+    assert ".candidate-pipeline-table{min-width:880px}" in css
