@@ -34,6 +34,101 @@
       "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "shareholder_letter", "financial_statement", "company_news", "sec_filing"],
       "scoring_eligible": false,
       "activation_note": "Official Netflix investor relations sources verified; evidence remains non-scoring until explicit governed review."
+    },
+    {
+      "symbol": "AMZN",
+      "issuer_name": "Amazon.com, Inc.",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "status": "VERIFIED_ACTIVE",
+      "verified_domains": ["ir.aboutamazon.com"],
+      "research_pages": [
+        {"role": "investor_relations", "url": "https://ir.aboutamazon.com/overview/"},
+        {"role": "quarterly_results", "url": "https://ir.aboutamazon.com/quarterly-results/default.aspx"},
+        {"role": "sec_filings", "url": "https://ir.aboutamazon.com/sec-filings/default.aspx"},
+        {"role": "investor_events", "url": "https://ir.aboutamazon.com/events/default.aspx"}
+      ],
+      "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "shareholder_letter", "company_news", "sec_filing"],
+      "scoring_eligible": false,
+      "activation_note": "Official Amazon investor relations sources verified; evidence remains non-scoring until explicit governed review."
+    },
+    {
+      "symbol": "PLTR",
+      "issuer_name": "Palantir Technologies Inc.",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "status": "VERIFIED_ACTIVE",
+      "verified_domains": ["investors.palantir.com", "palantir.com"],
+      "research_pages": [
+        {"role": "investor_relations", "url": "https://investors.palantir.com/"},
+        {"role": "investor_events", "url": "https://investors.palantir.com/events.html"},
+        {"role": "official_newsroom", "url": "https://www.palantir.com/newsroom/"}
+      ],
+      "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "presentation", "shareholder_letter", "company_news", "sec_filing"],
+      "scoring_eligible": false,
+      "activation_note": "Official Palantir investor relations and newsroom sources verified; evidence remains non-scoring until explicit governed review."
+    },
+    {
+      "symbol": "NBIS",
+      "issuer_name": "Nebius Group N.V.",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "status": "VERIFIED_ACTIVE",
+      "verified_domains": ["nebius.com"],
+      "research_pages": [
+        {"role": "investor_relations", "url": "https://nebius.com/investor-hub"},
+        {"role": "official_newsroom", "url": "https://nebius.com/newsroom"},
+        {"role": "financial_releases", "url": "https://nebius.com/financials"},
+        {"role": "investor_events", "url": "https://nebius.com/investor-events"}
+      ],
+      "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "shareholder_letter", "presentation", "product_announcement", "company_news"],
+      "scoring_eligible": false,
+      "activation_note": "Official Nebius investor hub, newsroom, financials, and events sources verified; evidence remains non-scoring until explicit governed review."
+    },
+    {
+      "symbol": "IREN",
+      "issuer_name": "IREN Limited",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "status": "VERIFIED_ACTIVE",
+      "verified_domains": ["iren.com", "www.iren.com"],
+      "research_pages": [
+        {"role": "investor_relations", "url": "https://www.iren.com/investors"},
+        {"role": "financial_releases", "url": "https://iren.com/investors/news"},
+        {"role": "investor_events", "url": "https://iren.com/investor/events-and-presentations"},
+        {"role": "sec_filings", "url": "https://iren.com/investor/sec-filings"}
+      ],
+      "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "presentation", "company_news", "sec_filing"],
+      "scoring_eligible": false,
+      "activation_note": "Official IREN investor sources verified; evidence remains non-scoring until explicit governed review."
+    },
+    {
+      "symbol": "BE",
+      "issuer_name": "Bloom Energy Corporation",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "status": "VERIFIED_ACTIVE",
+      "verified_domains": ["investor.bloomenergy.com", "bloomenergy.com", "www.bloomenergy.com"],
+      "research_pages": [
+        {"role": "investor_relations", "url": "https://investor.bloomenergy.com/"},
+        {"role": "rss_directory", "url": "https://investor.bloomenergy.com/investor-resources/rss/default.aspx"},
+        {"role": "official_newsroom", "url": "https://www.bloomenergy.com/newsroom/"}
+      ],
+      "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "presentation", "product_announcement", "company_news", "sec_filing"],
+      "scoring_eligible": false,
+      "activation_note": "Official Bloom Energy investor/newsroom sources verified; evidence remains non-scoring until explicit governed review."
+    },
+    {
+      "symbol": "SNDK",
+      "issuer_name": "Sandisk Corporation",
+      "tier": "TIER_1_PRIMARY_OFFICIAL",
+      "status": "VERIFIED_ACTIVE",
+      "verified_domains": ["investor.sandisk.com", "sandisk.com", "www.sandisk.com"],
+      "research_pages": [
+        {"role": "investor_relations", "url": "https://investor.sandisk.com/"},
+        {"role": "financial_releases", "url": "https://investor.sandisk.com/news-events/news-releases"},
+        {"role": "investor_events", "url": "https://investor.sandisk.com/news-events/events"},
+        {"role": "presentations", "url": "https://investor.sandisk.com/news-events/presentations"},
+        {"role": "sec_filings", "url": "https://investor.sandisk.com/financial-information/sec-filings"}
+      ],
+      "allowed_evidence_roles": ["earnings", "financial_release", "guidance", "investor_event", "presentation", "product_announcement", "company_news", "sec_filing"],
+      "scoring_eligible": false,
+      "activation_note": "Official Sandisk investor relations sources verified; evidence remains non-scoring until explicit governed review."
     }
   ],
   "discovery_requirements": {
