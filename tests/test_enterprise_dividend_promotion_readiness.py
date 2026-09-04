@@ -127,14 +127,15 @@ def test_nvda_authoritative_values_are_assembled_without_inventing_missing_gates
     assert readiness["promotion_ready"] is False
 
 
-def test_financial_health_fails_closed_when_incomplete(tmp_path):
+def test_financial_health_incomplete_evidence_stays_pending(tmp_path):
     _write(
         tmp_path / "results/enterprise_dividend_discovery_bucket.json",
         {"candidates": [{"underlying_symbol": "NVDA", "financial_health": {"components": {"revenue_growth": 100}}}]},
     )
     readiness = build_dividend_promotion_readiness(_nvda_watchlist_item(), tmp_path)
-    assert readiness["financial_health"]["status"] == "FAIL"
-    assert readiness["financial_health"]["value"] == 100.0
+    assert readiness["financial_health"]["status"] == "PENDING"
+    assert readiness["financial_health"]["value"] is None
+    assert "all seven governed components" in readiness["financial_health"]["reason"]
 
 
 def test_enrichment_preserves_original_watchlist_values(tmp_path):
