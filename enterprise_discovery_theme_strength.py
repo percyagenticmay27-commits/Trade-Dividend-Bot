@@ -1,10 +1,9 @@
 """Authoritative shared Theme Strength evidence for Enterprise discovery candidates.
 
 Theme Strength is broader than short-window mention momentum. This producer combines
-current theme evidence breadth, source-class diversity, explicit catalysts, market
-confirmation, and sector confirmation into one fail-closed 0-100 score. It does not
-change Swing's existing Theme Momentum calculation; it produces upstream evidence
-that can be validated independently by downstream consumers.
+current theme evidence breadth, source-class diversity, governed catalyst support,
+market confirmation, and sector confirmation into one fail-closed 0-100 score. It
+does not change Swing's existing Theme Momentum calculation.
 """
 from __future__ import annotations
 
@@ -19,6 +18,36 @@ THEME_STRENGTH_COMPONENTS = (
     "market_confirmation",
     "sector_confirmation",
 )
+
+CATALYST_FAMILIES = (
+    "earnings_fundamental_growth",
+    "analyst_institutional_revisions",
+    "guidance_outlook",
+    "product_innovation",
+    "contracts_customer_wins",
+    "capex_infrastructure_demand",
+    "regulatory_government",
+    "ma_strategic_activity",
+    "sector_industry_tailwind",
+    "corporate_capital_catalyst",
+)
+
+# Additional catalyst families are accepted only from explicit reviewed evidence.
+# We do not infer them from titles or free text inside this scoring layer.
+CATALYST_EVIDENCE_FLAGS = {
+    "guidance_outlook": "guidance_outlook_related",
+    "product_innovation": "product_innovation_related",
+    "contracts_customer_wins": "contracts_customer_wins_related",
+    "capex_infrastructure_demand": "capex_infrastructure_demand_related",
+    "regulatory_government": "regulatory_government_related",
+    "ma_strategic_activity": "ma_strategic_activity_related",
+    "sector_industry_tailwind": "sector_industry_tailwind_related",
+    "corporate_capital_catalyst": "corporate_capital_catalyst_related",
+}
+
+# Diminishing returns prevent many mediocre/repeated catalyst families from
+# manufacturing a perfect score. Only distinct confirmed families consume slots.
+CATALYST_SLOT_POINTS = (35.0, 25.0, 15.0, 10.0, 7.5, 5.0, 2.5)
 
 WEIGHTS = {
     "evidence_breadth": 0.25,
@@ -54,6 +83,42 @@ def _normalized_evidence(row: Mapping[str, Any]) -> list[Mapping[str, Any]]:
     return [item for item in items if isinstance(item, Mapping)] if isinstance(items, list) else []
 
 
+def _confirmed_catalysts(
+    evidence: list[Mapping[str, Any]],
+    *,
+    revenue_growth: float,
+    eps_growth: float,
+    analyst_upgrades: float,
+    analyst_downgrades: float,
+) -> tuple[dict[str, bool], dict[str, Any]]:
+    source_earnings = any(bool(item.get("earnings_growth_related")) for item in evidence)
+    source_analyst = any(bool(item.get("analyst_upgrade_related")) for item in evidence)
+    fundamentals_earnings = revenue_growth > 0.0 and eps_growth > 0.0
+    fundamentals_analyst = analyst_upgrades > analyst_downgrades
+
+    catalysts = {
+        "earnings_fundamental_growth": source_earnings or fundamentals_earnings,
+        "analyst_institutional_revisions": source_analyst or fundamentals_analyst,
+    }
+    for family, flag in CATALYST_EVIDENCE_FLAGS.items():
+        catalysts[family] = any(bool(item.get(flag)) for item in evidence)
+
+    if set(catalysts) != set(CATALYST_FAMILIES):
+        raise ValueError("catalyst taxonomy is incomplete")
+    details = {
+        "source_earnings_growth_catalyst": source_earnings,
+        "source_analyst_upgrade_catalyst": source_analyst,
+        "fundamentals_earnings_growth_catalyst": fundamentals_earnings,
+        "fundamentals_analyst_upgrade_catalyst": fundamentals_analyst,
+    }
+    return catalysts, details
+
+
+def _catalyst_score(catalysts: Mapping[str, bool]) -> float:
+    count = sum(1 for family in CATALYST_FAMILIES if catalysts.get(family) is True)
+    return _clamp(sum(CATALYST_SLOT_POINTS[:count]))
+
+
 def build_theme_strength_block(
     row: Mapping[str, Any],
     *,
@@ -67,13 +132,7 @@ def build_theme_strength_block(
     financial_components = financial.get("components") if isinstance(financial, Mapping) else None
     financial_evidence = financial.get("evidence") if isinstance(financial, Mapping) else None
 
-    if (
-        not themes
-        or not evidence
-        or market is None
-        or not isinstance(financial_components, Mapping)
-        or not isinstance(financial_evidence, Mapping)
-    ):
+    if not themes or not evidence or market is None or not isinstance(financial_components, Mapping) or not isinstance(financial_evidence, Mapping):
         return None
     if str(market.get("status") or "").upper() != "AVAILABLE" or market.get("is_stale"):
         return None
@@ -98,33 +157,19 @@ def build_theme_strength_block(
     eps_growth = _number(financial_evidence.get("eps_growth"))
     analyst_upgrades = _number(financial_evidence.get("analyst_upgrades_90d"))
     analyst_downgrades = _number(financial_evidence.get("analyst_downgrades_90d"))
-    if (
-        relative_strength is None
-        or volume_ratio is None
-        or sector_confirmation is None
-        or revenue_growth is None
-        or eps_growth is None
-        or analyst_upgrades is None
-        or analyst_downgrades is None
-    ):
+    if any(value is None for value in (relative_strength, volume_ratio, sector_confirmation, revenue_growth, eps_growth, analyst_upgrades, analyst_downgrades)):
         return None
 
     breadth_score = _clamp(min(len(producers), 4) / 4.0 * 100.0)
     diversity_score = _clamp(min(len(source_classes), 3) / 3.0 * 100.0)
-
-    # Catalyst support is confirmation, not headline classification. Reviewed source
-    # evidence may explicitly identify a catalyst, while the authoritative Financial
-    # Health block independently confirms whether earnings are actually growing and
-    # whether analyst revisions are net-positive. This prevents a generic "earnings"
-    # title from receiving catalyst credit without fundamental support.
-    source_earnings_catalyst = any(bool(item.get("earnings_growth_related")) for item in evidence)
-    source_analyst_catalyst = any(bool(item.get("analyst_upgrade_related")) for item in evidence)
-    fundamentals_earnings_catalyst = revenue_growth > 0.0 and eps_growth > 0.0
-    fundamentals_analyst_catalyst = analyst_upgrades > analyst_downgrades
-    earnings_catalyst = source_earnings_catalyst or fundamentals_earnings_catalyst
-    analyst_catalyst = source_analyst_catalyst or fundamentals_analyst_catalyst
-    catalyst_score = float(50 * int(earnings_catalyst) + 50 * int(analyst_catalyst))
-
+    catalysts, catalyst_details = _confirmed_catalysts(
+        evidence,
+        revenue_growth=revenue_growth,
+        eps_growth=eps_growth,
+        analyst_upgrades=analyst_upgrades,
+        analyst_downgrades=analyst_downgrades,
+    )
+    catalyst_score = _catalyst_score(catalysts)
     relative_score = _linear(relative_strength, -5.0, 5.0)
     volume_score = _linear(volume_ratio, 0.5, 1.5)
     market_score = round((relative_score + volume_score) / 2.0, 2)
@@ -150,6 +195,7 @@ def build_theme_strength_block(
     if not timestamp:
         return None
 
+    confirmed = [family for family in CATALYST_FAMILIES if catalysts[family]]
     return {
         "score": score,
         "components": components,
@@ -161,12 +207,14 @@ def build_theme_strength_block(
             "independent_producer_count": len(producers),
             "source_class_count": len(source_classes),
             "source_classes": sorted(source_classes),
-            "earnings_growth_catalyst": earnings_catalyst,
-            "analyst_upgrade_catalyst": analyst_catalyst,
-            "source_earnings_growth_catalyst": source_earnings_catalyst,
-            "source_analyst_upgrade_catalyst": source_analyst_catalyst,
-            "fundamentals_earnings_growth_catalyst": fundamentals_earnings_catalyst,
-            "fundamentals_analyst_upgrade_catalyst": fundamentals_analyst_catalyst,
+            "catalyst_taxonomy_version": "1.0",
+            "catalyst_family_count": len(CATALYST_FAMILIES),
+            "confirmed_catalyst_count": len(confirmed),
+            "confirmed_catalyst_families": confirmed,
+            "catalysts": catalysts,
+            "earnings_growth_catalyst": catalysts["earnings_fundamental_growth"],
+            "analyst_upgrade_catalyst": catalysts["analyst_institutional_revisions"],
+            **catalyst_details,
             "revenue_growth": revenue_growth,
             "eps_growth": eps_growth,
             "analyst_upgrades_90d": analyst_upgrades,
@@ -178,15 +226,11 @@ def build_theme_strength_block(
             "market_benchmark_symbol": market.get("benchmark_symbol"),
             "financial_health_evidence_timestamp": financial.get("evidence_timestamp"),
         },
-        "policy": "ALL_COMPONENTS_REQUIRED_FAIL_CLOSED",
+        "policy": "GOVERNED_CATALYST_TAXONOMY_FAIL_CLOSED",
     }
 
 
-def attach_candidate_theme_strength(
-    report: dict[str, Any],
-    *,
-    generated_at: str | datetime | None = None,
-) -> dict[str, Any]:
+def attach_candidate_theme_strength(report: dict[str, Any], *, generated_at: str | datetime | None = None) -> dict[str, Any]:
     """Attach complete Theme Strength blocks wherever authoritative evidence exists."""
     for row in report.get("observations", []):
         if not isinstance(row, dict):
@@ -199,5 +243,5 @@ def attach_candidate_theme_strength(
             row.setdefault("evidence_warnings", []).append(
                 f"Theme Strength evidence incomplete or stale for {str(row.get('underlying_symbol') or '').strip().upper()}; block omitted."
             )
-    report["theme_strength_policy"] = "ALL_COMPONENTS_REQUIRED_FAIL_CLOSED"
+    report["theme_strength_policy"] = "GOVERNED_CATALYST_TAXONOMY_FAIL_CLOSED"
     return report
