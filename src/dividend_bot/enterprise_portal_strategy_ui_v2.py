@@ -25,6 +25,10 @@ from .enterprise_dividend_manual_strategy_ui import (
     dividend_manual_strategy_ui_css,
     render_dividend_manual_strategy_panel,
 )
+from .enterprise_dividend_watchlist_ui import (
+    dividend_watchlist_ui_css,
+    render_dividend_watchlist_panel,
+)
 from .enterprise_trade_analytics_ui import trade_analytics_ui_css, render_trade_analytics_panel
 from .enterprise_swing_alerts_ui import render_swing_alerts_panel, swing_alerts_ui_css
 from .enterprise_swing_decision_journal_ui import render_swing_decision_journal_panel, swing_decision_journal_ui_css
@@ -122,7 +126,6 @@ def _insert_swing_extension_tabs(output: str, *, sid: str, row: Mapping[str, Any
             label="Manual Strategy",
             body=render_manual_strategy_panel(row),
         )
-        # Strategy Assignments is intentionally a separate governance surface.
         output = _insert_workspace_tab(
             output,
             sid=sid,
@@ -140,7 +143,6 @@ def _insert_dividend_extension_tabs(
     row: Mapping[str, Any],
 ) -> str:
     """Add Dividend-owned research/governance workspace extensions."""
-
     output = _insert_workspace_tab(
         output,
         sid=sid,
@@ -148,7 +150,6 @@ def _insert_dividend_extension_tabs(
         label="Manual Strategy",
         body=render_dividend_manual_strategy_panel(),
     )
-
     output = _insert_workspace_tab(
         output,
         sid=sid,
@@ -156,7 +157,6 @@ def _insert_dividend_extension_tabs(
         label="Strategy Assignments",
         body=render_dividend_strategy_assignments("."),
     )
-
     return output
 
 
@@ -193,8 +193,13 @@ def render_strategy_workspace(report: Mapping[str, Any], *, audience: str) -> st
             output = _insert_swing_extension_tabs(output, sid=sid, row=row)
         else:
             output = _replace_panel(output, sid=sid, tab="income", body=render_income_panel(row))
-
             if raw_sid.lower() in {"dividend", "dividend-001"}:
+                output = _replace_panel(
+                    output,
+                    sid=sid,
+                    tab="watchlist",
+                    body=render_dividend_watchlist_panel(row),
+                )
                 output = _insert_dividend_extension_tabs(
                     output,
                     sid=sid,
@@ -218,4 +223,5 @@ def strategy_ui_css() -> str:
         + strategy_assignments_ui_css()
         + dividend_strategy_assignments_css()
         + dividend_manual_strategy_ui_css()
+        + dividend_watchlist_ui_css()
     )
