@@ -169,6 +169,8 @@ def build_financial_health_block(
     return {
         "components": components,
         "evidence_timestamp": timestamp,
+        "freshness_status": "CURRENT_CYCLE",
+        "is_stale": False,
         "provenance": (
             f"{provider}: company fundamentals, quarterly financial statements, "
             f"analyst upgrades/downgrades; sector benchmark {sector_benchmark} vs SPY"
