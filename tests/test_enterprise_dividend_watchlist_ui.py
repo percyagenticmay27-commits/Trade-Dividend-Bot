@@ -25,9 +25,6 @@ def _dividend_row():
                 "entry_evidence_generated_at_utc": "2026-09-04T12:00:00Z",
                 "trusted_sources": {"status": "PASS", "value": 6, "threshold": 5},
                 "financial_health": {"status": "PASS", "value": 76.2, "threshold": 70},
-                "dividend_suitability": {"status": "PASS", "reason": "Income mandate satisfied"},
-                "dividend_safety": {"status": "PASS", "reason": "Payout evidence accepted"},
-                "valuation": {"status": "PENDING", "reason": "Await current valuation evidence"},
                 "opportunity_thesis": {"status": "PASS"},
                 "promotion_readiness": {
                     "entry": {"status": "FAIL", "value": 54, "threshold": 70},
@@ -78,42 +75,40 @@ def test_dividend_watchlist_collapsible_record_matches_swing_promotion_spec():
     assert "dividend-watch-detail-1" in output
     assert "colspan='11'" in output
     assert "Promotion Readiness — DG" in output
-    assert "Seven-gate Promotion Readiness" in output
+    assert "Four-gate Promotion Readiness" in output
 
-    # Exact shared Swing Promotion Readiness visual structure/classes.
     assert "watchlist-promotion-panel dividend-promotion-spec" in output
     assert "watchlist-promotion-panel-heading" in output
     assert "watchlist-promotion-section-title" in output
     assert "watchlist-promotion-gates-wrap" in output
     assert "watchlist-promotion-gates" in output
-    assert output.count("watchlist-promotion-gate-card") == 7
+    assert output.count("watchlist-promotion-gate-card") == 4
     assert "watchlist-promotion-gate-header" in output
     assert "watchlist-promotion-gate-content" in output
     assert "watchlist-promotion-blockers" in output
 
     assert "Trusted Sources / Evidence" in output
     assert "Financial Health" in output
-    assert "Dividend / Income Suitability" in output
-    assert "Dividend Safety / Sustainability" in output
-    assert "Valuation / Price Suitability" in output
     assert "Theme / Opportunity Evidence" in output
     assert "Entry Readiness" in output
+    assert "Dividend / Income Suitability" not in output
+    assert "Dividend Safety / Sustainability" not in output
+    assert "Valuation / Price Suitability" not in output
     assert "ENTRY_READINESS" in output
 
-    # Original Dividend table remains untouched.
     assert "<th>Promotion</th>" not in output
     assert "<th>Status</th>" not in output
 
 
 def test_missing_dividend_gate_evidence_is_pending_not_pass():
     row = _dividend_row()
-    row["watchlist"][0].pop("valuation")
+    row["watchlist"][0].pop("opportunity_thesis")
     output = render_dividend_watchlist_panel(row)
 
-    valuation_start = output.index("Valuation / Price Suitability")
-    valuation_slice = output[valuation_start:valuation_start + 500]
-    assert "PENDING" in valuation_slice
-    assert "Authoritative gate evidence is unavailable" in valuation_slice
+    theme_start = output.index("Theme / Opportunity Evidence")
+    theme_slice = output[theme_start:theme_start + 500]
+    assert "PENDING" in theme_slice
+    assert "Authoritative gate evidence is unavailable" in theme_slice
 
 
 def test_dividend_workspace_keeps_original_watchlist_and_adds_collapsible_detail():
@@ -142,5 +137,5 @@ def test_dividend_workspace_keeps_original_watchlist_and_adds_collapsible_detail
     assert "Why It Has Not Progressed" in output
     assert "What Happens Next" in output
     assert "Promotion Readiness — DG" in output
-    assert "Seven-gate Promotion Readiness" in output
+    assert "Four-gate Promotion Readiness" in output
     assert "without changing the original Watchlist columns or published values" in output
