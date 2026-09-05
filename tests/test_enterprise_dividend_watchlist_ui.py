@@ -115,10 +115,10 @@ def test_missing_dividend_gate_evidence_is_pending_not_pass():
 
 
 def test_dividend_workspace_keeps_original_watchlist_and_adds_collapsible_detail(tmp_path, monkeypatch):
-    # The workspace integration now correctly enforces the Dividend Gateway
-    # before rendering an actionable Watchlist row. Supply reviewed qualifying
-    # mapping evidence so this test continues to exercise the Watchlist UI,
-    # rather than bypassing the Gateway.
+    # The workspace integration enforces the Dividend Gateway before rendering.
+    # Supply qualifying monthly-income, fund-age, vehicle, mapping, and freshness
+    # evidence so this test exercises the Watchlist UI rather than the Gateway's
+    # fail-closed research path.
     results = tmp_path / "results"
     results.mkdir()
     mapping = [{
@@ -127,10 +127,11 @@ def test_dividend_workspace_keeps_original_watchlist_and_adds_collapsible_detail
         "income_mechanism": "reviewed_distribution",
         "distribution_frequency": "MONTHLY",
         "observed_income_monthly_percent": 1.25,
-        "mechanism_age_months": 3.0,
+        "fund_age_days": 90,
         "vehicle_status": "ACTIVE",
         "mapping_status": "QUALIFIED",
         "evidence_as_of": datetime.now(timezone.utc).isoformat(),
+        "freshness_status": "FRESH",
     }]
     (results / "enterprise_dividend_income_mapping.json").write_text(
         json.dumps(mapping), encoding="utf-8"
