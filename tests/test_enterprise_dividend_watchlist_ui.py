@@ -1,3 +1,6 @@
+import json
+from datetime import datetime, timezone
+
 from src.dividend_bot.enterprise_dividend_watchlist_ui import render_dividend_watchlist_panel
 from src.dividend_bot.enterprise_portal_strategy_ui_v2 import render_strategy_workspace
 
@@ -111,7 +114,29 @@ def test_missing_dividend_gate_evidence_is_pending_not_pass():
     assert "Authoritative gate evidence is unavailable" in theme_slice
 
 
-def test_dividend_workspace_keeps_original_watchlist_and_adds_collapsible_detail():
+def test_dividend_workspace_keeps_original_watchlist_and_adds_collapsible_detail(tmp_path, monkeypatch):
+    # The workspace integration now correctly enforces the Dividend Gateway
+    # before rendering an actionable Watchlist row. Supply reviewed qualifying
+    # mapping evidence so this test continues to exercise the Watchlist UI,
+    # rather than bypassing the Gateway.
+    results = tmp_path / "results"
+    results.mkdir()
+    mapping = [{
+        "underlying_symbol": "DG",
+        "income_symbol": "DG-INCOME-TEST",
+        "income_mechanism": "reviewed_distribution",
+        "distribution_frequency": "MONTHLY",
+        "observed_income_monthly_percent": 1.25,
+        "mechanism_age_months": 3.0,
+        "vehicle_status": "ACTIVE",
+        "mapping_status": "QUALIFIED",
+        "evidence_as_of": datetime.now(timezone.utc).isoformat(),
+    }]
+    (results / "enterprise_dividend_income_mapping.json").write_text(
+        json.dumps(mapping), encoding="utf-8"
+    )
+    monkeypatch.chdir(tmp_path)
+
     row = _dividend_row()
     row.update({
         "strategy_type": "DIVIDEND",
