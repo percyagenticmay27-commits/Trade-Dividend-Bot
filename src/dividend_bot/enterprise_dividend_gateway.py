@@ -1,28 +1,30 @@
 """Dividend income eligibility gateway between shared Discovery and Dividend Watchlist.
 
-The gateway is strategy-specific.  It never changes shared Discovery and never
-activates a paper position.  It evaluates current reviewed income-mapping
-evidence and fails closed when evidence is missing, stale, immature, inactive,
-or below the governed income target.
+The gateway is strategy-specific. It never changes shared Discovery and never
+activates a paper position. It evaluates reviewed income-mapping evidence and
+fails closed when the income mechanism is missing, immature, inactive, or below
+the governed current-month income target.
 
-Income measurement is intentionally not invented here: upstream reviewed
-mapping evidence must publish ``observed_income_monthly_percent`` (or the
-explicit alias ``monthly_equivalent_income_percent``).  Likewise, maturity is
-accepted only from an explicit age value in months, or from a reviewed
-``maturity_status``.  This avoids silently redefining the user's "two months"
-policy as an arbitrary number of days.
+Gateway income qualification is deliberately monthly. Annual or trailing-365-day
+distribution yield is not used for admission. Upstream reviewed evidence must
+publish ``observed_income_monthly_percent`` (or the explicit alias
+``monthly_equivalent_income_percent``).
+
+Maturity uses the existing suitability evidence measurement ``fund_age_days``.
+The governed minimum is 60 days, implementing the Dividend sublayer's two-month
+operating-history requirement without introducing a second age calculation.
+Evidence freshness is supplied by the upstream reviewed evidence state; this
+module does not invent an hourly TTL.
 """
 from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
 INCOME_TARGET_MONTHLY_PERCENT = 1.0
-MINIMUM_MECHANISM_AGE_MONTHS = 2.0
-MAPPING_EVIDENCE_MAX_AGE_HOURS = 168.0
+MINIMUM_FUND_AGE_DAYS = 60
 INCOME_MAPPING_PATH = Path("results/enterprise_dividend_income_mapping.json")
 
 
@@ -61,51 +63,36 @@ def _number(value: Any) -> float | None:
         return None
 
 
-def _timestamp(value: Any) -> datetime | None:
-    if value in (None, ""):
-        return None
-    text = str(value).strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
-
-
 def _evidence_as_of(mapping: Mapping[str, Any]) -> Any:
     for key in ("evidence_as_of", "generated_at_utc", "updated_at_utc", "as_of"):
         if mapping.get(key) not in (None, ""):
             return mapping.get(key)
     evidence = mapping.get("mapping_evidence")
     if isinstance(evidence, list):
-        dated: list[tuple[datetime, Any]] = []
-        for record in evidence:
-            if not isinstance(record, Mapping):
-                continue
-            for key in ("evidence_as_of", "published_at", "generated_at_utc", "as_of"):
-                raw = record.get(key)
-                parsed = _timestamp(raw)
-                if parsed is not None:
-                    dated.append((parsed, raw))
-                    break
+        dated = [
+            record.get(key)
+            for record in evidence
+            if isinstance(record, Mapping)
+            for key in ("evidence_as_of", "published_at", "generated_at_utc", "as_of")
+            if record.get(key) not in (None, "")
+        ]
         if dated:
-            return max(dated, key=lambda pair: pair[0])[1]
+            return dated[-1]
     return None
 
 
-def _is_fresh(raw: Any, now: datetime | None) -> tuple[bool, float | None]:
-    parsed = _timestamp(raw)
-    if parsed is None:
-        return False, None
-    current = now or datetime.now(timezone.utc)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
-    age = max(0.0, (current.astimezone(timezone.utc) - parsed).total_seconds() / 3600.0)
-    return age <= MAPPING_EVIDENCE_MAX_AGE_HOURS, age
+def _freshness_status(mapping: Mapping[str, Any]) -> str:
+    """Honor reviewed upstream freshness state; never invent an hourly TTL."""
+    explicit = str(mapping.get("freshness_status") or "").strip().upper()
+    if explicit in {"FRESH", "CURRENT", "PASS"}:
+        return "FRESH"
+    if explicit in {"STALE", "STALE_OR_UNAVAILABLE", "UNAVAILABLE", "FAIL"}:
+        return "STALE_OR_UNAVAILABLE"
+    if mapping.get("is_stale") is False:
+        return "FRESH"
+    if mapping.get("is_stale") is True:
+        return "STALE_OR_UNAVAILABLE"
+    return "UNVERIFIED"
 
 
 def evaluate_dividend_gateway(
@@ -113,9 +100,10 @@ def evaluate_dividend_gateway(
     root: str | Path = ".",
     *,
     mapping: Mapping[str, Any] | None = None,
-    now: datetime | None = None,
+    now: Any = None,
 ) -> dict[str, Any]:
-    """Evaluate one underlying using current reviewed income-mapping evidence."""
+    """Evaluate one underlying using reviewed Dividend income evidence."""
+    del now  # retained for call-site compatibility; no arbitrary time TTL is used.
     root_path = Path(root)
     source = mapping if isinstance(mapping, Mapping) else _find_mapping(_load_json(root_path / INCOME_MAPPING_PATH), symbol)
     source = source if isinstance(source, Mapping) else {}
@@ -126,12 +114,11 @@ def evaluate_dividend_gateway(
     observed = _number(source.get("observed_income_monthly_percent"))
     if observed is None:
         observed = _number(source.get("monthly_equivalent_income_percent"))
-    age_months = _number(source.get("mechanism_age_months"))
-    maturity_status = str(source.get("maturity_status") or "").strip().upper()
+    fund_age_days = _number(source.get("fund_age_days"))
     vehicle_status = str(source.get("vehicle_status") or "").strip().upper()
     mapping_status = str(source.get("mapping_status") or "").strip().upper()
     evidence_as_of = _evidence_as_of(source)
-    fresh, evidence_age_hours = _is_fresh(evidence_as_of, now)
+    freshness_status = _freshness_status(source)
 
     reasons: list[str] = []
     if not source:
@@ -143,32 +130,25 @@ def evaluate_dividend_gateway(
     if frequency not in {"WEEKLY", "MONTHLY"}:
         reasons.append("Distribution frequency is not a reviewed weekly or monthly mechanism.")
     if observed is None:
-        reasons.append("Current reviewed monthly-equivalent income evidence is unavailable.")
+        reasons.append("Current reviewed monthly income evidence is unavailable.")
     elif observed < INCOME_TARGET_MONTHLY_PERCENT:
-        reasons.append(f"Observed monthly-equivalent income {observed:.4g}% is below the {INCOME_TARGET_MONTHLY_PERCENT:.4g}% minimum.")
-    if age_months is not None:
-        if age_months < MINIMUM_MECHANISM_AGE_MONTHS:
-            reasons.append(f"Income mechanism age {age_months:.4g} months is below the {MINIMUM_MECHANISM_AGE_MONTHS:.4g}-month minimum.")
-    elif maturity_status not in {"MATURE", "QUALIFIED", "PASS"}:
-        reasons.append("Reviewed two-month mechanism maturity evidence is unavailable.")
+        reasons.append(f"Observed monthly income {observed:.4g}% is below the {INCOME_TARGET_MONTHLY_PERCENT:.4g}% minimum.")
+    if fund_age_days is None:
+        reasons.append("Reviewed fund_age_days evidence is unavailable.")
+    elif fund_age_days < MINIMUM_FUND_AGE_DAYS:
+        reasons.append(f"Income mechanism age {fund_age_days:.4g} days is below the {MINIMUM_FUND_AGE_DAYS}-day minimum.")
     if vehicle_status in {"DELISTED", "LIQUIDATED", "TERMINATED", "INACTIVE", "CLOSED"}:
         reasons.append(f"Income vehicle status is {vehicle_status}.")
     elif vehicle_status not in {"ACTIVE", "TRADABLE"}:
         reasons.append("Current reviewed vehicle-active evidence is unavailable.")
     if mapping_status in {"DISQUALIFIED", "REJECTED", "INVALID", "RESEARCH_REQUIRED"}:
         reasons.append(f"Income mapping status is {mapping_status}.")
-    if not fresh:
-        if evidence_age_hours is None:
-            reasons.append("Income mapping evidence timestamp is unavailable or invalid.")
-        else:
-            reasons.append(f"Income mapping evidence is stale ({evidence_age_hours:.1f}h old; maximum {MAPPING_EVIDENCE_MAX_AGE_HOURS:.1f}h).")
+    if freshness_status != "FRESH":
+        reasons.append("Current reviewed income evidence freshness is unavailable or stale.")
 
     qualified = not reasons
     status = "QUALIFIED" if qualified else "DISQUALIFIED"
-    # Missing/unreviewed evidence is research rather than a factual negative.
-    if reasons and not source:
-        status = "RESEARCH_REQUIRED"
-    elif reasons and any("unavailable" in reason.lower() for reason in reasons):
+    if reasons and (not source or any("unavailable" in reason.lower() for reason in reasons)):
         status = "RESEARCH_REQUIRED"
 
     return {
@@ -178,29 +158,28 @@ def evaluate_dividend_gateway(
         "distribution_frequency": frequency or None,
         "income_target_monthly_percent": INCOME_TARGET_MONTHLY_PERCENT,
         "observed_income_monthly_percent": observed,
-        "mechanism_age_months": age_months,
-        "minimum_mechanism_age_months": MINIMUM_MECHANISM_AGE_MONTHS,
+        "fund_age_days": fund_age_days,
+        "minimum_fund_age_days": MINIMUM_FUND_AGE_DAYS,
         "vehicle_status": vehicle_status or None,
         "mapping_status": mapping_status or None,
         "evidence_as_of": evidence_as_of,
-        "freshness_status": "FRESH" if fresh else "STALE_OR_UNAVAILABLE",
-        "evidence_max_age_hours": MAPPING_EVIDENCE_MAX_AGE_HOURS,
+        "freshness_status": freshness_status,
         "eligibility_status": status,
         "watchlist_admission_allowed": qualified,
         "manual_review_required": True,
         "automatic_activation_allowed": False,
         "reasons": reasons,
-        "policy": "DIVIDEND_GATEWAY_CONTINUOUS_REFRESH_FAIL_CLOSED",
+        "policy": "DIVIDEND_GATEWAY_MONTHLY_INCOME_AND_AGE_FAIL_CLOSED",
     }
 
 
 def apply_dividend_gateway_to_watchlist(
-    row: Mapping[str, Any], root: str | Path = ".", *, now: datetime | None = None
+    row: Mapping[str, Any], root: str | Path = ".", *, now: Any = None
 ) -> dict[str, Any]:
     """Admit only currently qualified mappings to the Dividend Watchlist.
 
     Existing held paper positions are retained in the row for lifecycle review;
-    gateway failure never auto-sells a position.  Non-held unqualified candidates
+    gateway failure never auto-sells a position. Non-held unqualified candidates
     are excluded from the actionable Watchlist and retained in
     ``dividend_gateway_research`` for monitoring/audit.
     """
@@ -230,5 +209,5 @@ def apply_dividend_gateway_to_watchlist(
     result["watchlist"] = admitted
     result["watchlist_count"] = len(admitted)
     result["dividend_gateway_research"] = research
-    result["dividend_gateway_policy"] = "DIVIDEND_GATEWAY_CONTINUOUS_REFRESH_FAIL_CLOSED"
+    result["dividend_gateway_policy"] = "DIVIDEND_GATEWAY_MONTHLY_INCOME_AND_AGE_FAIL_CLOSED"
     return result
