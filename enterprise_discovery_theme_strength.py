@@ -200,6 +200,8 @@ def build_theme_strength_block(
         "score": score,
         "components": components,
         "evidence_timestamp": timestamp,
+        "freshness_status": "CURRENT_CYCLE",
+        "is_stale": False,
         "provenance": "AI_CIO_ENTERPRISE_DISCOVERY: reviewed source evidence + authoritative market evidence + Financial Health fundamentals/sector confirmation",
         "evidence": {
             "underlying_symbol": str(row.get("underlying_symbol") or "").strip().upper(),
