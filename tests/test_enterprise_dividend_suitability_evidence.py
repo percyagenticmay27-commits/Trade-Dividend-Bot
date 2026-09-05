@@ -42,6 +42,48 @@ def test_live_history_builds_return_and_liquidity_without_inference():
     assert row["latest_distribution_roc_percent"] == 91.79
 
 
+def test_income_etf_uses_most_recent_completed_calendar_month_distributions():
+    history = {
+        "provider": "TEST",
+        "is_stale": False,
+        "rows": [
+            {"date": "2026-08-03", "adj_close": 49.0, "volume": 100_000},
+            {"date": "2026-08-31", "adj_close": 50.0, "volume": 100_000},
+            {"date": "2026-09-04", "adj_close": 51.0, "volume": 100_000},
+        ],
+    }
+    dividends = {
+        "provider": "TEST",
+        "is_stale": False,
+        "payments": [
+            {"date": "2026-08-07", "amount": 0.15},
+            {"date": "2026-08-14", "amount": 0.15},
+            {"date": "2026-08-21", "amount": 0.15},
+            {"date": "2026-08-28", "amount": 0.15},
+            {"date": "2026-09-03", "amount": 0.99},
+        ],
+    }
+    row = build_vehicle_evidence(
+        "AMDY", "INCOME_ETF",
+        {
+            "reviewed_at": "2026-08-18",
+            "fund_inception_date": "2023-09-18",
+            "expense_ratio_percent": 1.0,
+            "latest_distribution_roc_percent": 91.79,
+            "sources": [{"source_url": "https://example.test/amdy"}],
+        },
+        history, {"price": 51.0, "is_stale": False}, dividends,
+    )
+    assert row["observed_income_month"] == "2026-08"
+    assert row["observed_month_distribution_per_share"] == 0.6
+    assert row["observed_month_distribution_payment_count"] == 4
+    assert row["observed_month_end_price"] == 50.0
+    assert row["observed_income_monthly_percent"] == 1.2
+    assert row["monthly_income_method"] == "COMPLETED_CALENDAR_MONTH_DISTRIBUTIONS_DIVIDED_BY_MONTH_END_VEHICLE_PRICE"
+    assert row["vehicle_status"] == "ACTIVE"
+    assert row["freshness_status"] == "FRESH"
+
+
 def test_direct_equity_normalizes_provider_dividend_yield():
     row = build_vehicle_evidence(
         "DUK", "DIRECT_DIVIDEND_EQUITY",
@@ -105,6 +147,41 @@ def test_collector_refreshes_only_reviewed_profiled_mappings():
     assert report["read_only_market_data"] is True
     assert report["inference_allowed"] is False
 
+
+class _IncomeService:
+    def get_history(self, symbol, period, interval):
+        return {
+            "provider": "TEST", "is_stale": False,
+            "rows": [
+                {"date": "2026-08-31", "adj_close": 50.0, "volume": 100_000},
+                {"date": "2026-09-04", "adj_close": 51.0, "volume": 100_000},
+            ],
+        }
+
+    def get_quote(self, symbol):
+        return {"price": 51.0, "is_stale": False}
+
+    def get_dividends(self, symbol, period):
+        return {
+            "provider": "TEST", "is_stale": False,
+            "payments": [{"date": "2026-08-15", "amount": 0.60}],
+        }
+
+
+def test_collector_fetches_distribution_evidence_for_income_etf():
+    report = collect_suitability_evidence(
+        {"candidates": [{"income_symbol": "AMDY", "mapping_type": "INCOME_ETF"}]},
+        {"profiles": [{
+            "income_symbol": "AMDY", "reviewed": True, "reviewed_at": "2026-08-18",
+            "fund_inception_date": "2023-09-18", "expense_ratio_percent": 1.0,
+            "sources": [{"source_url": "https://example.test/amdy"}],
+        }]},
+        _IncomeService(),
+    )
+    row = report["vehicles"][0]
+    assert row["observed_income_month"] == "2026-08"
+    assert row["observed_income_monthly_percent"] == 1.2
+    assert row["fund_age_days"] >= 60
 
 
 def test_research_required_mapping_without_vehicle_is_not_a_collection_warning():
