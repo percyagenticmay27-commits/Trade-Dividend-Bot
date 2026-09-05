@@ -64,7 +64,7 @@ def _governed_freshness(source: Mapping[str, Any], *, fallback: Any = None) -> t
     if raw in (None, ""):
         raw = fallback
     explicit = str(raw or "").strip().upper()
-    if explicit in {"FRESH", "CURRENT", "PASS"}:
+    if explicit in {"FRESH", "CURRENT", "CURRENT_CYCLE", "PASS"}:
         return "FRESH", None
     if explicit in {"STALE", "STALE_OR_UNAVAILABLE", "UNAVAILABLE", "FAIL"}:
         return "STALE_OR_UNAVAILABLE", "Upstream governed evidence freshness is stale or unavailable."
