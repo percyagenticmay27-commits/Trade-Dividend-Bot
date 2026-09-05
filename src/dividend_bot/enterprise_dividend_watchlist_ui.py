@@ -116,6 +116,22 @@ def _gate_card(label: str, gate: Mapping[str, Any]) -> str:
     status, css = _gate_status(gate)
     lines: list[str] = []
     if gate:
+        progress = gate.get("progress")
+        if isinstance(progress, Mapping):
+            display = progress.get("display")
+            if display not in (None, ""):
+                lines.append(
+                    "<div class='watchlist-promotion-line watchlist-promotion-progress'><span>Progress:</span> <strong>"
+                    + _detail_value(display)
+                    + "</strong></div>"
+                )
+            missing = progress.get("missing")
+            if isinstance(missing, list) and missing:
+                lines.append(
+                    "<div class='watchlist-promotion-line watchlist-promotion-progress-missing'><span>Still needed:</span> "
+                    + _detail_value([str(value).replace("_", " ") for value in missing])
+                    + "</div>"
+                )
         if "value" in gate:
             value = gate.get("value")
             lines.append(
