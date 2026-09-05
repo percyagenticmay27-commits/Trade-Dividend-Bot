@@ -11,14 +11,15 @@ NOW = datetime(2026, 9, 5, 12, 0, tzinfo=timezone.utc)
 def _qualified_mapping(**updates):
     value = {
         "underlying_symbol": "NVDA",
-        "income_symbol": "NVDY",
+        "income_symbol": "NVDW",
         "income_mechanism": "option_income_distribution",
         "distribution_frequency": "WEEKLY",
         "observed_income_monthly_percent": 1.25,
-        "mechanism_age_months": 3.0,
+        "fund_age_days": 90,
         "vehicle_status": "ACTIVE",
         "mapping_status": "QUALIFIED",
         "evidence_as_of": "2026-09-05T10:00:00Z",
+        "freshness_status": "FRESH",
     }
     value.update(updates)
     return value
@@ -30,9 +31,10 @@ def test_gateway_qualifies_only_current_complete_mapping():
     assert result["watchlist_admission_allowed"] is True
     assert result["automatic_activation_allowed"] is False
     assert result["freshness_status"] == "FRESH"
+    assert result["minimum_fund_age_days"] == 60
 
 
-def test_gateway_rechecks_income_and_disqualifies_degraded_mapping():
+def test_gateway_rechecks_monthly_income_and_disqualifies_degraded_mapping():
     result = evaluate_dividend_gateway(
         "NVDA", mapping=_qualified_mapping(observed_income_monthly_percent=0.5), now=NOW
     )
@@ -41,20 +43,38 @@ def test_gateway_rechecks_income_and_disqualifies_degraded_mapping():
     assert any("below" in reason.lower() for reason in result["reasons"])
 
 
-def test_gateway_fails_closed_for_stale_mapping():
+def test_gateway_uses_fund_age_days_as_pre_watchlist_gate():
     result = evaluate_dividend_gateway(
-        "NVDA", mapping=_qualified_mapping(evidence_as_of="2026-08-01T10:00:00Z"), now=NOW
+        "NVDA", mapping=_qualified_mapping(fund_age_days=59), now=NOW
     )
+    assert result["eligibility_status"] == "DISQUALIFIED"
     assert result["watchlist_admission_allowed"] is False
-    assert result["freshness_status"] == "STALE_OR_UNAVAILABLE"
+    assert any("60-day minimum" in reason for reason in result["reasons"])
 
 
-def test_gateway_requires_reviewed_two_month_maturity_without_inventing_days():
+def test_gateway_accepts_fund_at_60_day_minimum():
     result = evaluate_dividend_gateway(
-        "NVDA", mapping=_qualified_mapping(mechanism_age_months=None, maturity_status=None), now=NOW
+        "NVDA", mapping=_qualified_mapping(fund_age_days=60), now=NOW
+    )
+    assert result["eligibility_status"] == "QUALIFIED"
+    assert result["watchlist_admission_allowed"] is True
+
+
+def test_gateway_requires_fund_age_evidence():
+    result = evaluate_dividend_gateway(
+        "NVDA", mapping=_qualified_mapping(fund_age_days=None), now=NOW
     )
     assert result["eligibility_status"] == "RESEARCH_REQUIRED"
     assert result["watchlist_admission_allowed"] is False
+
+
+def test_gateway_fails_closed_when_upstream_freshness_is_unverified():
+    result = evaluate_dividend_gateway(
+        "NVDA", mapping=_qualified_mapping(freshness_status=None), now=NOW
+    )
+    assert result["watchlist_admission_allowed"] is False
+    assert result["freshness_status"] == "UNVERIFIED"
+    assert result["eligibility_status"] == "RESEARCH_REQUIRED"
 
 
 def test_gateway_rejects_inactive_vehicle():
