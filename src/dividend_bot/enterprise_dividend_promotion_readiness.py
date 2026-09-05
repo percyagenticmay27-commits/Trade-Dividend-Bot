@@ -3,35 +3,23 @@
 The Dividend Gateway owns income-mechanism qualification before Watchlist admission.
 This module owns only the four refreshable Watchlist -> paper-readiness gates:
 Trusted Sources, Financial Health, Theme / Opportunity, and Entry Readiness.
-No gate is hardcoded PASS. Missing or stale evidence remains PENDING.
+No gate is hardcoded PASS. Missing, stale, or ungoverned freshness remains PENDING.
 """
 from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean
 from typing import Any, Mapping
 
+from src.dividend_bot.enterprise_dividend_gateway import evaluate_dividend_gateway
+
 FINANCIAL_HEALTH_THRESHOLD = 70.0
 FINANCIAL_HEALTH_COMPONENTS = (
-    "revenue_growth",
-    "eps_growth",
-    "operating_cash_flow",
-    "gross_margin_trend",
-    "debt_health",
-    "analyst_revisions",
-    "sector_strength",
+    "revenue_growth", "eps_growth", "operating_cash_flow", "gross_margin_trend",
+    "debt_health", "analyst_revisions", "sector_strength",
 )
-
-# Freshness windows are evidence-class policy, not cached PASS durations.
-# A prior PASS is never reused after its required evidence becomes stale.
-TRUSTED_SOURCE_MAX_AGE_HOURS = 24.0
-FINANCIAL_HEALTH_MAX_AGE_HOURS = 168.0
-THEME_OPPORTUNITY_MAX_AGE_HOURS = 24.0
-ENTRY_MAX_AGE_HOURS = 24.0
-
 _DISCOVERY_PATH = Path("results/enterprise_dividend_discovery_bucket.json")
 
 
@@ -57,9 +45,8 @@ def _symbol(record: Mapping[str, Any]) -> str:
 
 
 def _find_symbol(payload: Any, symbol: str) -> Mapping[str, Any]:
-    symbol = symbol.upper()
     for record in _records(payload):
-        if _symbol(record) == symbol:
+        if _symbol(record) == symbol.upper():
             return record
     return {}
 
@@ -71,52 +58,38 @@ def _numeric(value: Any) -> float | None:
         return None
 
 
-def _parse_timestamp(value: Any) -> datetime | None:
-    if value in (None, ""):
-        return None
-    text = str(value).strip()
-    if text.endswith("Z"):
-        text = text[:-1] + "+00:00"
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+def _governed_freshness(source: Mapping[str, Any], *, fallback: Any = None) -> tuple[str, str | None]:
+    """Use only an upstream governed freshness state; never invent a local TTL."""
+    raw = source.get("freshness_status")
+    if raw in (None, ""):
+        raw = fallback
+    explicit = str(raw or "").strip().upper()
+    if explicit in {"FRESH", "CURRENT", "PASS"}:
+        return "FRESH", None
+    if explicit in {"STALE", "STALE_OR_UNAVAILABLE", "UNAVAILABLE", "FAIL"}:
+        return "STALE_OR_UNAVAILABLE", "Upstream governed evidence freshness is stale or unavailable."
+    if source.get("is_stale") is False:
+        return "FRESH", None
+    if source.get("is_stale") is True:
+        return "STALE_OR_UNAVAILABLE", "Upstream governed evidence freshness is stale or unavailable."
+    return "UNVERIFIED", "No governed freshness policy/state is published for this evidence."
 
 
-def _freshness(timestamp: Any, max_age_hours: float, now: datetime | None) -> tuple[bool, str]:
-    parsed = _parse_timestamp(timestamp)
-    if parsed is None:
-        return False, "Evidence timestamp is unavailable or invalid."
-    current = now or datetime.now(timezone.utc)
-    if current.tzinfo is None:
-        current = current.replace(tzinfo=timezone.utc)
-    current = current.astimezone(timezone.utc)
-    age_hours = max(0.0, (current - parsed).total_seconds() / 3600.0)
-    if age_hours > max_age_hours:
-        return False, f"Evidence is stale ({age_hours:.1f}h old; maximum {max_age_hours:.1f}h)."
-    return True, ""
-
-
-def _pending_for_stale(gate: dict[str, Any], timestamp: Any, max_age_hours: float, now: datetime | None) -> dict[str, Any]:
-    fresh, reason = _freshness(timestamp, max_age_hours, now)
-    gate["freshness_status"] = "FRESH" if fresh else "STALE_OR_UNAVAILABLE"
-    gate["max_age_hours"] = max_age_hours
-    if not fresh:
+def _apply_freshness(gate: dict[str, Any], source: Mapping[str, Any], *, fallback: Any = None) -> dict[str, Any]:
+    freshness, reason = _governed_freshness(source, fallback=fallback)
+    gate["freshness_status"] = freshness
+    if freshness != "FRESH":
         gate["status"] = "PENDING"
         gate["reason"] = reason
     return gate
 
 
-def _financial_health_gate(discovery: Mapping[str, Any], now: datetime | None) -> dict[str, Any]:
+def _financial_health_gate(discovery: Mapping[str, Any]) -> dict[str, Any]:
     block = discovery.get("financial_health")
     if not isinstance(block, Mapping):
         return {"status": "PENDING", "reason": "Authoritative Financial Health evidence is unavailable.", "freshness_status": "STALE_OR_UNAVAILABLE"}
-
     components = block.get("components")
-    component_values: list[float] = []
+    values: list[float] = []
     complete = isinstance(components, Mapping)
     if complete:
         for name in FINANCIAL_HEALTH_COMPONENTS:
@@ -124,22 +97,16 @@ def _financial_health_gate(discovery: Mapping[str, Any], now: datetime | None) -
             if number is None:
                 complete = False
                 break
-            component_values.append(number)
-
+            values.append(number)
     score = _numeric(block.get("score"))
     if score is None and complete:
-        score = mean(component_values)
-
+        score = mean(values)
     if not complete:
-        status = "PENDING"
-        reason = "Financial Health requires all seven governed components."
+        status, reason = "PENDING", "Financial Health requires all seven governed components."
     elif score is None:
-        status = "PENDING"
-        reason = "Complete Financial Health components are present but no score could be resolved."
+        status, reason = "PENDING", "Complete Financial Health components are present but no score could be resolved."
     else:
-        status = "PASS" if score >= FINANCIAL_HEALTH_THRESHOLD else "FAIL"
-        reason = None
-
+        status, reason = ("PASS" if score >= FINANCIAL_HEALTH_THRESHOLD else "FAIL"), None
     gate: dict[str, Any] = {
         "status": status,
         "value": round(score, 2) if score is not None and complete else None,
@@ -155,63 +122,45 @@ def _financial_health_gate(discovery: Mapping[str, Any], now: datetime | None) -
         gate["as_of"] = timestamp
     if isinstance(components, Mapping):
         gate["components"] = copy.deepcopy(dict(components))
-    return _pending_for_stale(gate, timestamp, FINANCIAL_HEALTH_MAX_AGE_HOURS, now)
+    return _apply_freshness(gate, block, fallback=discovery.get("freshness_status"))
 
 
-def _trusted_sources_gate(discovery: Mapping[str, Any], now: datetime | None) -> dict[str, Any]:
+def _trusted_sources_gate(discovery: Mapping[str, Any]) -> dict[str, Any]:
     source_evidence = discovery.get("source_evidence")
     confluence = discovery.get("source_confluence")
     count = discovery.get("independent_source_count")
     if count is None and isinstance(confluence, Mapping):
         count = confluence.get("independent_source_count")
     if count is None and isinstance(source_evidence, list):
-        producers = {
-            str(record.get("producer") or record.get("source") or "").strip()
-            for record in source_evidence
-            if isinstance(record, Mapping) and (record.get("producer") or record.get("source"))
-        }
+        producers = {str(r.get("producer") or r.get("source") or "").strip() for r in source_evidence if isinstance(r, Mapping) and (r.get("producer") or r.get("source"))}
         count = len(producers) if producers else None
     numeric_count = _numeric(count)
-
-    timestamps: list[datetime] = []
-    if isinstance(source_evidence, list):
-        for record in source_evidence:
-            if not isinstance(record, Mapping):
-                continue
-            mentioned = record.get("mentioned_on")
-            if mentioned:
-                parsed = _parse_timestamp(f"{mentioned}T23:59:59Z" if len(str(mentioned)) == 10 else mentioned)
-                if parsed is not None:
-                    timestamps.append(parsed)
-    latest = max(timestamps).isoformat().replace("+00:00", "Z") if timestamps else discovery.get("evidence_timestamp")
-
     gate: dict[str, Any] = {
         "status": "PENDING",
-        "reason": "Trusted-source evidence must be re-evaluated from current governed source evidence; no Dividend-specific pass threshold is published.",
+        "reason": "Trusted-source evidence requires an authoritative Dividend-specific pass threshold.",
         "evidence_source": str(_DISCOVERY_PATH),
     }
     if numeric_count is not None:
         gate["value"] = int(numeric_count) if numeric_count.is_integer() else numeric_count
-    if latest:
-        gate["as_of"] = latest
+    if discovery.get("evidence_timestamp"):
+        gate["as_of"] = discovery.get("evidence_timestamp")
     if isinstance(confluence, Mapping):
         gate["provenance"] = copy.deepcopy(dict(confluence))
-    return _pending_for_stale(gate, latest, TRUSTED_SOURCE_MAX_AGE_HOURS, now)
+    freshness_source = confluence if isinstance(confluence, Mapping) else discovery
+    return _apply_freshness(gate, freshness_source, fallback=discovery.get("freshness_status"))
 
 
-def _theme_gate(discovery: Mapping[str, Any], item: Mapping[str, Any], now: datetime | None) -> dict[str, Any]:
+def _theme_gate(discovery: Mapping[str, Any], item: Mapping[str, Any]) -> dict[str, Any]:
     explicit = item.get("opportunity_thesis") or item.get("theme_opportunity")
     theme = explicit if isinstance(explicit, Mapping) else discovery.get("theme_strength")
     if not isinstance(theme, Mapping):
         return {"status": "PENDING", "reason": "Authoritative Theme / Opportunity evidence is unavailable.", "freshness_status": "STALE_OR_UNAVAILABLE"}
-
-    # Preserve an authoritative published status when present; otherwise fail closed.
-    published_status = str(theme.get("status") or "").upper()
-    status = published_status if published_status in {"PASS", "FAIL", "PENDING"} else "PENDING"
+    published = str(theme.get("status") or "").upper()
+    status = published if published in {"PASS", "FAIL", "PENDING"} else "PENDING"
     gate: dict[str, Any] = {
         "status": status,
         "value": theme.get("score", theme.get("value")),
-        "reason": theme.get("reason") or "Theme evidence is current only when refreshed; no Dividend-specific pass threshold is published.",
+        "reason": theme.get("reason") or "No authoritative Dividend-specific Theme / Opportunity pass threshold is published.",
         "evidence_source": theme.get("evidence_source") or str(_DISCOVERY_PATH),
     }
     if theme.get("threshold") is not None:
@@ -223,10 +172,10 @@ def _theme_gate(discovery: Mapping[str, Any], item: Mapping[str, Any], now: date
         gate["as_of"] = timestamp
     if isinstance(theme.get("components"), Mapping):
         gate["components"] = copy.deepcopy(dict(theme["components"]))
-    return _pending_for_stale(gate, timestamp, THEME_OPPORTUNITY_MAX_AGE_HOURS, now)
+    return _apply_freshness(gate, theme, fallback=discovery.get("freshness_status"))
 
 
-def _entry_gate(item: Mapping[str, Any], now: datetime | None) -> dict[str, Any]:
+def _entry_gate(item: Mapping[str, Any]) -> dict[str, Any]:
     raw_status = str(item.get("entry_status") or "").upper()
     score = _numeric(item.get("entry_score"))
     if raw_status in {"STRONG_ENTRY", "BUY", "READY", "APPROVED"}:
@@ -247,45 +196,46 @@ def _entry_gate(item: Mapping[str, Any], now: datetime | None) -> dict[str, Any]
     reasons = item.get("entry_reasons")
     if isinstance(reasons, list) and reasons:
         reason_parts.append("Reasons: " + ", ".join(str(x) for x in reasons if x))
-    timestamp = item.get("entry_evidence_generated_at_utc")
     gate: dict[str, Any] = {
         "status": status,
         "value": score,
         "reason": "; ".join(reason_parts) or "Authoritative entry evidence is unavailable.",
         "evidence_source": item.get("entry_evidence_source") or item.get("evidence_source") or "entry_score_report.json",
-        "as_of": timestamp,
+        "as_of": item.get("entry_evidence_generated_at_utc"),
         "entry_status": raw_status or None,
         "confidence": confidence,
         "timing": timing,
     }
     if item.get("entry_threshold") is not None:
         gate["threshold"] = item.get("entry_threshold")
-    return _pending_for_stale(gate, timestamp, ENTRY_MAX_AGE_HOURS, now)
+    freshness_source = item.get("entry_evidence") if isinstance(item.get("entry_evidence"), Mapping) else item
+    return _apply_freshness(gate, freshness_source, fallback=item.get("entry_freshness_status"))
 
 
-def build_dividend_promotion_readiness(
-    item: Mapping[str, Any], root: str | Path = ".", *, now: datetime | None = None
-) -> dict[str, Any]:
+def build_dividend_promotion_readiness(item: Mapping[str, Any], root: str | Path = ".", *, now: Any = None) -> dict[str, Any]:
     symbol = _symbol(item)
     root_path = Path(root)
     discovery = _find_symbol(_load_json(root_path / _DISCOVERY_PATH), symbol) if symbol else {}
-
     gates = {
-        "trusted_sources": _trusted_sources_gate(discovery, now),
-        "financial_health": _financial_health_gate(discovery, now),
-        "opportunity_thesis": _theme_gate(discovery, item, now),
-        "entry": _entry_gate(item, now),
+        "trusted_sources": _trusted_sources_gate(discovery),
+        "financial_health": _financial_health_gate(discovery),
+        "opportunity_thesis": _theme_gate(discovery, item),
+        "entry": _entry_gate(item),
     }
     blockers = [key.upper() for key, gate in gates.items() if str(gate.get("status") or "PENDING").upper() != "PASS"]
+    gateway = evaluate_dividend_gateway(symbol, root_path, now=now) if symbol else {"eligibility_status": "RESEARCH_REQUIRED", "watchlist_admission_allowed": False}
+    if gateway.get("eligibility_status") != "QUALIFIED" or gateway.get("watchlist_admission_allowed") is not True:
+        blockers.insert(0, "DIVIDEND_GATEWAY")
     return {
         **gates,
+        "dividend_gateway": gateway,
         "promotion_ready": not blockers,
         "blocking_reasons": blockers,
-        "policy": "DIVIDEND_PRETRADE_FOUR_REFRESHABLE_GATES_FAIL_CLOSED",
+        "policy": "DIVIDEND_PRETRADE_GATEWAY_PLUS_FOUR_REFRESHABLE_GATES_FAIL_CLOSED",
     }
 
 
-def enrich_dividend_watchlist_row(row: Mapping[str, Any], root: str | Path = ".", *, now: datetime | None = None) -> dict[str, Any]:
+def enrich_dividend_watchlist_row(row: Mapping[str, Any], root: str | Path = ".", *, now: Any = None) -> dict[str, Any]:
     enriched = copy.deepcopy(dict(row))
     raw = enriched.get("watchlist")
     if not isinstance(raw, list):
