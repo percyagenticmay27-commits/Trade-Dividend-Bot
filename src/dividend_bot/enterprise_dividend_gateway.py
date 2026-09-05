@@ -23,6 +23,7 @@ from typing import Any, Mapping
 INCOME_TARGET_MONTHLY_PERCENT = 1.0
 MINIMUM_FUND_AGE_DAYS = 60
 INCOME_MAPPING_PATH = Path("results/enterprise_dividend_income_mapping.json")
+REVIEWED_MAPPING_CATALOG_PATH = Path("configs/dividend_discovery_income_mappings.json")
 SUITABILITY_EVIDENCE_PATH = Path("inputs/dividend_suitability_evidence.json")
 
 
@@ -51,6 +52,26 @@ def _find_mapping(payload: Any, symbol: str) -> Mapping[str, Any]:
     for record in _records(payload):
         if _symbol(record) == symbol.upper():
             return record
+    return {}
+
+
+def _find_reviewed_catalog_mapping(payload: Any, symbol: str) -> Mapping[str, Any]:
+    """Resolve a governed reviewed income mapping for persistent qualification.
+
+    Catalog resolution is qualification evidence only. It does not add the
+    underlying to Discovery or the Dividend Watchlist.
+    """
+    target = symbol.strip().upper()
+    for record in _records(payload):
+        if _symbol(record) != target:
+            continue
+        if record.get("reviewed") is not True:
+            continue
+        if str(record.get("status") or "").strip().upper() != "REVIEWED":
+            continue
+        if record.get("automatic_activation_allowed") is not False:
+            continue
+        return record
     return {}
 
 
@@ -113,8 +134,23 @@ def evaluate_dividend_gateway(
     """Evaluate one underlying using reviewed mapping plus refreshed vehicle evidence."""
     del now  # retained for call-site compatibility; no arbitrary time TTL is used.
     root_path = Path(root)
+    source_origin = "CALLER_SUPPLIED" if isinstance(mapping, Mapping) else None
     source = mapping if isinstance(mapping, Mapping) else _find_mapping(_load_json(root_path / INCOME_MAPPING_PATH), symbol)
     source = dict(source) if isinstance(source, Mapping) else {}
+
+    # If the underlying is outside the current Discovery mapping report, retain
+    # its governed reviewed mapping for continuing qualification monitoring.
+    # This does not create Discovery or Watchlist membership.
+    if mapping is None and (not source or not source.get("income_symbol")):
+        reviewed = _find_reviewed_catalog_mapping(
+            _load_json(root_path / REVIEWED_MAPPING_CATALOG_PATH), symbol
+        )
+        if reviewed:
+            source = dict(reviewed)
+            source["mapping_status"] = "REVIEWED_MAPPING_AVAILABLE"
+            source_origin = "REVIEWED_PERSISTENT_CATALOG"
+    elif mapping is None:
+        source_origin = "CURRENT_DISCOVERY_MAPPING"
 
     # Explicit caller-supplied mappings remain authoritative for unit/integration
     # callers. Normal runtime evaluation enriches the reviewed mapping with the
@@ -182,6 +218,7 @@ def evaluate_dividend_gateway(
         "minimum_fund_age_days": MINIMUM_FUND_AGE_DAYS,
         "vehicle_status": vehicle_status or None,
         "mapping_status": mapping_status or None,
+        "mapping_source": source_origin,
         "evidence_as_of": evidence_as_of,
         "freshness_status": freshness_status,
         "eligibility_status": status,
