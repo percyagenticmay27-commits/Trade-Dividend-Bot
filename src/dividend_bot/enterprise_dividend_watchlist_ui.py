@@ -169,9 +169,6 @@ def _promotion_detail_body(item: Mapping[str, Any], symbol: str) -> str:
     gates = (
         ("Trusted Sources / Evidence", _gate(item, readiness, "trusted_sources", "source_trust", "evidence_quality")),
         ("Financial Health", _gate(item, readiness, "financial_health")),
-        ("Dividend / Income Suitability", _gate(item, readiness, "dividend_suitability", "income_suitability", "suitability")),
-        ("Dividend Safety / Sustainability", _gate(item, readiness, "dividend_safety", "income_safety", "payout_safety")),
-        ("Valuation / Price Suitability", _gate(item, readiness, "valuation", "valuation_suitability", "price_suitability")),
         ("Theme / Opportunity Evidence", _gate(item, readiness, "opportunity_thesis", "theme_opportunity", "thesis_integrity")),
         ("Entry Readiness", _gate(item, readiness, "entry", "entry_readiness")),
     )
@@ -191,7 +188,7 @@ def _promotion_detail_body(item: Mapping[str, Any], symbol: str) -> str:
         f"<strong>Promotion Readiness — {html.escape(symbol)}</strong>"
         "<span>Click Candidate, Entry Status, or Entry Score to collapse.</span>"
         "</div>"
-        "<div class='watchlist-promotion-section-title'>Seven-gate Promotion Readiness</div>"
+        "<div class='watchlist-promotion-section-title'>Four-gate Promotion Readiness</div>"
         "<div class='watchlist-promotion-gates-wrap'>"
         f"<div class='watchlist-promotion-gates'>{cards}</div>"
         "</div>"
@@ -335,6 +332,6 @@ def render_dividend_watchlist_panel(row: Mapping[str, Any]) -> str:
 def dividend_watchlist_ui_css() -> str:
     return """
 <style>
-.dividend-watch-detail-toggle{appearance:none;border:0;background:transparent;padding:0;margin:0;font:inherit;color:inherit;text-align:inherit;cursor:pointer}.dividend-watch-detail-toggle:focus-visible{outline:2px solid #5925dc;outline-offset:2px;border-radius:6px}.dividend-watch-detail-toggle .watchlist-candidate-name{display:block}.dividend-watch-detail-row[hidden]{display:none}.dividend-watch-detail-row td{padding:0!important;background:#f8fbff;white-space:normal!important;border-bottom:1px solid #dbe4f0}.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:repeat(7,minmax(0,1fr))}.dividend-watchlist .watchlist-promotion-gate-header>strong{font-size:.70rem}.dividend-watchlist .watchlist-promotion-panel{margin:8px 10px 12px}.dividend-watchlist .watchlist-promotion-blockers{margin-top:8px}@media(max-width:1400px){.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:repeat(4,minmax(0,1fr))}}@media(max-width:900px){.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:1fr}}
+.dividend-watch-detail-toggle{appearance:none;border:0;background:transparent;padding:0;margin:0;font:inherit;color:inherit;text-align:inherit;cursor:pointer}.dividend-watch-detail-toggle:focus-visible{outline:2px solid #5925dc;outline-offset:2px;border-radius:6px}.dividend-watch-detail-toggle .watchlist-candidate-name{display:block}.dividend-watch-detail-row[hidden]{display:none}.dividend-watch-detail-row td{padding:0!important;background:#f8fbff;white-space:normal!important;border-bottom:1px solid #dbe4f0}.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:repeat(4,minmax(0,1fr))}.dividend-watchlist .watchlist-promotion-gate-header>strong{font-size:.70rem}.dividend-watchlist .watchlist-promotion-panel{margin:8px 10px 12px}.dividend-watchlist .watchlist-promotion-blockers{margin-top:8px}@media(max-width:900px){.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:520px){.dividend-watchlist .watchlist-promotion-gates{grid-template-columns:1fr}}
 </style>
 """
