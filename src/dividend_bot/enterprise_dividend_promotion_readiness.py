@@ -20,6 +20,10 @@ FINANCIAL_HEALTH_COMPONENTS = (
     "revenue_growth", "eps_growth", "operating_cash_flow", "gross_margin_trend",
     "debt_health", "analyst_revisions", "sector_strength",
 )
+THEME_COMPONENTS = (
+    "evidence_breadth", "source_class_diversity", "catalyst_support",
+    "market_confirmation", "sector_confirmation",
+)
 _DISCOVERY_PATH = Path("results/enterprise_dividend_discovery_bucket.json")
 
 
@@ -58,6 +62,18 @@ def _numeric(value: Any) -> float | None:
         return None
 
 
+def _component_progress(components: Any, required: tuple[str, ...]) -> dict[str, Any]:
+    mapping = components if isinstance(components, Mapping) else {}
+    available = [name for name in required if _numeric(mapping.get(name)) is not None]
+    missing = [name for name in required if name not in available]
+    return {
+        "completed": len(available),
+        "required": len(required),
+        "display": f"{len(available)}/{len(required)}",
+        "missing": missing,
+    }
+
+
 def _governed_freshness(source: Mapping[str, Any], *, fallback: Any = None) -> tuple[str, str | None]:
     """Use only an upstream governed freshness state; never invent a local TTL."""
     raw = source.get("freshness_status")
@@ -87,17 +103,20 @@ def _apply_freshness(gate: dict[str, Any], source: Mapping[str, Any], *, fallbac
 def _financial_health_gate(discovery: Mapping[str, Any]) -> dict[str, Any]:
     block = discovery.get("financial_health")
     if not isinstance(block, Mapping):
-        return {"status": "PENDING", "reason": "Authoritative Financial Health evidence is unavailable.", "freshness_status": "STALE_OR_UNAVAILABLE"}
+        return {
+            "status": "PENDING", "reason": "Authoritative Financial Health evidence is unavailable.",
+            "freshness_status": "STALE_OR_UNAVAILABLE", "threshold": FINANCIAL_HEALTH_THRESHOLD,
+            "progress": _component_progress({}, FINANCIAL_HEALTH_COMPONENTS),
+        }
     components = block.get("components")
+    progress = _component_progress(components, FINANCIAL_HEALTH_COMPONENTS)
     values: list[float] = []
-    complete = isinstance(components, Mapping)
-    if complete:
+    complete = progress["completed"] == progress["required"]
+    if isinstance(components, Mapping):
         for name in FINANCIAL_HEALTH_COMPONENTS:
             number = _numeric(components.get(name))
-            if number is None:
-                complete = False
-                break
-            values.append(number)
+            if number is not None:
+                values.append(number)
     score = _numeric(block.get("score"))
     if score is None and complete:
         score = mean(values)
@@ -111,6 +130,7 @@ def _financial_health_gate(discovery: Mapping[str, Any]) -> dict[str, Any]:
         "status": status,
         "value": round(score, 2) if score is not None and complete else None,
         "threshold": FINANCIAL_HEALTH_THRESHOLD,
+        "progress": progress,
         "evidence_source": str(_DISCOVERY_PATH),
     }
     if reason:
@@ -139,6 +159,12 @@ def _trusted_sources_gate(discovery: Mapping[str, Any]) -> dict[str, Any]:
         "status": "PENDING",
         "reason": "Trusted-source evidence requires an authoritative Dividend-specific pass threshold.",
         "evidence_source": str(_DISCOVERY_PATH),
+        "progress": {
+            "completed": int(numeric_count) if numeric_count is not None and numeric_count >= 0 else 0,
+            "required": None,
+            "display": f"{int(numeric_count)} / threshold pending" if numeric_count is not None else "0 / threshold pending",
+            "missing": ["authoritative_dividend_source_threshold"],
+        },
     }
     if numeric_count is not None:
         gate["value"] = int(numeric_count) if numeric_count.is_integer() else numeric_count
@@ -154,13 +180,18 @@ def _theme_gate(discovery: Mapping[str, Any], item: Mapping[str, Any]) -> dict[s
     explicit = item.get("opportunity_thesis") or item.get("theme_opportunity")
     theme = explicit if isinstance(explicit, Mapping) else discovery.get("theme_strength")
     if not isinstance(theme, Mapping):
-        return {"status": "PENDING", "reason": "Authoritative Theme / Opportunity evidence is unavailable.", "freshness_status": "STALE_OR_UNAVAILABLE"}
+        return {
+            "status": "PENDING", "reason": "Authoritative Theme / Opportunity evidence is unavailable.",
+            "freshness_status": "STALE_OR_UNAVAILABLE", "progress": _component_progress({}, THEME_COMPONENTS),
+        }
     published = str(theme.get("status") or "").upper()
     status = published if published in {"PASS", "FAIL", "PENDING"} else "PENDING"
+    components = theme.get("components")
     gate: dict[str, Any] = {
         "status": status,
         "value": theme.get("score", theme.get("value")),
         "reason": theme.get("reason") or "No authoritative Dividend-specific Theme / Opportunity pass threshold is published.",
+        "progress": _component_progress(components, THEME_COMPONENTS),
         "evidence_source": theme.get("evidence_source") or str(_DISCOVERY_PATH),
     }
     if theme.get("threshold") is not None:
@@ -170,8 +201,8 @@ def _theme_gate(discovery: Mapping[str, Any], item: Mapping[str, Any]) -> dict[s
     timestamp = theme.get("evidence_timestamp") or theme.get("as_of") or theme.get("generated_at_utc")
     if timestamp:
         gate["as_of"] = timestamp
-    if isinstance(theme.get("components"), Mapping):
-        gate["components"] = copy.deepcopy(dict(theme["components"]))
+    if isinstance(components, Mapping):
+        gate["components"] = copy.deepcopy(dict(components))
     return _apply_freshness(gate, theme, fallback=discovery.get("freshness_status"))
 
 
@@ -196,6 +227,7 @@ def _entry_gate(item: Mapping[str, Any]) -> dict[str, Any]:
     reasons = item.get("entry_reasons")
     if isinstance(reasons, list) and reasons:
         reason_parts.append("Reasons: " + ", ".join(str(x) for x in reasons if x))
+    threshold = _numeric(item.get("entry_threshold"))
     gate: dict[str, Any] = {
         "status": status,
         "value": score,
@@ -205,9 +237,15 @@ def _entry_gate(item: Mapping[str, Any]) -> dict[str, Any]:
         "entry_status": raw_status or None,
         "confidence": confidence,
         "timing": timing,
+        "progress": {
+            "completed": score,
+            "required": threshold,
+            "display": f"{score:g} / {threshold:g}" if score is not None and threshold is not None else (f"score {score:g} / threshold pending" if score is not None else "score pending"),
+            "missing": [] if threshold is not None else ["authoritative_entry_threshold"],
+        },
     }
-    if item.get("entry_threshold") is not None:
-        gate["threshold"] = item.get("entry_threshold")
+    if threshold is not None:
+        gate["threshold"] = threshold
     freshness_source = item.get("entry_evidence") if isinstance(item.get("entry_evidence"), Mapping) else item
     return _apply_freshness(gate, freshness_source, fallback=item.get("entry_freshness_status"))
 
