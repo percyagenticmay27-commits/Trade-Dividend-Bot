@@ -120,6 +120,80 @@ def test_gateway_merges_scheduled_suitability_evidence_by_income_vehicle(tmp_pat
     assert result["observed_income_monthly_percent"] == 1.2
 
 
+def test_gateway_resolves_reviewed_catalog_mapping_outside_current_discovery(tmp_path):
+    results = tmp_path / "results"
+    inputs = tmp_path / "inputs"
+    configs = tmp_path / "configs"
+    results.mkdir()
+    inputs.mkdir()
+    configs.mkdir()
+    (results / "enterprise_dividend_income_mapping.json").write_text(json.dumps({
+        "candidates": [{"underlying_symbol": "OTHER", "mapping_status": "RESEARCH_REQUIRED"}]
+    }), encoding="utf-8")
+    (configs / "dividend_discovery_income_mappings.json").write_text(json.dumps({
+        "mappings": [{
+            "underlying_symbol": "AMD",
+            "income_symbol": "AMDY",
+            "mapping_type": "INCOME_ETF",
+            "status": "REVIEWED",
+            "reviewed": True,
+            "automatic_activation_allowed": False,
+            "income_mechanism": "OPTIONS_PREMIUM",
+            "distribution_frequency": "WEEKLY",
+        }]
+    }), encoding="utf-8")
+    (inputs / "dividend_suitability_evidence.json").write_text(json.dumps({
+        "vehicles": [{
+            "income_symbol": "AMDY",
+            "observed_income_monthly_percent": 5.55075,
+            "observed_income_month": "2026-08",
+            "monthly_income_method": "COMPLETED_CALENDAR_MONTH_DISTRIBUTIONS_DIVIDED_BY_MONTH_END_VEHICLE_PRICE",
+            "fund_age_days": 1082,
+            "vehicle_status": "ACTIVE",
+            "evidence_as_of": "2026-09-04",
+            "freshness_status": "FRESH",
+        }]
+    }), encoding="utf-8")
+
+    result = evaluate_dividend_gateway("AMD", tmp_path, now=NOW)
+    assert result["eligibility_status"] == "QUALIFIED"
+    assert result["watchlist_admission_allowed"] is True
+    assert result["income_symbol"] == "AMDY"
+    assert result["mapping_source"] == "REVIEWED_PERSISTENT_CATALOG"
+    assert result["observed_income_month"] == "2026-08"
+    assert result["automatic_activation_allowed"] is False
+
+
+def test_gateway_persistent_mapping_still_fails_closed_on_degraded_monthly_income(tmp_path):
+    results = tmp_path / "results"
+    inputs = tmp_path / "inputs"
+    configs = tmp_path / "configs"
+    results.mkdir()
+    inputs.mkdir()
+    configs.mkdir()
+    (results / "enterprise_dividend_income_mapping.json").write_text('{"candidates": []}', encoding="utf-8")
+    (configs / "dividend_discovery_income_mappings.json").write_text(json.dumps({
+        "mappings": [{
+            "underlying_symbol": "AMD", "income_symbol": "AMDY", "mapping_type": "INCOME_ETF",
+            "status": "REVIEWED", "reviewed": True, "automatic_activation_allowed": False,
+            "income_mechanism": "OPTIONS_PREMIUM", "distribution_frequency": "WEEKLY",
+        }]
+    }), encoding="utf-8")
+    (inputs / "dividend_suitability_evidence.json").write_text(json.dumps({
+        "vehicles": [{
+            "income_symbol": "AMDY", "observed_income_monthly_percent": 0.5,
+            "observed_income_month": "2026-08", "fund_age_days": 1082,
+            "vehicle_status": "ACTIVE", "evidence_as_of": "2026-09-04",
+            "freshness_status": "FRESH",
+        }]
+    }), encoding="utf-8")
+
+    result = evaluate_dividend_gateway("AMD", tmp_path, now=NOW)
+    assert result["eligibility_status"] == "DISQUALIFIED"
+    assert result["watchlist_admission_allowed"] is False
+    assert result["mapping_source"] == "REVIEWED_PERSISTENT_CATALOG"
+
+
 def test_gateway_excludes_unqualified_nonheld_but_keeps_held_for_lifecycle_review(tmp_path):
     results = tmp_path / "results"
     results.mkdir()
