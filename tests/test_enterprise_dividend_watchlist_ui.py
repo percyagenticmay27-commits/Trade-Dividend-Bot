@@ -103,6 +103,43 @@ def test_dividend_watchlist_collapsible_record_matches_swing_promotion_spec():
     assert "<th>Status</th>" not in output
 
 
+def test_dividend_watchlist_cards_show_progress_and_missing_requirements():
+    row = _dividend_row()
+    row["watchlist"][0]["promotion_readiness"].update({
+        "trusted_sources": {
+            "status": "PENDING",
+            "value": 3,
+            "progress": {"completed": 3, "required": None, "display": "3 / threshold pending", "missing": ["authoritative_dividend_source_threshold"]},
+        },
+        "financial_health": {
+            "status": "PENDING",
+            "value": None,
+            "threshold": 70,
+            "progress": {"completed": 5, "required": 7, "display": "5/7", "missing": ["analyst_revisions", "sector_strength"]},
+        },
+        "opportunity_thesis": {
+            "status": "PENDING",
+            "value": 52.99,
+            "progress": {"completed": 5, "required": 5, "display": "5/5", "missing": []},
+        },
+        "entry": {
+            "status": "PENDING",
+            "value": 54,
+            "progress": {"completed": 54, "required": None, "display": "score 54 / threshold pending", "missing": ["authoritative_entry_threshold"]},
+        },
+    })
+    output = render_dividend_watchlist_panel(row)
+
+    assert output.count("watchlist-promotion-progress") >= 4
+    assert "3 / threshold pending" in output
+    assert "5/7" in output
+    assert "analyst revisions" in output
+    assert "sector strength" in output
+    assert "5/5" in output
+    assert "score 54 / threshold pending" in output
+    assert "authoritative entry threshold" in output
+
+
 def test_missing_dividend_gate_evidence_is_pending_not_pass():
     row = _dividend_row()
     row["watchlist"][0].pop("opportunity_thesis")
