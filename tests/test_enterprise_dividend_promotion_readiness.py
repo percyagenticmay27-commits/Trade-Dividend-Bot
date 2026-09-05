@@ -66,6 +66,23 @@ def test_only_four_watchlist_promotion_gates_are_assembled(tmp_path):
     assert "valuation" not in readiness
 
 
+def test_current_cycle_is_governed_freshness(tmp_path):
+    _fixtures(tmp_path)
+    payload = json.loads((tmp_path / "results/enterprise_dividend_discovery_bucket.json").read_text())
+    candidate = payload["candidates"][0]
+    candidate["financial_health"]["freshness_status"] = "CURRENT_CYCLE"
+    candidate["financial_health"]["is_stale"] = False
+    candidate["theme_strength"]["freshness_status"] = "CURRENT_CYCLE"
+    candidate["theme_strength"]["is_stale"] = False
+    _write(tmp_path / "results/enterprise_dividend_discovery_bucket.json", payload)
+    readiness = build_dividend_promotion_readiness(_nvda_watchlist_item(), tmp_path, now=NOW)
+    assert readiness["financial_health"]["freshness_status"] == "FRESH"
+    assert readiness["financial_health"]["status"] == "PASS"
+    assert readiness["opportunity_thesis"]["freshness_status"] == "FRESH"
+    assert readiness["opportunity_thesis"]["status"] == "PENDING"
+    assert "current_cycle" not in str(readiness["blocking_reasons"]).lower()
+
+
 def test_no_invented_ttl_and_unpublished_freshness_fails_closed(tmp_path):
     _fixtures(tmp_path)
     payload = json.loads((tmp_path / "results/enterprise_dividend_discovery_bucket.json").read_text())
