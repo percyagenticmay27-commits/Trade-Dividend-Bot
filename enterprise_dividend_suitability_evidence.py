@@ -168,7 +168,9 @@ def collect_suitability_evidence(mapping_report: Mapping[str, Any], profiles: Ma
         except Exception as exc:
             warnings.append(f"Suitability market evidence unavailable for {symbol}: {exc}")
     return {
-        "schema_version": "1.1",
+        # Keep the established suitability-catalog contract at schema 1.0.
+        # The added monthly-income fields are backward-compatible extensions.
+        "schema_version": "1.0",
         "strategy_id": "DIVIDEND-001",
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "vehicles": vehicles,
