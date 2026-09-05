@@ -1,7 +1,7 @@
 """Read-only market refresh for Dividend suitability evidence."""
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from math import isfinite
 from statistics import mean
 from typing import Any, Mapping
@@ -31,8 +31,56 @@ def _history(payload: Mapping[str, Any]) -> list[dict[str, Any]]:
     return sorted(rows, key=lambda row: row["date"])
 
 
+def _completed_month_income(rows: list[dict[str, Any]], dividends: Mapping[str, Any]) -> dict[str, Any]:
+    """Measure actual distributions in the most recently completed calendar month.
+
+    The denominator is the last available vehicle close in that completed month.
+    This deliberately does not annualize distributions or divide an annual yield by 12.
+    """
+    if not rows:
+        return {
+            "observed_income_monthly_percent": None,
+            "observed_income_month": None,
+            "observed_month_distribution_per_share": None,
+            "observed_month_end_price": None,
+        }
+    latest = rows[-1]["date"]
+    current_month_start = latest.replace(day=1)
+    completed_month_end = current_month_start - timedelta(days=1)
+    completed_month_start = completed_month_end.replace(day=1)
+    month_rows = [row for row in rows if completed_month_start <= row["date"] <= completed_month_end]
+    month_end_price = month_rows[-1]["close"] if month_rows else None
+
+    payments = dividends.get("payments") if isinstance(dividends, Mapping) else None
+    total = 0.0
+    payment_count = 0
+    if isinstance(payments, list):
+        for payment in payments:
+            if not isinstance(payment, Mapping):
+                continue
+            try:
+                paid = date.fromisoformat(str(payment.get("date") or "")[:10])
+            except ValueError:
+                continue
+            amount = _number(payment.get("amount"))
+            if completed_month_start <= paid <= completed_month_end and amount is not None and amount >= 0:
+                total += amount
+                payment_count += 1
+
+    observed = (total / month_end_price * 100) if month_end_price and payment_count else None
+    return {
+        "observed_income_monthly_percent": round(observed, 6) if observed is not None else None,
+        "observed_income_month": completed_month_start.strftime("%Y-%m"),
+        "observed_month_distribution_per_share": round(total, 8) if payment_count else None,
+        "observed_month_distribution_payment_count": payment_count,
+        "observed_month_end_price": round(month_end_price, 6) if month_end_price is not None else None,
+        "monthly_income_method": "COMPLETED_CALENDAR_MONTH_DISTRIBUTIONS_DIVIDED_BY_MONTH_END_VEHICLE_PRICE",
+    }
+
+
 def build_vehicle_evidence(symbol: str, mapping_type: str, profile: Mapping[str, Any],
-                           history: Mapping[str, Any], quote: Mapping[str, Any]) -> dict[str, Any]:
+                           history: Mapping[str, Any], quote: Mapping[str, Any],
+                           dividends: Mapping[str, Any] | None = None) -> dict[str, Any]:
     rows = _history(history)
     first, latest = (rows[0], rows[-1]) if rows else (None, None)
     total_return = (
@@ -42,6 +90,7 @@ def build_vehicle_evidence(symbol: str, mapping_type: str, profile: Mapping[str,
     recent = [row["close"] * row["volume"] for row in rows[-20:]
               if row.get("volume") is not None and row["volume"] > 0]
     dollar_volume = round(mean(recent), 2) if len(recent) >= 5 else None
+    stale = bool(history.get("is_stale") or quote.get("is_stale") or (dividends or {}).get("is_stale"))
     output = {
         "income_symbol": symbol,
         "reviewed": True,
@@ -49,17 +98,23 @@ def build_vehicle_evidence(symbol: str, mapping_type: str, profile: Mapping[str,
         "latest_dollar_volume": dollar_volume,
         "total_return_1y_percent": total_return,
         "market_history_source": history.get("data_source") or history.get("provider"),
-        "is_stale": bool(history.get("is_stale") or quote.get("is_stale")),
+        "is_stale": stale,
+        "freshness_status": "STALE_OR_UNAVAILABLE" if stale else "FRESH",
         "sources": list(profile.get("sources") or []),
     }
     if mapping_type == "INCOME_ETF":
         inception = date.fromisoformat(str(profile["fund_inception_date"]))
         as_of = latest["date"] if latest else date.fromisoformat(str(profile["reviewed_at"]))
+        price = _number(quote.get("price"))
         output.update({
             "expense_ratio_percent": profile.get("expense_ratio_percent"),
             "latest_distribution_roc_percent": profile.get("latest_distribution_roc_percent"),
+            "fund_inception_date": inception.isoformat(),
             "fund_age_days": max(0, (as_of - inception).days),
+            "vehicle_status": "ACTIVE" if price is not None and price > 0 else None,
+            "distribution_evidence_source": (dividends or {}).get("data_source") or (dividends or {}).get("provider"),
         })
+        output.update(_completed_month_income(rows, dividends or {}))
     else:
         dividend_rate = _number(quote.get("dividend_rate"))
         price = _number(quote.get("price"))
@@ -69,9 +124,8 @@ def build_vehicle_evidence(symbol: str, mapping_type: str, profile: Mapping[str,
         if dividend_rate is not None and price is not None and dividend_rate >= 0 and price > 0:
             yield_percent = dividend_rate / price * 100
         elif raw_yield is not None:
-            # Yahoo has returned this field as both a decimal ratio and a
-            # percentage across provider versions. Values above 0.20 are
-            # already percentage points; smaller values are decimal ratios.
+            # Reporting/suitability context only. The Dividend Gateway never uses
+            # this annual yield for its completed-month income qualification.
             yield_percent = raw_yield if raw_yield > 0.20 else raw_yield * 100
         else:
             yield_percent = None
@@ -106,13 +160,15 @@ def collect_suitability_evidence(mapping_report: Mapping[str, Any], profiles: Ma
         try:
             history = service.get_history(symbol, period="1y", interval="1d")
             quote = service.get_quote(symbol)
+            mapping_type = str(mapping.get("mapping_type") or "")
+            dividends = service.get_dividends(symbol, period="1y") if mapping_type == "INCOME_ETF" else None
             vehicles.append(build_vehicle_evidence(
-                symbol, str(mapping.get("mapping_type") or ""), profile, history, quote,
+                symbol, mapping_type, profile, history, quote, dividends,
             ))
         except Exception as exc:
             warnings.append(f"Suitability market evidence unavailable for {symbol}: {exc}")
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "strategy_id": "DIVIDEND-001",
         "generated_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "vehicles": vehicles,
