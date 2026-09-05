@@ -3,18 +3,15 @@
 The gateway is strategy-specific. It never changes shared Discovery and never
 activates a paper position. It evaluates reviewed income-mapping evidence and
 fails closed when the income mechanism is missing, immature, inactive, or below
-the governed current-month income target.
+the governed completed-calendar-month income target.
 
 Gateway income qualification is deliberately monthly. Annual or trailing-365-day
-distribution yield is not used for admission. Upstream reviewed evidence must
-publish ``observed_income_monthly_percent`` (or the explicit alias
-``monthly_equivalent_income_percent``).
+distribution yield is not used for admission. Refreshed suitability evidence
+publishes actual completed-month distribution income for the reviewed vehicle.
 
 Maturity uses the existing suitability evidence measurement ``fund_age_days``.
-The governed minimum is 60 days, implementing the Dividend sublayer's two-month
-operating-history requirement without introducing a second age calculation.
-Evidence freshness is supplied by the upstream reviewed evidence state; this
-module does not invent an hourly TTL.
+The governed minimum is 60 days. Evidence freshness is supplied by upstream
+reviewed evidence state; this module does not invent an hourly TTL.
 """
 from __future__ import annotations
 
@@ -26,6 +23,7 @@ from typing import Any, Mapping
 INCOME_TARGET_MONTHLY_PERCENT = 1.0
 MINIMUM_FUND_AGE_DAYS = 60
 INCOME_MAPPING_PATH = Path("results/enterprise_dividend_income_mapping.json")
+SUITABILITY_EVIDENCE_PATH = Path("inputs/dividend_suitability_evidence.json")
 
 
 def _load_json(path: Path) -> Any:
@@ -52,6 +50,16 @@ def _symbol(record: Mapping[str, Any]) -> str:
 def _find_mapping(payload: Any, symbol: str) -> Mapping[str, Any]:
     for record in _records(payload):
         if _symbol(record) == symbol.upper():
+            return record
+    return {}
+
+
+def _find_vehicle_evidence(payload: Any, income_symbol: str) -> Mapping[str, Any]:
+    target = income_symbol.strip().upper()
+    if not target:
+        return {}
+    for record in _records(payload):
+        if str(record.get("income_symbol") or "").strip().upper() == target:
             return record
     return {}
 
@@ -102,11 +110,21 @@ def evaluate_dividend_gateway(
     mapping: Mapping[str, Any] | None = None,
     now: Any = None,
 ) -> dict[str, Any]:
-    """Evaluate one underlying using reviewed Dividend income evidence."""
+    """Evaluate one underlying using reviewed mapping plus refreshed vehicle evidence."""
     del now  # retained for call-site compatibility; no arbitrary time TTL is used.
     root_path = Path(root)
     source = mapping if isinstance(mapping, Mapping) else _find_mapping(_load_json(root_path / INCOME_MAPPING_PATH), symbol)
-    source = source if isinstance(source, Mapping) else {}
+    source = dict(source) if isinstance(source, Mapping) else {}
+
+    # Explicit caller-supplied mappings remain authoritative for unit/integration
+    # callers. Normal runtime evaluation enriches the reviewed mapping with the
+    # latest suitability vehicle evidence produced by the scheduled refresh.
+    if mapping is None and source.get("income_symbol"):
+        refreshed = _find_vehicle_evidence(
+            _load_json(root_path / SUITABILITY_EVIDENCE_PATH), str(source.get("income_symbol"))
+        )
+        if refreshed:
+            source.update(dict(refreshed))
 
     income_symbol = source.get("income_symbol")
     mechanism = source.get("income_mechanism")
@@ -130,7 +148,7 @@ def evaluate_dividend_gateway(
     if frequency not in {"WEEKLY", "MONTHLY"}:
         reasons.append("Distribution frequency is not a reviewed weekly or monthly mechanism.")
     if observed is None:
-        reasons.append("Current reviewed monthly income evidence is unavailable.")
+        reasons.append("Completed-calendar-month income evidence is unavailable.")
     elif observed < INCOME_TARGET_MONTHLY_PERCENT:
         reasons.append(f"Observed monthly income {observed:.4g}% is below the {INCOME_TARGET_MONTHLY_PERCENT:.4g}% minimum.")
     if fund_age_days is None:
@@ -158,6 +176,8 @@ def evaluate_dividend_gateway(
         "distribution_frequency": frequency or None,
         "income_target_monthly_percent": INCOME_TARGET_MONTHLY_PERCENT,
         "observed_income_monthly_percent": observed,
+        "observed_income_month": source.get("observed_income_month"),
+        "monthly_income_method": source.get("monthly_income_method"),
         "fund_age_days": fund_age_days,
         "minimum_fund_age_days": MINIMUM_FUND_AGE_DAYS,
         "vehicle_status": vehicle_status or None,
