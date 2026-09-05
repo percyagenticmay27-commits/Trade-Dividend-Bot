@@ -69,6 +69,8 @@ def _find_reviewed_catalog_mapping(payload: Any, symbol: str) -> Mapping[str, An
             continue
         if str(record.get("status") or "").strip().upper() != "REVIEWED":
             continue
+        if str(record.get("mapping_type") or "").strip().upper() != "INCOME_ETF":
+            continue
         if record.get("automatic_activation_allowed") is not False:
             continue
         return record
@@ -205,6 +207,13 @@ def evaluate_dividend_gateway(
     if reasons and (not source or any("unavailable" in reason.lower() for reason in reasons)):
         status = "RESEARCH_REQUIRED"
 
+    # Persistent catalog qualification is intentionally broader than Watchlist
+    # admission. A catalog-only underlying may remain QUALIFIED for monitoring,
+    # but only a current Discovery mapping (or an explicit caller mapping) can
+    # cross the Discovery -> Dividend Gateway -> Watchlist boundary.
+    discovery_mapping_present = source_origin in {"CURRENT_DISCOVERY_MAPPING", "CALLER_SUPPLIED"}
+    watchlist_admission_allowed = qualified and discovery_mapping_present
+
     return {
         "underlying_symbol": symbol.upper(),
         "income_symbol": income_symbol,
@@ -219,10 +228,12 @@ def evaluate_dividend_gateway(
         "vehicle_status": vehicle_status or None,
         "mapping_status": mapping_status or None,
         "mapping_source": source_origin,
+        "discovery_mapping_present": discovery_mapping_present,
+        "gateway_qualified": qualified,
         "evidence_as_of": evidence_as_of,
         "freshness_status": freshness_status,
         "eligibility_status": status,
-        "watchlist_admission_allowed": qualified,
+        "watchlist_admission_allowed": watchlist_admission_allowed,
         "manual_review_required": True,
         "automatic_activation_allowed": False,
         "reasons": reasons,
