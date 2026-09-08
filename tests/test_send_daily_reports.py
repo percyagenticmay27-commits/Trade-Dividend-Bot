@@ -1,83 +1,170 @@
-"""Validate Gmail email composition without making a network connection."""
-
+"""Validate the ETF daily decision report CSV email without network access."""
 from __future__ import annotations
 
 import csv
+import json
 from pathlib import Path
 
-from send_daily_reports import ATTACHMENTS, RECIPIENT, SENDER, send_daily_reports
+from send_daily_reports import EXPECTED_CSV_NAMES, send_daily_reports
+from src.dividend_bot.executive_daily_change_summary import DAILY_CHANGE_FIELDS
+from src.dividend_bot.executive_daily_paper_report import DAILY_PAPER_FIELDS
+from src.dividend_bot.executive_live_readiness_report import LIVE_READINESS_FIELDS
+from src.dividend_bot.executive_strategy_health_report import STRATEGY_HEALTH_FIELDS
 
 
-class FakeSMTP:
-    instances = []
+def _write_inputs(root: Path) -> None:
+    state = {
+        "paper_only": True,
+        "as_of_date": "2026-08-05",
+        "starting_capital": 500.0,
+        "pairs": {
+            "AMDW / AMDL": {
+                "a_ticker": "AMDW",
+                "b_ticker": "AMDL",
+                "a_shares": 1.0,
+                "b_shares": 1.0,
+                "a_in_sgov": False,
+                "b_in_sgov": False,
+                "sgov_balance": 0.0,
+                "last_prices": {"A": 10.0, "B": 5.0},
+                "last_signal": {"A": "BUY", "B": "BUY"},
+                "last_action": "NO_PAPER_TRADE",
+                "total_dividends_received": 0.0,
+            }
+        },
+    }
+    (root / "paper_state.json").write_text(json.dumps(state), encoding="utf-8")
+    reports = {
+        "daily_paper_report.md": "# Daily Paper Report\n- Status: READY\n",
+        "daily_change_summary.md": "# Daily Change Summary\n- Change: NONE\n",
+        "strategy_health_report.md": "# Strategy Health Report\n- Health: GOOD\n",
+        "live_readiness_report.md": (
+            "# Live Readiness Report\n"
+            "- Overall Readiness: 5.56%\n"
+            "- Status: IN PROGRESS\n"
+            "- Paper Trading Days: 5\n"
+            "- Required Paper Days: 90\n"
+            "- Days Remaining: 85\n"
+            "- Portfolio Value: $50,000.00\n"
+            "- Maximum Drawdown: 0.00%\n"
+            "- Accounting Status: RECONCILED\n"
+        ),
+    }
+    for name, content in reports.items():
+        (root / name).write_text(content, encoding="utf-8")
 
-    def __init__(self) -> None:
-        self.login_args = None
-        self.message = None
-        self.__class__.instances.append(self)
 
-    def __enter__(self):
-        return self
+def test_daily_decision_email_converts_exact_markdown_reports_to_csv(tmp_path: Path):
+    _write_inputs(tmp_path)
+    sent: list[dict] = []
 
-    def __exit__(self, exc_type, exc, traceback):
-        return False
+    def fake_email_sender(**kwargs):
+        sent.append(kwargs)
 
-    def login(self, user: str, password: str):
-        self.login_args = (user, password)
+    result = send_daily_reports(
+        root_dir=tmp_path,
+        delivery_log=Path("email_delivery_test.csv"),
+        sender="sender@example.com",
+        recipient="recipient@example.com",
+        email_sender=fake_email_sender,
+    )
 
-    def send_message(self, message):
-        self.message = message
+    assert result == "SENT"
+    assert len(sent) == 1
+    payload = sent[0]
+    assert payload["subject"] == "PAPER ONLY ETF Daily Decision Reports - 2026-08-05"
+    assert [path.name for path in payload["attachments"]] == list(EXPECTED_CSV_NAMES)
+    assert all(path.suffix == ".csv" and path.is_file() for path in payload["attachments"])
+
+    for path in payload["attachments"]:
+        with path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            rows = list(reader)
+
+        assert rows
+        assert "source_file" not in rows[0]
+        assert "row_type" not in rows[0]
+        assert "label" not in rows[0]
+
+        if path.name == "daily_paper_report.csv":
+            assert reader.fieldnames == DAILY_PAPER_FIELDS
+            assert all(row["paper_trade_mode"] == "True" for row in rows)
+            assert any(row["report_section"] == "Executive Header" for row in rows)
+            assert any(row["report_section"] == "Portfolio Summary" for row in rows)
+            assert any(row["report_section"] == "Current Pair Holdings" for row in rows)
+            assert any(row["metric"] == "Starting Capital" and row["value"] == "$50,000.00" for row in rows)
+        elif path.name == "daily_change_summary.csv":
+            assert reader.fieldnames == DAILY_CHANGE_FIELDS
+            assert any(row["event"] == "Report Name" for row in rows)
+            assert any(row["event"] == "Purpose" for row in rows)
+            assert any(row["event"] == "No portfolio changes" for row in rows)
+        elif path.name == "strategy_health_report.csv":
+            assert reader.fieldnames == STRATEGY_HEALTH_FIELDS
+            content_rows = [row for row in rows if any(row.values())]
+            assert all(row["paper_trade_mode"] == "True" for row in content_rows)
+            assert any(not any(row.values()) for row in rows)
+            assert any(row["report_section"] == "Portfolio Health" for row in rows)
+            assert any(row["report_section"] == "Pair Performance" for row in rows)
+            assert any(row["report_section"] == "Deployment Gates" for row in rows)
+            assert any(row["metric"] == "Starting Capital" and row["value"] == "$50,000.00" for row in rows)
+            assert any(row["metric"] == "Dividends Received" for row in rows)
+            assert any(row["metric"] == "Total Return Amount" for row in rows)
+            assert any(row["metric"] == "Total Portfolio Value" for row in rows)
+        elif path.name == "live_readiness_report.csv":
+            assert reader.fieldnames == LIVE_READINESS_FIELDS
+            content_rows = [row for row in rows if any(row.values())]
+            assert all(row["paper_trade_mode"] == "True" for row in content_rows)
+            assert any(not any(row.values()) for row in rows)
+            assert any(row["report_section"] == "Executive Header" for row in rows)
+            assert any(row["report_section"] == "Current Readiness Summary" for row in rows)
+            assert any(row["report_section"] == "Governance Readiness" for row in rows)
+            assert any(row["report_section"] == "Current Pair Legend" for row in rows)
+            assert any(row["report_section"] == "Deployment Gates" for row in rows)
+            assert any(row["report_section"] == "Blocking Issues" for row in rows)
+            assert any(row["report_section"] == "Final Assessment" for row in rows)
+            assert any(row["metric"] == "Paper Trading Days" and row["value"] == "5" for row in rows)
+            assert any(row["metric"] == "Overall Status" and row["value"] == "NOT READY" for row in rows)
+        else:
+            raise AssertionError(f"Unexpected attachment: {path.name}")
 
 
-def main() -> int:
-    delivery_log = Path("email_delivery_test.csv")
-    delivery_log.unlink(missing_ok=True)
-    FakeSMTP.instances.clear()
+def test_daily_decision_email_duplicate_protection(tmp_path: Path):
+    _write_inputs(tmp_path)
+    sent: list[dict] = []
+
+    first = send_daily_reports(
+        root_dir=tmp_path,
+        delivery_log=Path("email_delivery_test.csv"),
+        sender="sender@example.com",
+        recipient="recipient@example.com",
+        email_sender=lambda **kwargs: sent.append(kwargs),
+    )
+    second = send_daily_reports(
+        root_dir=tmp_path,
+        delivery_log=Path("email_delivery_test.csv"),
+        sender="sender@example.com",
+        recipient="recipient@example.com",
+        email_sender=lambda **kwargs: sent.append(kwargs),
+    )
+
+    assert first == "SENT"
+    assert second == "SKIPPED_ALREADY_SENT"
+    assert len(sent) == 1
+
+
+def test_missing_authoritative_markdown_report_blocks_email(tmp_path: Path):
+    _write_inputs(tmp_path)
+    (tmp_path / "live_readiness_report.md").unlink()
+
     try:
-        result = send_daily_reports(
-            password="test-app-password",
-            delivery_log=delivery_log,
-            smtp_factory=FakeSMTP,
+        send_daily_reports(
+            root_dir=tmp_path,
+            delivery_log=Path("email_delivery_test.csv"),
+            sender="sender@example.com",
+            recipient="recipient@example.com",
+            email_sender=lambda **_kwargs: None,
         )
-        assert result == "SENT"
-        assert len(FakeSMTP.instances) == 1
-        smtp = FakeSMTP.instances[0]
-        assert smtp.login_args == (SENDER, "test-app-password")
-        assert smtp.message["From"] == SENDER
-        assert smtp.message["To"] == RECIPIENT
-        filenames = sorted(
-            part.get_filename()
-            for part in smtp.message.iter_attachments()
-        )
-        assert filenames == sorted(path.name for path in ATTACHMENTS)
-        assert all(filename.endswith(".md") for filename in filenames)
-        assert not any(filename.endswith(".csv") for filename in filenames)
-        assert not any(filename.endswith(".json") for filename in filenames)
-
-        duplicate = send_daily_reports(
-            password="test-app-password",
-            delivery_log=delivery_log,
-            smtp_factory=FakeSMTP,
-        )
-        assert duplicate == "SKIPPED_ALREADY_SENT"
-        assert len(FakeSMTP.instances) == 1
-        with delivery_log.open(newline="", encoding="utf-8") as handle:
-            rows = list(csv.DictReader(handle))
-        assert len(rows) == 1
-        assert rows[0]["Status"] == "SENT"
-        assert rows[0]["Attachments"].split(";") == [
-            path.name for path in ATTACHMENTS
-        ]
-    finally:
-        delivery_log.unlink(missing_ok=True)
-
-    print("Daily Gmail report sender validation: PASS")
-    print("Exactly four Markdown attachments: PASS")
-    print("CSV/state/log exclusion: PASS")
-    print("Duplicate-send protection: PASS")
-    print("No network connection made during test")
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+    except RuntimeError as exc:
+        assert "live_readiness_report.md" in str(exc)
+    else:
+        raise AssertionError("Missing required Markdown report should block delivery")

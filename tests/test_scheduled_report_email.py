@@ -1,6 +1,7 @@
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+import json
 
 import pytest
 
@@ -18,26 +19,66 @@ from src.dividend_bot.scheduled_report_email import (
 TZ = ZoneInfo("America/Chicago")
 
 
+def _state(as_of: str) -> dict:
+    return {
+        "as_of_date": as_of,
+        "pairs": {
+            "AMDW / AMDL": {
+                "a_shares": 1.0,
+                "b_shares": 1.0,
+                "last_prices": {"A": 20.0, "B": 10.0},
+                "last_signal": {"A": "BUY", "B": "SELL"},
+                "a_in_sgov": False,
+                "b_in_sgov": False,
+                "a_earnings_lock": False,
+                "b_earnings_lock": False,
+                "sgov_balance": 45.0,
+                "total_dividends_received": 1.0,
+            }
+        },
+    }
+
+
+def _environment() -> dict[str, str]:
+    return {
+        "GMAIL_USER": "sender@example.com",
+        "GMAIL_APP_PASSWORD": "secret",
+        "REPORT_RECIPIENT": "recipient@example.com",
+        "DIVIDEND_BOT_TIMEZONE": "America/Chicago",
+        "DIVIDEND_DASHBOARD_BASE_URL": "https://example.com",
+    }
+
+
+def _write_daily_reports(root: Path) -> None:
+    for name in (
+        "daily_paper_report.md",
+        "daily_change_summary.md",
+        "strategy_health_report.md",
+        "live_readiness_report.md",
+    ):
+        (root / name).write_text(f"# {name}\n- Status: READY\n", encoding="utf-8")
+
+
 def test_email_settings_require_all_credentials():
     with pytest.raises(RuntimeError):
         configured_email_settings({"GMAIL_USER": "a@example.com"})
 
 
 def test_email_settings_use_environment_values():
-    settings = configured_email_settings({
-        "GMAIL_USER": "sender@example.com",
-        "GMAIL_APP_PASSWORD": "secret",
-        "REPORT_RECIPIENT": "recipient@example.com",
-        "DIVIDEND_BOT_TIMEZONE": "America/Chicago",
-        "DIVIDEND_DASHBOARD_BASE_URL": "https://example.com/",
-    })
+    settings = configured_email_settings(_environment())
     assert settings["sender"] == "sender@example.com"
     assert settings["recipient"] == "recipient@example.com"
     assert settings["dashboard_base_url"] == "https://example.com"
+    assert settings["daily_state_max_age_days"] == "5"
 
 
-def test_friday_at_seven_is_weekly_due():
+def test_every_day_at_seven_is_daily_due():
+    assert due_report_frequencies(datetime(2026, 8, 5, 19, 0, tzinfo=TZ)) == ["daily"]
+
+
+def test_friday_at_seven_is_daily_and_weekly_due():
     now = datetime(2026, 7, 31, 19, 0, tzinfo=TZ)
+    assert "daily" in due_report_frequencies(now)
     assert "weekly" in due_report_frequencies(now)
 
 
@@ -48,13 +89,11 @@ def test_last_day_at_seven_is_monthly_due():
 
 
 def test_non_due_hour_returns_empty():
-    now = datetime(2026, 7, 31, 18, 0, tzinfo=TZ)
-    assert due_report_frequencies(now) == []
+    assert due_report_frequencies(datetime(2026, 7, 31, 18, 0, tzinfo=TZ)) == []
 
 
-def test_month_end_that_is_not_friday_only_sends_monthly():
-    now = datetime(2026, 8, 31, 19, 0, tzinfo=TZ)
-    assert due_report_frequencies(now) == ["monthly"]
+def test_month_end_that_is_not_friday_sends_daily_and_monthly():
+    assert due_report_frequencies(datetime(2026, 8, 31, 19, 0, tzinfo=TZ)) == ["daily", "monthly"]
 
 
 def test_dashboard_links_are_secure_paths():
@@ -66,30 +105,30 @@ def test_dashboard_links_are_secure_paths():
 def test_existing_attachments_skips_missing_files(tmp_path: Path):
     report = tmp_path / "weekly_portfolio_review.md"
     report.write_text("# Weekly", encoding="utf-8")
-    found = existing_attachments(tmp_path, ["weekly_portfolio_review.md", "missing.html"])
-    assert found == [report]
+    assert existing_attachments(tmp_path, ["weekly_portfolio_review.md", "missing.html"]) == [report]
 
 
-def test_message_contains_links_and_attachments(tmp_path: Path):
-    report = tmp_path / "weekly_portfolio_review.md"
-    report.write_text("# Weekly", encoding="utf-8")
+def test_message_contains_csv_attachment(tmp_path: Path):
+    report = tmp_path / "dividend_portfolio.csv"
+    report.write_text("symbol,price\nTEST,1\n", encoding="utf-8")
     message = build_report_message(
-        frequency="weekly",
+        frequency="daily",
         sender="sender@example.com",
         recipient="recipient@example.com",
-        report_date="2026-07-31",
+        report_date="2026-08-05",
         attachments=[report],
-        links=[("Executive Dashboard", "https://example.com/executive_dashboard.html")],
+        links=[],
     )
     assert "PAPER ONLY" in message.get_body(preferencelist=("plain",)).get_content()
-    assert message["To"] == "recipient@example.com"
-    assert any(part.get_filename() == report.name for part in message.iter_attachments())
+    attachment = next(message.iter_attachments())
+    assert attachment.get_filename() == report.name
+    assert attachment.get_content_type() == "text/csv"
 
 
 def test_invalid_frequency_is_rejected():
     with pytest.raises(ValueError):
         build_report_message(
-            frequency="daily",
+            frequency="hourly",
             sender="a@example.com",
             recipient="b@example.com",
             report_date="2026-07-31",
@@ -97,7 +136,11 @@ def test_invalid_frequency_is_rejected():
         )
 
 
-def test_send_scheduled_reports_can_send_weekly_and_monthly_together(tmp_path: Path):
+def test_send_scheduled_reports_sends_daily_weekly_and_monthly_together(tmp_path: Path):
+    (tmp_path / "paper_portfolio_state.json").write_text(
+        json.dumps(_state("2026-07-31")), encoding="utf-8"
+    )
+    _write_daily_reports(tmp_path)
     (tmp_path / "weekly_portfolio_review.md").write_text("# Weekly", encoding="utf-8")
     sent_messages = []
 
@@ -107,18 +150,37 @@ def test_send_scheduled_reports_can_send_weekly_and_monthly_together(tmp_path: P
     sent = send_scheduled_reports(
         root_dir=tmp_path,
         now=datetime(2026, 7, 31, 19, 0, tzinfo=TZ),
-        environment={
-            "GMAIL_USER": "sender@example.com",
-            "GMAIL_APP_PASSWORD": "secret",
-            "REPORT_RECIPIENT": "recipient@example.com",
-            "DIVIDEND_BOT_TIMEZONE": "America/Chicago",
-            "DIVIDEND_DASHBOARD_BASE_URL": "https://example.com",
-        },
+        environment=_environment(),
         smtp_sender=fake_sender,
     )
-    assert sent == ["weekly", "monthly"]
-    assert len(sent_messages) == 2
+    assert sent == ["daily", "weekly", "monthly"]
+    assert len(sent_messages) == 3
+    daily_message = sent_messages[0][0]
+    assert sorted(part.get_filename() for part in daily_message.iter_attachments()) == [
+        "daily_change_summary.csv",
+        "daily_paper_report.csv",
+        "dividend_executive_summary.csv",
+        "dividend_performance.csv",
+        "dividend_portfolio.csv",
+        "dividend_watchlist.csv",
+        "live_readiness_report.csv",
+        "strategy_health_report.csv",
+    ]
     assert all(password == "secret" for _, password in sent_messages)
+
+
+def test_stale_daily_state_blocks_email(tmp_path: Path):
+    (tmp_path / "paper_portfolio_state.json").write_text(
+        json.dumps(_state("2026-06-01")), encoding="utf-8"
+    )
+    _write_daily_reports(tmp_path)
+    with pytest.raises(RuntimeError, match="stale"):
+        send_scheduled_reports(
+            root_dir=tmp_path,
+            now=datetime(2026, 8, 5, 19, 0, tzinfo=TZ),
+            environment=_environment(),
+            smtp_sender=lambda *_args, **_kwargs: None,
+        )
 
 
 def test_safety_constants_are_locked():

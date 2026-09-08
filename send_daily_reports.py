@@ -1,35 +1,38 @@
-"""Email the four PAPER ONLY daily decision reports through SendGrid REST API."""
+"""Email the four PAPER ONLY daily decision reports as CSV attachments."""
 
 from __future__ import annotations
 
 import csv
 import json
 import os
-import ssl
-import smtplib
-from datetime import datetime
+from datetime import date, datetime
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Protocol
+from typing import Callable
 
 from dotenv import load_dotenv
 from shared.notifications.sendgrid_email import send_email
+from src.dividend_bot.daily_markdown_report_csv import generate_markdown_report_csvs
 
 
 load_dotenv(".env")
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 465
 SENDER = os.getenv("SENDGRID_FROM_EMAIL", "prproducts3000@gmail.com")
 RECIPIENT = os.getenv("REPORT_RECIPIENT", "percyagenticmay27@gmail.com")
-PASSWORD_ENV = "GMAIL_APP_PASSWORD"
 STATE_PATH = Path("paper_state.json")
 DELIVERY_LOG_PATH = Path("email_delivery_log.csv")
-ATTACHMENTS = [
+CSV_OUTPUT_DIR = Path("results/daily_decision_report_csv")
+SOURCE_REPORTS = (
     Path("daily_paper_report.md"),
     Path("daily_change_summary.md"),
     Path("strategy_health_report.md"),
     Path("live_readiness_report.md"),
-]
+)
+EXPECTED_CSV_NAMES = (
+    "daily_paper_report.csv",
+    "daily_change_summary.csv",
+    "strategy_health_report.csv",
+    "live_readiness_report.csv",
+)
 DELIVERY_COLUMNS = [
     "Sent_At",
     "Report_Date",
@@ -41,37 +44,6 @@ DELIVERY_COLUMNS = [
 ]
 
 
-class SMTPConnection(Protocol):
-    def __enter__(self): ...
-    def __exit__(self, exc_type, exc, traceback): ...
-    def login(self, user: str, password: str): ...
-    def send_message(self, message: EmailMessage): ...
-
-
-def gmail_connection() -> SMTPConnection:
-    context = ssl.create_default_context()
-    return smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=context, timeout=30)
-
-
-def configured_app_password(explicit_password: str | None = None) -> str | None:
-    """Load the app password from the process or persistent Windows user env."""
-    if explicit_password:
-        return explicit_password
-    process_value = os.environ.get(PASSWORD_ENV)
-    if process_value:
-        return process_value
-    if os.name == "nt":
-        try:
-            import winreg
-
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
-                value, _ = winreg.QueryValueEx(key, PASSWORD_ENV)
-                return str(value) if value else None
-        except FileNotFoundError:
-            return None
-    return None
-
-
 def report_date(state_path: Path = STATE_PATH) -> str:
     if not state_path.exists():
         raise FileNotFoundError(f"Paper state not found: {state_path}")
@@ -79,15 +51,31 @@ def report_date(state_path: Path = STATE_PATH) -> str:
     return str(state["as_of_date"])
 
 
-def validate_attachments(attachments: list[Path]) -> None:
-    missing = [str(path) for path in attachments if not path.exists()]
-    if missing:
-        raise FileNotFoundError(
-            "Required daily email attachments are missing: " + ", ".join(missing)
+def build_csv_attachments(
+    *,
+    root_dir: str | Path,
+    current_report_date: str,
+    output_dir: str | Path = CSV_OUTPUT_DIR,
+) -> list[Path]:
+    """Convert the exact four authoritative Markdown decision reports to CSV."""
+    try:
+        as_of = date.fromisoformat(current_report_date[:10])
+    except ValueError as exc:
+        raise RuntimeError(f"Invalid paper-state report date: {current_report_date}") from exc
+
+    outputs = generate_markdown_report_csvs(
+        root_dir=root_dir,
+        output_dir=output_dir,
+        as_of_date=as_of,
+    )
+    names = tuple(path.name for path in outputs)
+    if names != EXPECTED_CSV_NAMES:
+        raise RuntimeError(
+            "Unexpected daily decision CSV attachment set: " + ", ".join(names)
         )
-    unexpected = [path for path in attachments if path.suffix.lower() != ".md"]
-    if unexpected:
-        raise ValueError("Daily email attachments must be Markdown reports only")
+    if not all(path.is_file() and path.stat().st_size > 0 for path in outputs):
+        raise RuntimeError("One or more daily decision CSV attachments were not generated")
+    return outputs
 
 
 def already_sent(
@@ -113,24 +101,31 @@ def build_message(
     sender: str = SENDER,
     recipient: str = RECIPIENT,
 ) -> EmailMessage:
-    validate_attachments(attachments)
+    unexpected = [path.name for path in attachments if path.suffix.lower() != ".csv"]
+    if unexpected:
+        raise ValueError(
+            "Daily decision email attachments must be CSV files: " + ", ".join(unexpected)
+        )
+
     message = EmailMessage()
     message["From"] = sender
     message["To"] = recipient
-    message["Subject"] = (
-        f"PAPER ONLY ETF Daily Decision Reports - {current_report_date}"
-    )
+    message["Subject"] = f"PAPER ONLY ETF Daily Decision Reports - {current_report_date}"
     message.set_content(
         "PAPER ONLY - NO REAL TRADES EXECUTED\n\n"
-        f"Attached are the four daily decision reports through {current_report_date}.\n\n"
-        "Attached:\n"
+        f"Attached are the four daily ETF decision reports through {current_report_date}, "
+        "converted from the authoritative Markdown reports to CSV format.\n\n"
+        "Source reports:\n"
+        + "\n".join(f"- {path.name}" for path in SOURCE_REPORTS)
+        + "\n\nCSV attachments:\n"
         + "\n".join(f"- {path.name}" for path in attachments)
-        + "\n\nCSV, state, and log audit files remain local and are not attached.\n"
+        + "\n"
     )
     for path in attachments:
         message.add_attachment(
-            path.read_text(encoding="utf-8"),
-            subtype="markdown",
+            path.read_bytes(),
+            maintype="text",
+            subtype="csv",
             filename=path.name,
         )
     return message
@@ -142,6 +137,7 @@ def append_delivery_log(
     message: EmailMessage,
     attachments: list[Path],
 ) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     exists = path.exists()
     with path.open("a", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=DELIVERY_COLUMNS)
@@ -167,37 +163,45 @@ def send_daily_reports(
     attachments: list[Path] | None = None,
     state_path: Path = STATE_PATH,
     delivery_log: Path = DELIVERY_LOG_PATH,
-    smtp_factory=gmail_connection,
+    smtp_factory=None,
+    *,
+    root_dir: str | Path = ".",
+    email_sender: Callable[..., object] = send_email,
 ) -> str:
-    attachments = attachments or ATTACHMENTS
-    current_report_date = report_date(state_path)
-    if already_sent(delivery_log, current_report_date, recipient):
+    """Send the existing daily decision email with four generated CSV reports."""
+    del password, smtp_factory  # Retained for compatibility with older callers.
+    root = Path(root_dir)
+    resolved_state = state_path if state_path.is_absolute() else root / state_path
+    resolved_log = delivery_log if delivery_log.is_absolute() else root / delivery_log
+    current_report_date = report_date(resolved_state)
+    if already_sent(resolved_log, current_report_date, recipient):
         return "SKIPPED_ALREADY_SENT"
 
+    csv_attachments = attachments or build_csv_attachments(
+        root_dir=root,
+        current_report_date=current_report_date,
+    )
     message = build_message(
-    current_report_date,
-    attachments,
-    sender=sender,
-    recipient=recipient,
-)
-
+        current_report_date,
+        csv_attachments,
+        sender=sender,
+        recipient=recipient,
+    )
     body_part = message.get_body(preferencelist=("plain",))
     body_text = body_part.get_content() if body_part else str(message)
 
-    send_email(
+    email_sender(
         subject=str(message["Subject"]),
         body=body_text,
         recipient=recipient,
-        attachments=attachments,
+        attachments=csv_attachments,
     )
-
     append_delivery_log(
-        delivery_log,
+        resolved_log,
         current_report_date,
         message,
-        attachments,
+        csv_attachments,
     )
-
     return "SENT"
 
 
@@ -206,7 +210,7 @@ def main() -> int:
     print(f"Daily report email: {result}")
     print(f"Sender: {SENDER}")
     print(f"Recipient: {RECIPIENT}")
-    print("Attachments: " + ", ".join(path.name for path in ATTACHMENTS))
+    print("Attachments: " + ", ".join(EXPECTED_CSV_NAMES))
     return 0
 
 
