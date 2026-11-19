@@ -14,6 +14,8 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
+from decimal import Decimal, ROUND_HALF_UP
+from .dividend_dynamic_performance_reconciliation import reconcile_dynamic_trades
 
 MODULE_NAME = "dividend_paper_trade_performance"
 MODULE_VERSION = "1.0.0"
@@ -58,6 +60,8 @@ def build_dividend_paper_trade_performance(
     *,
     generated_at_utc: str | None = None,
     paper_state: Mapping[str, Any] | None = None,
+    dynamic_sleeves: Mapping[str, Any] | None = None,
+    dynamic_reconciliation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Reconstruct closed sleeve round trips and calculate realized win rate.
 
@@ -214,6 +218,51 @@ def build_dividend_paper_trade_performance(
 
             open_trades = filtered_open_trades
 
+    # Current dynamic sleeves supersede legacy opens for their pair, including
+    # zero-share/parked legs. Closed legacy round trips remain historical evidence.
+    for current in (dynamic_sleeves or {}).get("sleeves", []):
+        pair = str(current.get("pair_id") or "").strip()
+        if not pair:
+            continue
+        open_trades = {key: trade for key, trade in open_trades.items()
+                       if key[0] != pair}
+        for role, sleeve in (("income", "A"), ("growth", "B")):
+            shares = _number(current.get(f"{role}_shares"))
+            symbol = str(current.get(f"{role}_symbol") or "").strip().upper()
+            if shares <= 1e-12 or not symbol or symbol == "SGOV":
+                continue
+            open_trades[(pair, sleeve, symbol)] = {
+                "pair": pair, "sleeve": sleeve, "symbol": symbol,
+                "entry_date": current.get(f"{role}_entered_at_utc") or current.get("entered_at_utc"),
+                "entry_value": _number(current.get(f"{role}_allocated_cash")),
+                "entry_price": current.get(f"{role}_entry_price"),
+                "shares": shares,
+                "market_price": current.get(f"{role}_market_price"),
+                "market_value": current.get(f"{role}_market_value"),
+                "unrealized_pnl": current.get(f"{role}_unrealized_pnl"),
+                "income_received": _number(current.get(f"{role}_dividend_reinvested_cash")),
+                "source": "state/dividend_dynamic_paper_sleeves.json",
+                "sleeve_id": current.get("sleeve_id"),
+            }
+
+    # The new journal is independent from the legacy CSV and owns exits after
+    # the September dynamic-sleeve cutover. Preserve legacy historic closes,
+    # but never let old unmatched buys inflate current holdings or fabricate
+    # duplicate exits. Each dynamic sale is tracked by its unique transaction ID.
+    dynamic_closed=list((dynamic_reconciliation or {}).get('closed_trades',[]))
+    legacy_count=len(closed)
+    closed.extend(dynamic_closed)
+    legacy_realized=sum((Decimal(str(t['pnl'])) for t in closed[:legacy_count]),Decimal('0'))
+    dynamic_realized=sum((Decimal(str(t['pnl'])) for t in dynamic_closed),Decimal('0'))
+    realized_total=legacy_realized+dynamic_realized
+    warnings.extend((dynamic_reconciliation or {}).get('warnings',[]))
+    if dynamic_reconciliation:
+        if dynamic_reconciliation.get('historical_exits_without_funded_receipt'):
+            warnings.append('Historical dynamic sale transactions without individual SGOV-funded receipt: '+
+                            str(dynamic_reconciliation['historical_exits_without_funded_receipt'])+
+                            '. These were not used to create or change pooled SGOV cash.')
+        if dynamic_reconciliation.get('unmatched_open_positions'):
+            warnings.append('Dynamic transaction journal contains opens not matched to exits; verify against current shares.')
     win_count = sum(item["outcome"] == "WIN" for item in closed)
     loss_count = sum(item["outcome"] == "LOSS" for item in closed)
     flat_count = sum(item["outcome"] == "FLAT" for item in closed)
@@ -233,6 +282,13 @@ def build_dividend_paper_trade_performance(
         "loss_count": loss_count,
         "flat_count": flat_count,
         "win_rate_percent": win_rate,
+        "closed_trades": closed,
+        "legacy_closed_trade_count": legacy_count,
+        "dynamic_closed_trade_count": len(dynamic_closed),
+        "legacy_realized_pnl": float(legacy_realized.quantize(Decimal('.01'),rounding=ROUND_HALF_UP)),
+        "dynamic_realized_pnl": float(dynamic_realized.quantize(Decimal('.01'),rounding=ROUND_HALF_UP)),
+        "realized_pnl": float(realized_total.quantize(Decimal('.01'),rounding=ROUND_HALF_UP)),
+        "sgov_reconciliation": {k:v for k,v in (dynamic_reconciliation or {}).items() if k != 'closed_trades'},
         "closed_trades": closed,
         "open_trades": list(open_trades.values()),
         "evidence_status": "AVAILABLE" if closed_count else "INSUFFICIENT_DATA",
@@ -290,8 +346,46 @@ def write_dividend_paper_trade_performance(
         except (OSError, json.JSONDecodeError):
             paper_state = None
 
+    dynamic_path = root / "state/dividend_dynamic_paper_sleeves.json"
+    dynamic_sleeves = None
+    if dynamic_path.is_file():
+        # Do not silently publish a legacy-only report when current state is invalid.
+        dynamic_sleeves = json.loads(dynamic_path.read_text(encoding="utf-8"))
+        if not isinstance(dynamic_sleeves, dict) or not isinstance(dynamic_sleeves.get("sleeves"), list):
+            raise ValueError("Invalid dynamic sleeve registry")
+
+    dynamic_reconciliation=None
+    transactions_path=root/'state/dividend_dynamic_sleeve_transactions.jsonl'
+    ownership_path=root/'state/dividend_sgov_ownership.json'
+    if transactions_path.is_file():
+        transactions=[]
+        for line_no,line in enumerate(transactions_path.read_text(encoding='utf-8').splitlines(),1):
+            if not line.strip():continue
+            try:row=json.loads(line)
+            except json.JSONDecodeError as exc:raise ValueError(f'Invalid dynamic transaction line {line_no}') from exc
+            if not isinstance(row,dict):raise ValueError(f'Invalid dynamic transaction object line {line_no}')
+            transactions.append(row)
+        if not ownership_path.is_file():
+            raise ValueError('Dynamic journal exists but SGOV ownership registry unavailable')
+        ownership=json.loads(ownership_path.read_text(encoding='utf-8'))
+        if not isinstance(ownership,dict):raise ValueError('Invalid SGOV ownership registry')
+        dynamic_reconciliation=reconcile_dynamic_trades(transactions,ownership,dynamic_sleeves)
+        # SGOV pooled principal must reconcile independently of historical
+        # proceeds and historical earnings; transfers change ownership only.
+        principal=Decimal(str((ownership.get('reserve_reconciliation') or {}).get('principal')))
+        unassigned=Decimal(str(ownership.get('unassigned_reserve')))
+        allocated=sum((Decimal(str(x.get('current_allocated_cash') or 0)) for x in ownership.get('memberships',[])),Decimal('0'))
+        difference=(principal-unassigned-allocated).quantize(Decimal('.01'))
+        dynamic_reconciliation['current_sgov_principal']=float(principal)
+        dynamic_reconciliation['current_sgov_unassigned']=float(unassigned)
+        dynamic_reconciliation['current_sgov_attributed']=float(allocated)
+        dynamic_reconciliation['current_sgov_principal_difference']=float(difference)
+        dynamic_reconciliation['sgov_valuation_adjustment_not_spendable']=(ownership.get('reserve_reconciliation') or {}).get('valuation_adjustment')
+        if difference!=0:raise ValueError('Current SGOV principal, unassigned and member cash mismatch')
     report = build_dividend_paper_trade_performance(
         _load_rows(source),
         paper_state=paper_state,
+        dynamic_sleeves=dynamic_sleeves,
+        dynamic_reconciliation=dynamic_reconciliation,
     )
     return _atomic_write(target, json.dumps(report, indent=2, sort_keys=True) + "\n")

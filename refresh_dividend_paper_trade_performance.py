@@ -1,7 +1,8 @@
 """Refresh authoritative read-only DIVIDEND-001 realized performance evidence.
 
 This command rebuilds the Dividend paper-trade performance artifact directly from
-``paper_trade_log.csv`` immediately before Enterprise dashboard publication. It is
+``paper_trade_log.csv`` plus matched dynamic-sleeve transactions and verified
+SGOV-funded exit receipts immediately before Enterprise dashboard publication. It is
 reporting-only and inherits the paper-only execution locks enforced by the
 underlying performance writer.
 """
